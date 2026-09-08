@@ -31,7 +31,12 @@ function ConnectorCard({ directMin, from, to }: { directMin: number; from: strin
     >
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={[type.micro, { color: color.muted }]}>출발</Text>
-        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: color.ink }}>{from}</Text>
+        <Text
+          style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: color.ink }}
+          numberOfLines={1}
+        >
+          {from}
+        </Text>
       </View>
       <View style={{ flex: 1.2, alignItems: 'center', gap: 5 }}>
         <Text style={[type.micro, { color: color.muted }]}>직행 {directMin}분</Text>
@@ -140,7 +145,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay } = usePlan();
   const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
@@ -151,11 +156,9 @@ export function PlanScreen({ navigation }: Props) {
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       {/* 우측 '요약'은 동작이 없어 제거했다 — 누를 수 있어 보이는데 아무 일도 없으면 신뢰를 잃는다 */}
       <NavHeader title="계획 만들기" onBack={() => navigation.goBack()}>
-        <ConnectorCard
-          directMin={ds.directMin}
-          from={ds.origin.name.split(' ')[0]}
-          to={destinationDisplay.split(' ')[0]}
-        />
+        {/* 이름을 첫 단어로 자르지 않는다 — '내 위치'가 '내'가 되고
+            'CGV 용산아이파크몰'이 'CGV'가 된다. 넘치면 말줄임으로 처리 */}
+        <ConnectorCard directMin={ds.directMin} from={originDisplay} to={destinationDisplay} />
         {/* A1에서 받은 조건 요약 */}
         <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, color: color.muted, textAlign: 'center' }}>
           {MODE_LABELS[state.mode]} ·{' '}

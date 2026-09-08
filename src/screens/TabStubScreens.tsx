@@ -244,7 +244,7 @@ function useDeadlineRiskAlert(slackMin: number | null, deadlineLabel: string) {
 /** 진행중 — 확정한 계획의 실행 뷰 */
 export function TodayScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { state, destinationDisplay, slackMin, arriveByLabel } = usePlan();
+  const { state, destinationDisplay, originDisplay, slackMin, arriveByLabel } = usePlan();
   const tracker = useTracker();
   // 대중교통이면 지도 앱이 경유지를 못 받아 구간 단위로 넘긴다
   const { legs, nextLeg, byLeg } = useRouteLegs();
@@ -330,7 +330,7 @@ export function TodayScreen() {
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
           <View style={{ flex: 1, gap: 5 }}>
             <Text style={[type.labelPlain, { color: color.muted }]} numberOfLines={1}>
-              {state.dataset.origin.name} → {destinationDisplay}
+              {originDisplay} → {destinationDisplay}
             </Text>
             <Text style={[type.statL, { color: color.ink }]}>{state.totals.totalMin}분</Text>
           </View>
@@ -426,7 +426,7 @@ export function TodayScreen() {
           <Card style={{ padding: 16, opacity: 0.6 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 19, color: color.ink }}>
-                {state.dataset.origin.name}
+                {originDisplay}
               </Text>
               <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
                 {state.dataset.origin.departAt} 출발

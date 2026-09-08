@@ -16,12 +16,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Error'>;
 const INFO_BLUE = '#123F9E';
 
 export function ErrorScreen({ navigation }: Props) {
-  const { state, destinationDisplay } = usePlan();
+  const { state, destinationDisplay, originDisplay } = usePlan();
   const [mapAppOpen, setMapAppOpen] = useState(false);
   const ds = state.dataset;
 
   const planRows = [
-    { key: 'origin', name: ds.origin.name, time: ds.origin.departAt, node: 'origin' as const },
+    { key: 'origin', name: originDisplay, time: ds.origin.departAt, node: 'origin' as const },
     ...state.stops.map(s => ({ key: s.id, name: s.name, time: s.arriveAt, node: 'stop' as const })),
     { key: 'dest', name: destinationDisplay, time: state.destArriveAt, node: 'dest' as const },
   ];

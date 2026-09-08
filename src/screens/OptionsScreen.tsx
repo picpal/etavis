@@ -150,9 +150,9 @@ function CompactOption({ option, view }: { option: RouteOption; view: OptionView
 
 export function OptionsScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { state, selectOption, applyOption, setOptionStore } = usePlan();
+  const { state, selectOption, applyOption, setOptionStore, originDisplay } = usePlan();
   const selected = state.options.find(o => o.id === state.selectedOptionId) ?? state.options[0];
-  const selectedView = getOptionView(state, selected);
+  const selectedView = getOptionView(state, selected, originDisplay);
   const [pickBaseId, setPickBaseId] = useState<string | null>(null);
   // 시트가 열려 있는 동안에도 현재 선택이 라이브로 반영되도록 매 렌더에서 파생
   const pickSlot = pickBaseId ? selectedView.slots.find(s => s.baseId === pickBaseId) ?? null : null;
@@ -197,7 +197,7 @@ export function OptionsScreen({ navigation, route }: Props) {
         </Text>
         {state.options.map(option => {
           const isSelected = option.id === selected.id;
-          const view = isSelected ? selectedView : getOptionView(state, option);
+          const view = isSelected ? selectedView : getOptionView(state, option, originDisplay);
           return (
             <Pressable
               key={option.id}

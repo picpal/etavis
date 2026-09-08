@@ -25,12 +25,12 @@ export type Leg = {
 };
 
 export function useRouteLegs() {
-  const { state, destinationDisplay } = usePlan();
+  const { state, destinationDisplay, originDisplay } = usePlan();
   const here = useCurrentPlace();
 
   const points = useMemo<RoutePoint[]>(
     () => [
-      { name: state.dataset.origin.name, coord: state.dataset.origin.coord },
+      { name: originDisplay, coord: state.dataset.origin.coord },
       ...state.stops.map(s => ({ name: s.name, coord: s.coord })),
       { name: destinationDisplay, coord: state.destinationCoord ?? state.dataset.destination.coord },
     ],

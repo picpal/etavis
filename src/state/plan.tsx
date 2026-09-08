@@ -5,6 +5,7 @@
  */
 import React, { createContext, useContext, useMemo, useReducer, useRef } from 'react';
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
+import { useCurrentPlace } from '../lib/currentPlace';
 import {
   Candidate,
   Dataset,
@@ -222,8 +223,11 @@ export type OptionStopSlot = {
   candidateCount: number;
 };
 
-/** 옵션의 표시값 — A5 매장 오버라이드를 반영한 이름·총시간·직행 대비 */
-export function getOptionView(state: PlanState, option: RouteOption) {
+/**
+ * 옵션의 표시값 — A5 매장 오버라이드를 반영한 이름·총시간·직행 대비.
+ * originLabel을 주면 첫 칸(출발지)을 그 이름으로 바꾼다 — 목 데이터셋 이름이 새어 나가지 않게.
+ */
+export function getOptionView(state: PlanState, option: RouteOption, originLabel?: string) {
   const ds = state.dataset;
   const middles = option.stopNames.slice(1, -1);
   const overrides = state.optionOverrides?.[option.id] ?? {};
@@ -265,7 +269,7 @@ export function getOptionView(state: PlanState, option: RouteOption) {
   const last = option.stopNames[option.stopNames.length - 1];
   return {
     slots,
-    names: [option.stopNames[0], ...slots.map(s => s.shortName), last],
+    names: [originLabel ?? option.stopNames[0], ...slots.map(s => s.shortName), last],
     totalMin: option.totalMin + adjust,
     deltaMin: option.deltaMin + adjust,
   };
@@ -415,6 +419,8 @@ type PlanApi = {
   setDestination: (name: string, coord?: LatLng | null) => void;
   /** 표시용 목적지 이름 (미지정이면 데이터셋 값) */
   destinationDisplay: string;
+  /** 표시용 출발지 이름 — GPS를 잡았으면 '내 위치'. 목 데이터셋 이름이 새어 나가지 않게 한 곳에서 만든다 */
+  originDisplay: string;
   /** 선택 가능한 도착 시각 옵션 (30분 단위) */
   arriveByOptions: number[];
   selectOption: (id: string) => void;
@@ -443,6 +449,7 @@ const RECALC_DELAY = 600;
 
 export function PlanProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, datasets[0], initState);
+  const here = useCurrentPlace();
   const recalcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const api = useMemo<PlanApi>(() => {
@@ -460,6 +467,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setArriveBy: min => dispatch({ type: 'SET_ARRIVE_BY', min }),
       setDestination: (name, coord) => dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null }),
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
+      originDisplay: here.coord ? '내 위치' : state.dataset.origin.name,
       arriveByOptions: (() => {
         const departMin = toMin(state.dataset.origin.departAt);
         const start = Math.ceil((departMin + 60) / 30) * 30;
@@ -505,7 +513,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         state.arriveByMin == null ? '도착 시각 상관없어요' : `오늘 ${toHHMM(state.arriveByMin).padStart(5, '0')}까지`,
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),
     };
-  }, [state]);
+  }, [state, here.coord]);
 
   return <PlanContext.Provider value={api}>{children}</PlanContext.Provider>;
 }

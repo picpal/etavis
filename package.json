@@ -1,12 +1,26 @@
 {
-  "name": "duler",
+  "name": "etavia",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@react-navigation/native": "^7.3.18",
+    "@react-navigation/native-stack": "^7.18.10",
     "expo": "~57.0.18",
+    "expo-font": "~57.0.2",
+    "expo-haptics": "~57.0.2",
+    "expo-linking": "~57.0.8",
+    "expo-location": "~57.0.16",
+    "expo-notifications": "~57.0.15",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react-native": "0.86.3",
+    "react-native-draggable-flatlist": "^4.0.3",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-maps": "1.27.2",
+    "react-native-reanimated": "4.5.1",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
@@ -14,8 +28,8 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "private": true

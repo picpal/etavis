@@ -1,25 +1,35 @@
 {
   "expo": {
-    "name": "duler",
-    "slug": "duler",
+    "name": "Etavia",
+    "slug": "etavia",
+    "scheme": "etavia",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.etavia.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "경유지에 도착하거나 출발한 것을 자동으로 알아차려 도착 시각을 다시 계산하는 데 사용해요.",
+        "LSApplicationQueriesSchemes": [
+          "nmap",
+          "kakaomap",
+          "comgooglemaps"
+        ]
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font"
+    ],
+    "extra": {
+      "//": "실제 키는 .env에 둔다 (KAKAO_REST_KEY / GOOGLE_PLACES_KEY). app.config.js가 주입한다.",
+      "kakaoRestKey": "",
+      "googlePlacesKey": ""
     }
   }
 }

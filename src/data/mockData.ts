@@ -63,6 +63,12 @@ export type Dataset = {
   stops: Stop[];
   candidates: Record<string, Candidate[]>;   // stopId → 후보
   totals: { totalMin: number; stopCount: number; deltaMin: number };
+  /**
+   * 구간 이동시간 테이블 — 재정렬·삭제 후 재계산에 쓴다.
+   * 키는 `origin>s1` 형식. 없으면 평창 데이터셋 기본값을 쓴다.
+   * 데이터셋마다 지역이 다르므로 여기에 같이 둔다.
+   */
+  legs?: Record<string, { min: number; km: number }>;
 };
 
 const ALPENSIA: LatLng = { latitude: 37.6605, longitude: 128.6754 };
@@ -198,7 +204,118 @@ export const datasetScarce: Dataset = {
   totals: { totalMin: 47, stopCount: 1, deltaMin: 15 },
 };
 
-export const datasets = [datasetBase, datasetReordered, datasetScarce];
+/* ── ④ 출근길 (실기기 테스트용) ─────────────────────────────────
+   경유지 두 곳은 카카오 로컬에서 조회한 실제 좌표다. 도착·출발 지오펜스는
+   경유지 좌표만 정확하면 되므로, 집·회사가 대략이어도 핵심 검증은 가능하다.
+   집·회사는 여의도↔목동 통근 축의 실제 지점으로 임시 지정 — 아래 두 상수만 바꾸면 된다. */
+
+const HOME: LatLng = { latitude: 37.5271, longitude: 126.9327 };   // 여의나루역 (임시)
+const OFFICE: LatLng = { latitude: 37.5148, longitude: 126.8563 }; // 신정네거리역 (임시)
+
+const OY_GUKHOE: LatLng = { latitude: 37.52807, longitude: 126.91789 };  // 올리브영 국회의사당역점
+const OY_SEOYEOUI: LatLng = { latitude: 37.52982, longitude: 126.92197 }; // 올리브영 서여의도점
+const OY_IFC: LatLng = { latitude: 37.52503, longitude: 126.92576 };      // 올리브영 여의도IFC점
+const PB_MOKDONG: LatLng = { latitude: 37.52731, longitude: 126.86443 };  // 파리바게뜨 목동역점
+const PB_OMOKGYO: LatLng = { latitude: 37.5246, longitude: 126.87291 };   // 파리바게뜨 오목교역점
+const PB_PARAGON: LatLng = { latitude: 37.52919, longitude: 126.87483 };  // 파리바게뜨 목동파라곤점
+
+export const datasetCommute: Dataset = {
+  key: 'commute',
+  label: '출근길 (올리브영 → 파리바게뜨 → 회사)',
+  origin: { name: '집', note: '현재 위치', coord: HOME, departAt: '08:10' },
+  destination: { name: '회사', coord: OFFICE, arriveAt: '08:57' },
+  directMin: 25,
+  mode: 'car',
+  arriveByLabel: '오늘 09:00까지',
+  userMessage: '출근길에 올리브영 들르고 빵도 사가고 싶어',
+  legs: {
+    'origin>s1': { min: 12, km: 4.2 },
+    'origin>s2': { min: 22, km: 9.0 },
+    's1>s2': { min: 14, km: 4.8 },
+    's2>s1': { min: 15, km: 4.8 },
+    's1>dest': { min: 18, km: 6.3 },
+    's2>dest': { min: 6, km: 1.6 },
+    'origin>dest': { min: 25, km: 10.4 },
+  },
+  options: [
+    {
+      id: 'fastest', badge: '시간 최소', title: '시간 최소', totalMin: 47, deltaMin: 22,
+      stopNames: ['집', '올리브영', '파리바게뜨', '회사'],
+      rationale: '두 곳 모두 회사 방향이라 되돌아가지 않아요. 09:00까지 3분 남습니다.',
+      recommended: true,
+    },
+    {
+      id: 'least-wait', title: '대기 최소', totalMin: 51, deltaMin: 26,
+      stopNames: ['집', '올리브영 여의도IFC점', '파리바게뜨 오목교역점', '회사'],
+      rationale: '아침 대기가 짧은 지점으로 · 대신 4분 더 걸려요',
+    },
+    {
+      id: 'single-stop', title: '한 곳만 들르기', totalMin: 33, deltaMin: 8,
+      stopNames: ['집', '파리바게뜨', '회사'],
+      rationale: '빵만 사고 화장품은 퇴근길로 미루기',
+    },
+  ],
+  stops: [
+    {
+      id: 's1', name: '올리브영 국회의사당역점', category: '화장품', coord: OY_GUKHOE,
+      dwellMin: 10, arriveAt: '08:22', legMin: 12, legKm: 4.2,
+      openState: 'open', openNote: '체류 10분 · 영업 중',
+      tasks: [
+        { id: 't1', text: '선크림', done: false },
+        { id: 't2', text: '클렌징폼 리필', done: false },
+      ],
+    },
+    {
+      id: 's2', name: '파리바게뜨 목동역점', category: '포장', coord: PB_MOKDONG,
+      dwellMin: 5, arriveAt: '08:46', legMin: 14, legKm: 4.8,
+      openState: 'open', openNote: '체류 5분 · 영업 중',
+      tasks: [{ id: 't3', text: '샌드위치 2개 + 커피', done: false }],
+    },
+  ],
+  candidates: {
+    s1: [
+      {
+        id: 'g1', name: '올리브영 국회의사당역점', note: '화장품 · 국회대로 지하 758', addedMin: 5,
+        arriveAt: '08:22', dwellMin: 10, parking: '가능', openState: 'open',
+        openNote: '영업 중 · 22시 마감',
+        reason: '회사 방향에서 벗어나지 않고, 목동까지 이어지는 구간이 가장 짧아요.',
+        verifiedNote: '카카오 로컬 기준 실제 지점', recommended: true, coord: OY_GUKHOE,
+      },
+      {
+        id: 'g2', name: '올리브영 서여의도점', note: '국회대로74길 19 · 조금 위쪽', addedMin: 9,
+        arriveAt: '08:26', dwellMin: 10, parking: '가능', openState: 'open',
+        openNote: '영업 중', coord: OY_SEOYEOUI,
+      },
+      {
+        id: 'g3', name: '올리브영 여의도IFC점', note: '국제금융로 10 · 역방향', addedMin: 12,
+        arriveAt: '08:29', dwellMin: 10, parking: '가능', openState: 'open',
+        openNote: '10시 오픈 · 이른 아침은 닫혀 있어요', coord: OY_IFC,
+      },
+    ],
+    s2: [
+      {
+        id: 'g4', name: '파리바게뜨 목동역점', note: '포장 · 목동로 210', addedMin: 4,
+        arriveAt: '08:46', dwellMin: 5, parking: '가능', openState: 'open',
+        openNote: '영업 중 · 07시 오픈', reason: '회사 바로 앞 구간이라 거의 돌아가지 않아요.',
+        recommended: true, coord: PB_MOKDONG,
+      },
+      {
+        id: 'g5', name: '파리바게뜨 오목교역점', note: '오목로 320 · 조금 돌아감', addedMin: 7,
+        arriveAt: '08:49', dwellMin: 5, parking: '어려움', openState: 'open',
+        openNote: '영업 중', coord: PB_OMOKGYO,
+      },
+      {
+        id: 'g6', name: '파리바게뜨 목동파라곤점', note: '목동서로 155 · 역방향', addedMin: 9,
+        arriveAt: '08:51', dwellMin: 5, parking: '가능', openState: 'open',
+        openNote: '영업 중', coord: PB_PARAGON,
+      },
+    ],
+  },
+  totals: { totalMin: 47, stopCount: 2, deltaMin: 22 },
+};
+
+/** 출근길을 기본으로 둔다 — 실기기 테스트가 목적. 평창 3종은 개발 메뉴에 남겨둔다 */
+export const datasets = [datasetCommute, datasetBase, datasetReordered, datasetScarce];
 
 /* 외부 지도 앱(A7)은 목이 아니라 실제 URL scheme 스펙이라 src/lib/mapLinks.ts에 있다 */
 
@@ -210,4 +327,4 @@ export const calcSteps = [
   { id: 'k4', text: '추천 경로 정리', state: 'pending' },
 ] as const;
 
-export const RECENT_DESTINATIONS = ['오크밸리 숙소', '평창역', '집'];
+export const RECENT_DESTINATIONS = ['회사', '집', '오크밸리 숙소'];

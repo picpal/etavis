@@ -77,8 +77,10 @@ const LEGS: Record<string, { min: number; km: number }> = {
   's2>dest': { min: 8, km: 3.2 },
   'origin>dest': { min: 32, km: 23.5 },
 };
-const legBetween = (a: string, b: string) =>
-  LEGS[`${a}>${b}`] ?? LEGS[`${b}>${a}`] ?? { min: 10, km: 5.0 };
+const legBetween = (a: string, b: string, ds?: Dataset) => {
+  const table = ds?.legs ?? LEGS;
+  return table[`${a}>${b}`] ?? table[`${b}>${a}`] ?? { min: 10, km: 5.0 };
+};
 
 const asStopState = (s: Stop): StopState => ({
   ...s,
@@ -95,12 +97,12 @@ function deriveFromDataset(ds: Dataset) {
   let destArrive: number;
   if (stops.length) {
     const last = stops[stops.length - 1];
-    const fin = legBetween(last.baseId, 'dest');
+    const fin = legBetween(last.baseId, 'dest', ds);
     finalLegMin = fin.min;
     finalLegKm = fin.km;
     destArrive = toMin(last.arriveAt) + last.dwellMin + fin.min;
   } else {
-    const fin = legBetween('origin', 'dest');
+    const fin = legBetween('origin', 'dest', ds);
     finalLegMin = fin.min;
     finalLegKm = fin.km;
     destArrive = departMin + fin.min;
@@ -121,7 +123,7 @@ function computeChain(stops: StopState[], ds: Dataset) {
   let clock = departMin;
   const out = stops.map((s, i) => {
     const prevKey = i === 0 ? 'origin' : stops[i - 1].baseId;
-    const base = legBetween(prevKey, s.baseId);
+    const base = legBetween(prevKey, s.baseId, ds);
     const legMin = base.min + s.replaceDeltaMin;
     const legKm = round1(base.km * (legMin / base.min));
     clock += legMin;
@@ -130,7 +132,7 @@ function computeChain(stops: StopState[], ds: Dataset) {
     return { ...s, legMin, legKm, arriveAt };
   });
   const lastKey = stops.length ? stops[stops.length - 1].baseId : 'origin';
-  const fin = legBetween(lastKey, 'dest');
+  const fin = legBetween(lastKey, 'dest', ds);
   clock += fin.min;
   const totalMin = clock - departMin;
   return {

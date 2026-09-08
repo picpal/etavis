@@ -82,7 +82,7 @@ function AssistantBubble() {
         들를 곳과 조건을 말하면 계획에 반영해 드려요. 한 문장이면 충분해요.
       </Text>
       <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 21, color: color.primary }}>
-        “숙소 가기 전에 치킨 포장하고 싶어”
+        “가는 길에 올리브영 들르고 빵도 사가고 싶어”
       </Text>
       <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
         직선거리가 아니라 실제 소요시간으로 계산해요

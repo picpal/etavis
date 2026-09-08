@@ -1,4 +1,4 @@
-/** A2 — 숙소 도착 예정 시각 선택 시트 (30분 단위 select box) */
+/** A2 — 목적지 도착 예정 시각 선택 시트 (30분 단위 select box) */
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,7 +19,7 @@ export function ArriveBySheet({ visible, onClose }: { visible: boolean; onClose:
           <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
             계산 조건
           </Text>
-          <Text style={[type.titleL, { color: color.ink }]}>숙소 도착 예정 시각</Text>
+          <Text style={[type.titleL, { color: color.ink }]}>도착 예정 시각</Text>
         </View>
 
         <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>

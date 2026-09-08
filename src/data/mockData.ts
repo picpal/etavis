@@ -260,16 +260,28 @@ export const datasetCommute: Dataset = {
       id: 's1', name: '올리브영 국회의사당역점', category: '화장품', coord: OY_GUKHOE,
       dwellMin: 10, arriveAt: '08:22', legMin: 12, legKm: 4.2,
       openState: 'open', openNote: '체류 10분 · 영업 중',
+      // 내일 실기기 점검표 — 할 일이 곧 테스트 항목이다
       tasks: [
-        { id: 't1', text: '선크림', done: false },
-        { id: 't2', text: '클렌징폼 리필', done: false },
+        { id: 't1', text: '선크림 사기', done: false },
+        { id: 't2', text: '출발 전 · 목적지를 검색으로 골라보기', done: false },
+        { id: 't3', text: '출발 전 · 도착 목표 09:00 → 여유 표시 확인', done: false },
+        { id: 't4', text: '도착하면 버튼 없이 체류 중으로 바뀌는지', done: false },
+        { id: 't5', text: '왼쪽 선이 파란 실선으로 차오르는지', done: false },
+        { id: 't6', text: '출발하면 들렀어요로 자동 전환되는지', done: false },
       ],
     },
     {
       id: 's2', name: '파리바게뜨 목동역점', category: '포장', coord: PB_MOKDONG,
       dwellMin: 5, arriveAt: '08:46', legMin: 14, legKm: 4.8,
       openState: 'open', openNote: '체류 5분 · 영업 중',
-      tasks: [{ id: 't3', text: '샌드위치 2개 + 커피', done: false }],
+      tasks: [
+        { id: 't7', text: '샌드위치 2개 + 커피 사기', done: false },
+        { id: 't8', text: '지도 앱에서 열기 → 경유지 2곳 찍혀 열리는지', done: false },
+        { id: 't9', text: '설치 안 된 앱만 미설치로 뜨는지', done: false },
+        { id: 't10', text: '공유 버튼 → 카톡으로 도착 시각 보내보기', done: false },
+        { id: 't11', text: '여기서도 도착·출발이 자동 전환되는지', done: false },
+        { id: 't12', text: '대중교통 선택 → 다음 구간 길찾기로 바뀌는지', done: false },
+      ],
     },
   ],
   candidates: {

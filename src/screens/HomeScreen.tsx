@@ -123,7 +123,7 @@ export function HomeScreen({ navigation }: Props) {
                   ]}
                   numberOfLines={1}
                 >
-                  {state.destinationName ?? '숙소를 입력하세요'}
+                  {state.destinationName ?? '최종 목적지를 입력하세요'}
                 </Text>
                 <Chevron size={9} thickness={2} color={color.stroke} dir="down" style={{ marginTop: -4 }} />
               </View>

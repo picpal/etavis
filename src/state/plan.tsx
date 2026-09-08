@@ -227,7 +227,7 @@ export type OptionStopSlot = {
  * 옵션의 표시값 — A5 매장 오버라이드를 반영한 이름·총시간·직행 대비.
  * originLabel을 주면 첫 칸(출발지)을 그 이름으로 바꾼다 — 목 데이터셋 이름이 새어 나가지 않게.
  */
-export function getOptionView(state: PlanState, option: RouteOption, originLabel?: string) {
+export function getOptionView(state: PlanState, option: RouteOption, originLabel?: string, destLabel?: string) {
   const ds = state.dataset;
   const middles = option.stopNames.slice(1, -1);
   const overrides = state.optionOverrides?.[option.id] ?? {};
@@ -266,7 +266,7 @@ export function getOptionView(state: PlanState, option: RouteOption, originLabel
       candidateCount: cands.filter(c => !c.disabled).length,
     });
   }
-  const last = option.stopNames[option.stopNames.length - 1];
+  const last = destLabel ?? option.stopNames[option.stopNames.length - 1];
   return {
     slots,
     names: [originLabel ?? option.stopNames[0], ...slots.map(s => s.shortName), last],

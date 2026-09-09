@@ -5,9 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
 import { usePlan } from '../state/plan';
-import { refreshCurrentPlace, useCurrentPlace } from '../lib/currentPlace';
+import { useCurrentPlace } from '../lib/currentPlace';
 import { Card, haptic, PrimaryButton, SegmentControl } from '../components/common';
-import { Chevron, DashedLineV, Hairline, PinIcon } from '../components/primitives';
+import { Chevron, DashedLineV, Hairline, PinIcon, SwapIcon } from '../components/primitives';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
 import { DevSheet } from '../sheets/DevSheet';
@@ -22,11 +22,12 @@ const MODE_KEYS = ['car', 'walk', 'transit'] as const;
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { state, setMode, arriveByLabel } = usePlan();
+  const { state, setMode, arriveByLabel, swapEndpoints } = usePlan();
   const here = useCurrentPlace();
   const [devOpen, setDevOpen] = useState(false);
   const [arriveOpen, setArriveOpen] = useState(false);
   const [destOpen, setDestOpen] = useState(false);
+  const [originOpen, setOriginOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   // 목적지 미지정 상태에서 채팅을 시작하면, 목적지부터 고르게 한 뒤 이어서 이동
   const [continueAfterPick, setContinueAfterPick] = useState(false);
@@ -40,15 +41,19 @@ export function HomeScreen({ navigation }: Props) {
     navigation.navigate('Plan');
   };
 
-  // 출발지는 검색하지 않는다 — 좌표는 GPS가 이미 알고 있고, 주소는 읽으라고만 붙인다
-  const originTitle = here.status === 'denied' ? '위치 권한이 필요해요' : '내 위치';
-  const originSub =
-    here.status === 'ready'
+  /*
+    기본은 GPS로 잡은 '내 위치'. 다만 항상 지금 있는 곳에서 출발하는 건 아니라서
+    (내일 아침 계획을 미리 짠다든가) 눌러서 다른 출발지를 고를 수 있게 열어뒀다.
+  */
+  const originTitle = state.originName ?? (here.status === 'denied' ? '위치 권한이 필요해요' : '내 위치');
+  const originSub = state.originName
+    ? '눌러서 바꾸거나 내 위치로 되돌릴 수 있어요'
+    : here.status === 'ready'
       ? here.address ?? '주소를 찾지 못했어요'
       : here.status === 'denied'
         ? '설정에서 위치 접근을 허용해 주세요'
         : here.status === 'error'
-          ? '위치를 가져오지 못했어요 · 눌러서 다시 시도'
+          ? '위치를 가져오지 못했어요'
           : '위치 확인 중…';
 
   const startChat = () => {
@@ -81,24 +86,54 @@ export function HomeScreen({ navigation }: Props) {
           </Pressable>
         </View>
 
-        {/* 출발–목적지 카드 (목적지 행 탭 → 선택 시트) */}
+        {/* 출발–목적지 카드 (각 행 탭 → 선택 시트, 우측 아이콘으로 맞바꾸기) */}
         <Card style={{ padding: 18, flexDirection: 'row', gap: 14 }}>
           <View style={{ width: 12, alignItems: 'center', paddingVertical: 6 }}>
             <View style={{ width: 11, height: 11, borderRadius: 5.5, borderWidth: 3, borderColor: color.primary }} />
             <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
             <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: color.ink }} />
           </View>
-          <View style={{ flex: 1, gap: 14 }}>
+          {/* 두 행 사이 높이 가운데에 걸치도록 절대배치 — 되돌아오는 경로를 만들 때 쓴다 */}
+          <Pressable
+            onPress={() => {
+              haptic();
+              swapEndpoints();
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={({ pressed }) => ({
+              position: 'absolute',
+              right: 14,
+              top: '50%',
+              marginTop: -18,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: color.bg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <SwapIcon size={18} tint={color.body} />
+          </Pressable>
+          <View style={{ flex: 1, gap: 14, paddingRight: 40 }}>
             <Pressable
               onPress={() => {
-                if (here.status === 'ready' || here.status === 'loading') return;
                 haptic();
-                void refreshCurrentPlace();
+                setOriginOpen(true);
               }}
               style={({ pressed }) => ({ gap: 3, opacity: pressed ? 0.7 : 1 })}
             >
-              <Text style={[type.labelPlain, { color: color.muted }]}>출발 · 현재 위치</Text>
-              <Text style={[type.title, { color: color.ink }]}>{originTitle}</Text>
+              <Text style={[type.labelPlain, { color: color.muted }]}>
+                {state.originName ? '출발' : '출발 · 현재 위치'}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[type.title, { flex: 1, color: color.ink }]} numberOfLines={1}>
+                  {originTitle}
+                </Text>
+                <Chevron size={9} thickness={2} color={color.stroke} dir="down" style={{ marginTop: -4 }} />
+              </View>
               <Text
                 style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}
                 numberOfLines={1}
@@ -243,6 +278,7 @@ export function HomeScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </Sheet>
+      <DestinationSheet target="origin" visible={originOpen} onClose={() => setOriginOpen(false)} />
       <DestinationSheet
         visible={destOpen}
         onClose={() => setDestOpen(false)}

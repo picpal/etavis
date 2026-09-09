@@ -34,8 +34,11 @@ export type PlanState = {
   arriveByMin: number | null;
   /** A1에서 고른 목적지 이름. null이면 아직 미지정 (표시는 dataset 값으로 fallback) */
   destinationName: string | null;
-  /** 검색 결과에서 고른 목적지 좌표. 직접 입력한 경우엔 null */
+  /** 검색 결과에서 고른 목적지 좌표 */
   destinationCoord: LatLng | null;
+  /** 사용자가 직접 고른 출발지. null이면 현재 위치(GPS) */
+  originName: string | null;
+  originCoord: LatLng | null;
   stops: StopState[];
   options: RouteOption[];
   selectedOptionId: string;
@@ -155,6 +158,8 @@ function initState(ds: Dataset): PlanState {
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
     destinationName: null,
     destinationCoord: null,
+    originName: null,
+    originCoord: null,
     ...deriveFromDataset(ds),
     options: ds.options,
     selectedOptionId: (ds.options.find(o => o.recommended) ?? ds.options[0]).id,
@@ -286,6 +291,8 @@ type Action =
   | { type: 'SET_MODE'; mode: PlanState['mode'] }
   | { type: 'SET_ARRIVE_BY'; min: number | null }
   | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null }
+  | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null }
+  | { type: 'SWAP_ENDPOINTS' }
   | { type: 'APPLY_OPTION'; id: string }
   | { type: 'SELECT_OPTION'; id: string }
   | { type: 'SET_OPTION_STORE'; optionId: string; baseId: string; candidateId: string }
@@ -316,6 +323,17 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, arriveByMin: action.min };
     case 'SET_DESTINATION':
       return { ...state, destinationName: action.name, destinationCoord: action.coord };
+    case 'SET_ORIGIN':
+      return { ...state, originName: action.name, originCoord: action.coord };
+    case 'SWAP_ENDPOINTS':
+      // 출발지가 '내 위치'(null)여도 스왑이 되도록 표시 이름을 넣어 굳힌다
+      return {
+        ...state,
+        originName: state.destinationName,
+        originCoord: state.destinationCoord,
+        destinationName: state.originName,
+        destinationCoord: state.originCoord,
+      };
     case 'SELECT_OPTION':
       return { ...state, selectedOptionId: action.id };
     case 'SET_OPTION_STORE': {
@@ -423,6 +441,10 @@ type PlanApi = {
   /** 마감까지 남은 여유(분). 음수면 초과. 마감이 없으면 null */
   slackMin: number | null;
   setDestination: (name: string, coord?: LatLng | null) => void;
+  /** 출발지 지정. null을 주면 다시 '내 위치'(GPS)로 돌아간다 */
+  setOrigin: (name: string | null, coord?: LatLng | null) => void;
+  /** 출발지 ↔ 목적지 맞바꾸기 */
+  swapEndpoints: () => void;
   /** 표시용 목적지 이름 (미지정이면 데이터셋 값) */
   destinationDisplay: string;
   /** 표시용 출발지 이름 — GPS를 잡았으면 '내 위치'. 목 데이터셋 이름이 새어 나가지 않게 한 곳에서 만든다 */
@@ -472,8 +494,13 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setMode: mode => dispatch({ type: 'SET_MODE', mode }),
       setArriveBy: min => dispatch({ type: 'SET_ARRIVE_BY', min }),
       setDestination: (name, coord) => dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null }),
+      setOrigin: (name, coord) => dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null }),
+      swapEndpoints: () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        dispatch({ type: 'SWAP_ENDPOINTS' });
+      },
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
-      originDisplay: here.coord ? '내 위치' : state.dataset.origin.name,
+      originDisplay: state.originName ?? (here.coord ? '내 위치' : state.dataset.origin.name),
       /*
         마감 후보는 '지금' 이후만 보여준다. 목 데이터의 출발 시각을 기준으로 잡으면
         이미 지나간 시각이 목록에 남아 고를 수 있게 된다.

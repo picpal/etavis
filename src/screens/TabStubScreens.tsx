@@ -8,7 +8,7 @@ import { color, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { useTracker } from '../state/tracker';
 import { Card, haptic, MicroLabelRow } from '../components/common';
-import { CheckCircle, Chevron, HeartIcon, PencilIcon, ShareIcon } from '../components/primitives';
+import { CheckCircle, Chevron, HeartIcon, PencilIcon, PersonPlusIcon } from '../components/primitives';
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
 import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
@@ -297,7 +297,7 @@ export function TodayScreen() {
     이미 지나온 경유지는 빼고, 앞으로 들를 곳만 적는다.
   */
   const shareMessage = (() => {
-    const lines = [`${destinationDisplay} ${formatEta(state.destArriveAt)} 도착 예정`];
+    const lines = ['[Etavia] 같이 가는 길', `${destinationDisplay} ${formatEta(state.destArriveAt)} 도착 예정`];
     const remaining = state.stops.slice(state.passedCount);
     if (remaining.length) lines.push(`들렀다 가요 · ${remaining.map(s => s.name).join(', ')}`);
     if (slackMin != null) {
@@ -486,8 +486,8 @@ export function TodayScreen() {
           style={{ flex: 1 }}
           onPress={() => setMapAppOpen(true)}
         />
-        {/* 기다리는 사람이 궁금한 건 내 위치가 아니라 '몇 시에 오냐'다.
-            서버 없이 텍스트 한 줄만 내보낸다 — 받는 쪽은 앱이 없어도 된다 */}
+        {/* 일행 초대 — 기다리는 사람이 궁금한 건 내 위치가 아니라 '몇 시에 오냐'다.
+            아직 서버가 없어 초대 '링크'는 못 만들고 텍스트만 보낸다. 받는 쪽은 앱이 없어도 된다 */}
         <Pressable
           onPress={() => {
             haptic();
@@ -503,7 +503,7 @@ export function TodayScreen() {
             opacity: pressed ? 0.8 : 1,
           })}
         >
-          <ShareIcon size={22} tint={color.body} />
+          <PersonPlusIcon size={22} tint={color.body} />
         </Pressable>
       </View>
       {byLeg && nextLeg && (

@@ -26,15 +26,19 @@ export function DestinationSheet({
   visible,
   onClose,
   onPicked,
+  target = 'destination',
 }: {
   visible: boolean;
   onClose: () => void;
   /** 선택 직후 호출 — 채팅 시작 게이트에서 이어서 이동할 때 사용 */
   onPicked?: (name: string) => void;
+  /** 출발지에도 같은 검색을 쓴다 — 기본은 목적지 */
+  target?: 'origin' | 'destination';
 }) {
+  const isOrigin = target === 'origin';
   const insets = useSafeAreaInsets();
   const { height: H } = useWindowDimensions();
-  const { state, setDestination } = usePlan();
+  const { state, setDestination, setOrigin } = usePlan();
   const here = useCurrentPlace();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Place[]>([]);
@@ -99,7 +103,8 @@ export function DestinationSheet({
   const finish = (name: string, coord: LatLng | null) => {
     haptic();
     Keyboard.dismiss();
-    setDestination(name, coord);
+    if (isOrigin) setOrigin(name, coord);
+    else setDestination(name, coord);
     setQuery('');
     onClose();
     onPicked?.(name);
@@ -119,9 +124,9 @@ export function DestinationSheet({
       >
         <View style={{ gap: 4 }}>
           <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
-            최종 목적지
+            {isOrigin ? '출발지' : '최종 목적지'}
           </Text>
-          <Text style={[type.titleL, { color: color.ink }]}>어디로 갈까요?</Text>
+          <Text style={[type.titleL, { color: color.ink }]}>{isOrigin ? '어디서 출발하나요?' : '어디로 갈까요?'}</Text>
         </View>
 
         {/* 주소·지명 검색 */}
@@ -232,12 +237,65 @@ export function DestinationSheet({
           </Card>
         )}
 
+        {/* 출발지는 '내 위치'로 되돌릴 길이 있어야 한다 — 기본값이 GPS이므로 */}
+        {isOrigin && trimmed.length === 0 && (
+          <Card style={{ padding: 8 }}>
+            <Pressable
+              onPress={() => {
+                haptic();
+                Keyboard.dismiss();
+                setOrigin(null, null);
+                onClose();
+              }}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 14,
+                paddingHorizontal: 12,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <PinIcon />
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text
+                  style={{
+                    fontFamily: state.originName ? 'Pretendard-Medium' : 'Pretendard-SemiBold',
+                    fontSize: 16,
+                    lineHeight: 20,
+                    color: state.originName ? color.ink : color.primary,
+                  }}
+                >
+                  내 위치
+                </Text>
+                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 16, color: color.muted }}>
+                  {here.address ?? 'GPS로 지금 있는 곳에서 출발해요'}
+                </Text>
+              </View>
+              {!state.originName && (
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    backgroundColor: color.primary,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <CheckMark />
+                </View>
+              )}
+            </Pressable>
+          </Card>
+        )}
+
         {trimmed.length === 0 && recents.length > 0 && (
           <>
-            <Text style={[type.label, { color: color.muted }]}>최근 목적지</Text>
+            <Text style={[type.label, { color: color.muted }]}>{isOrigin ? '자주 쓰는 곳' : '최근 목적지'}</Text>
             <Card style={{ padding: 8 }}>
               {recents.map((recent, i) => {
-                const active = recent.name === state.destinationName;
+                const active = recent.name === (isOrigin ? state.originName : state.destinationName);
                 return (
                   <React.Fragment key={recent.name}>
                     {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}

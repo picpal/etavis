@@ -1,6 +1,6 @@
 /** A9 — 경유지 할 일 체크리스트 시트 (체크는 재계산을 유발하지 않는다) */
 import React, { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { dwellBasis, toHHMM, toMin, usePlan } from '../state/plan';
@@ -37,6 +37,7 @@ function Checkbox({ done }: { done: boolean }) {
 
 export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  const { height: H } = useWindowDimensions();
   const { state, toggleTask, updateTask, addTask, removeTask } = usePlan();
   const scheduledRef = React.useRef<string | null>(null);
   // 할 일 인라인 편집
@@ -152,6 +153,13 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             </Text>
           </Card>
 
+          {/* 할 일이 여섯 개만 돼도 넘친다 — 목록은 스크롤 영역에 둔다 */}
+          <ScrollView
+            style={{ maxHeight: Math.max(200, H - 520) }}
+            contentContainerStyle={{ gap: 14 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
           {/* 여기서 할 일 */}
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
             <Text style={[type.label, { color: color.muted }]}>여기서 할 일</Text>
@@ -273,6 +281,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
               </Text>
             </Pressable>
           </Card>
+          </ScrollView>
 
           {/* 출발 5분 전 알림은 도착하면 자동 예약 — 별도 토글 없음 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>

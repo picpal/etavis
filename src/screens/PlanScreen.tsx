@@ -4,8 +4,9 @@ import React, { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
-import { toHHMM, usePlan } from '../state/plan';
-import { Bubble, haptic } from '../components/common';
+import { arriveByText, toHHMM, usePlan } from '../state/plan';
+import { Bubble, haptic, MicroLabelRow, PrimaryButton } from '../components/common';
+import { Sheet } from '../components/Sheet';
 import { DottedLineH } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -145,12 +146,32 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, setArriveBy } = usePlan();
   const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
   const [dismissedAt, setDismissedAt] = useState(-1);
   const promptVisible = state.chat.length > dismissedAt;
+
+  /*
+    경로를 찾기 전에 '애초에 가능한 시간인가'부터 답한다.
+    들를 곳 없이 직행으로만 가도 마감을 넘긴다면, 어떤 경로를 찾아도 소용없다.
+    이 앱이 하는 일이 시간 타당성 판단이니 그 답이 제일 먼저 나와야 한다.
+  */
+  const [impossible, setImpossible] = useState<{ arriveMin: number; overMin: number } | null>(null);
+
+  const startSearch = () => {
+    if (state.arriveByMin != null) {
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const arriveMin = nowMin + ds.directMin;
+      if (arriveMin > state.arriveByMin) {
+        setImpossible({ arriveMin, overMin: arriveMin - state.arriveByMin });
+        return;
+      }
+    }
+    navigation.navigate('Calculating');
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
@@ -188,10 +209,7 @@ export function PlanScreen({ navigation }: Props) {
             </AssistantShell>
           )}
           {promptVisible && (
-            <CalculatePrompt
-              onYes={() => navigation.navigate('Calculating')}
-              onNo={() => setDismissedAt(state.chat.length)}
-            />
+            <CalculatePrompt onYes={startSearch} onNo={() => setDismissedAt(state.chat.length)} />
           )}
         </ScrollView>
 
@@ -202,6 +220,57 @@ export function PlanScreen({ navigation }: Props) {
         />
       </KeyboardAvoidingView>
       <TabBar />
+
+      {/* 직행으로도 마감을 못 맞추는 경우 — 경로를 찾기 전에 먼저 말한다 */}
+      <Sheet visible={!!impossible} onClose={() => setImpossible(null)}>
+        {impossible && (
+          <View style={{ paddingTop: 8, paddingHorizontal: 20, paddingBottom: 24, gap: 14 }}>
+            <View style={{ gap: 6 }}>
+              <Text style={[type.titleL, { color: color.ink }]}>지금 출발해도 늦어요</Text>
+              <Text style={[type.body, { color: color.muted }]}>
+                들르는 곳 없이 곧장 가도 {arriveByText(impossible.arriveMin).replace('까지', '')} 도착이라,
+                목표보다 {impossible.overMin}분 넘겨요. 경유지를 넣으면 더 늦어집니다.
+              </Text>
+            </View>
+
+            <MicroLabelRow
+              items={[
+                { label: '직행', value: `${ds.directMin}분` },
+                { label: '도착 예정', value: toHHMM(impossible.arriveMin).padStart(5, '0') },
+                { label: '초과', value: `+${impossible.overMin}분`, tint: color.amberDeep },
+              ]}
+            />
+
+            <PrimaryButton
+              label="도착 시각 다시 정하기"
+              height={54}
+              borderRadius={16}
+              onPress={() => {
+                setImpossible(null);
+                setArriveBy(null);
+                navigation.goBack();
+              }}
+            />
+            <Pressable
+              onPress={() => {
+                haptic();
+                setImpossible(null);
+                navigation.navigate('Calculating');
+              }}
+              style={({ pressed }) => ({
+                minHeight: 54,
+                borderRadius: 16,
+                backgroundColor: color.track,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: pressed ? 0.8 : 1,
+              })}
+            >
+              <Text style={[type.btn, { color: color.body }]}>그래도 경로 찾기</Text>
+            </Pressable>
+          </View>
+        )}
+      </Sheet>
     </View>
   );
 }

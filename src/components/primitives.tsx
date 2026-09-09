@@ -258,6 +258,47 @@ export function PencilIcon({ size = 14, tint = color.muted }: { size?: number; t
 }
 
 /** 설정 톱니바퀴 아이콘 */
+/** 일행 초대 — 사람 + 더하기 */
+export function PersonPlusIcon({ size = 22, tint = color.body }: { size?: number; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={9.6} cy={8} r={3.4} stroke={tint} strokeWidth={2} fill="none" />
+      <Path
+        d="M3.6 19.4a6.2 6.2 0 0 1 12 0"
+        stroke={tint}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+      />
+      <Path d="M18.6 7.4v5.2M16 10h5.2" stroke={tint} strokeWidth={2} fill="none" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/** 스왑 — 위아래로 엇갈린 화살표 */
+export function SwapIcon({ size = 20, tint = color.body }: { size?: number; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M8 4.5v15M8 4.5L4.8 7.9M8 4.5l3.2 3.4"
+        stroke={tint}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M16 19.5v-15M16 19.5l3.2-3.4M16 19.5l-3.2-3.4"
+        stroke={tint}
+        strokeWidth={2}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** 완료 — 채워진 원 안의 체크 */
 export function CheckCircle({ size = 22, tint = color.green }: { size?: number; tint?: string }) {
   return (

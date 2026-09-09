@@ -53,6 +53,8 @@ export type PlanState = {
   totals: { totalMin: number; deltaMin: number; stopCount: number };
   chat: string[];
   failNext: boolean;
+  /** 개발용 — 도착하지 않은 경유지에서도 혼잡도를 묻는다. 실사용에서는 꺼야 한다 */
+  devAnyCongestion: boolean;
   recalcPending: boolean;
   /** A5에서 경로를 확정했는지 — 진행중 탭·새 계획 교체 확인의 기준 */
   planConfirmed: boolean;
@@ -169,6 +171,7 @@ function initState(ds: Dataset): PlanState {
     optionOverrides: {},
     chat: [ds.userMessage],
     failNext: false,
+    devAnyCongestion: true,
     recalcPending: false,
     planConfirmed: false,
     congestionReport: null,
@@ -309,6 +312,7 @@ type Action =
   | { type: 'ADD_TASK'; stopId: string; taskId: string }
   | { type: 'REMOVE_TASK'; stopId: string; taskId: string }
   | { type: 'SET_FAIL_NEXT'; value: boolean }
+  | { type: 'SET_DEV_ANY_CONGESTION'; value: boolean }
   | { type: 'SET_CONGESTION'; value: string | null }
   | { type: 'CONFIRM_PLAN' }
   | { type: 'ARRIVE_AT_STOP' }
@@ -427,13 +431,16 @@ function reducer(state: PlanState, action: Action): PlanState {
     }
     case 'SET_FAIL_NEXT':
       return { ...state, failNext: action.value };
+    case 'SET_DEV_ANY_CONGESTION':
+      return { ...state, devAnyCongestion: action.value };
     case 'SET_CONGESTION':
       return { ...state, congestionReport: action.value };
     case 'REPORT_STOP_CONGESTION': {
       /* 실제로 그 경유지에 도착해 체류 중일 때만 받는다.
          화면에서도 막지만, 여기서 한 번 더 막아야 다른 경로로 들어와도 오제보가 안 생긴다 */
       const target = state.stops[state.passedCount];
-      if (!state.atStop || !target || target.id !== action.stopId) return state;
+      const arrived = state.atStop && target && target.id === action.stopId;
+      if (!arrived && !state.devAnyCongestion) return state;
       const stops = state.stops.map(s =>
         s.id === action.stopId ? { ...s, congestion: action.level } : s,
       );
@@ -481,6 +488,7 @@ type PlanApi = {
   addTask: (stopId: string, taskId: string) => void;
   removeTask: (stopId: string, taskId: string) => void;
   setFailNext: (value: boolean) => void;
+  setDevAnyCongestion: (value: boolean) => void;
   setCongestionReport: (value: string | null) => void;
   /** 경유지 혼잡도 제보 — 도착해 체류 중인 경유지에만 먹는다 */
   reportStopCongestion: (stopId: string, level: CongestionKey) => void;
@@ -555,6 +563,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       addTask: (stopId, taskId) => dispatch({ type: 'ADD_TASK', stopId, taskId }),
       removeTask: (stopId, taskId) => dispatch({ type: 'REMOVE_TASK', stopId, taskId }),
       setFailNext: value => dispatch({ type: 'SET_FAIL_NEXT', value }),
+      setDevAnyCongestion: value => dispatch({ type: 'SET_DEV_ANY_CONGESTION', value }),
       setCongestionReport: value => dispatch({ type: 'SET_CONGESTION', value }),
       reportStopCongestion: (stopId, level) => dispatch({ type: 'REPORT_STOP_CONGESTION', stopId, level }),
       confirmPlan: () => dispatch({ type: 'CONFIRM_PLAN' }),

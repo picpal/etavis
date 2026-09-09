@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } fro
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
-import { dwellBasis, toHHMM, toMin, usePlan } from '../state/plan';
+import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic } from '../components/common';
 import { CongestionKey, CONGESTION, congestionLabel } from '../lib/congestion';
 import { CheckCircle, CheckMark, Hairline } from '../components/primitives';
@@ -21,7 +21,7 @@ const LIST_CARD_PAD = 16;
 const CONGESTION_CARD_H = 109;
 const CONGESTION_H = CONGESTION_CARD_H + 14;
 /** 그랩바 + 헤더 + 도착 카드 + 목록 제목 + 하단 안내 */
-const SHEET_CHROME_H = 235;
+const SHEET_CHROME_H = 211;
 
 function Checkbox({ done }: { done: boolean }) {
   if (done) {
@@ -66,8 +66,9 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   const remainMin = stop ? Math.max(stop.dwellMin - 6, 1) : 0;
   // 실제로 이 경유지에 도착해 체류 중인지 (진행중 탭의 '도착했어요'로 전환)
   const dwelling = !!stop && state.atStop && state.stops[state.passedCount]?.id === stop.id;
-  // 도착해 체류 중이고 아직 제보 전일 때만 혼잡도를 묻는다
-  const askCongestion = dwelling && !stop?.congestion;
+  // 도착해 체류 중이고 아직 제보 전일 때만 혼잡도를 묻는다.
+  // devAnyCongestion은 개발 메뉴의 테스트 스위치 — 도착 전에도 열어 본다
+  const askCongestion = (dwelling || state.devAnyCongestion) && !stop?.congestion;
 
   /* 제보하면 그 자리에서 고맙다고 하고 시트가 닫힌다.
      dispatch 즉시 askCongestion이 꺼지므로, 인사를 띄우는 동안은
@@ -171,8 +172,10 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
           </View>
 
           {/* 도착 상태 — 서 있는 사람에게 필요한 건 언제 나가야 하는지 뿐이다.
-              도착 시각과 체류 예정은 '남은 N분'이 대신하므로 뺐다 */}
-          <Card style={{ padding: 14, gap: 8 }}>
+              도착 시각과 체류 예정은 '남은 N분'이 대신하므로 뺐다.
+              체류시간의 '근거'도 뺐다 — 할 일 개수로 몇 분 걸릴지는 알 수 없다.
+              모르는 걸 아는 척하면 나머지 숫자까지 못 믿게 된다 */}
+          <Card style={{ padding: 14 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View
                 style={{
@@ -202,10 +205,6 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                 </View>
               )}
             </View>
-            {/* 체류시간의 근거는 남긴다 — 왜 10분인지가 이 앱의 값이다 */}
-            <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 16, color: color.muted }}>
-              체류 {stop.dwellMin}분은 {dwellBasis(stop)}이에요
-            </Text>
           </Card>
         </View>
 

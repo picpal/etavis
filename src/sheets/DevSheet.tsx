@@ -31,7 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const insets = useSafeAreaInsets();
-  const { state, setDataset, setFailNext } = usePlan();
+  const { state, setDataset, setFailNext, setDevAnyCongestion } = usePlan();
   const tracker = useTracker();
 
   return (
@@ -118,6 +118,34 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
               backgroundColor: state.failNext ? color.primary : color.track,
               padding: 2,
               alignItems: state.failNext ? 'flex-end' : 'flex-start',
+              justifyContent: 'center',
+            }}
+          >
+            <View style={{ width: 27, height: 27, borderRadius: 13.5, backgroundColor: '#fff' }} />
+          </Pressable>
+        </Card>
+
+        <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>
+              도착 안 해도 혼잡도 묻기
+            </Text>
+            <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
+              테스트용이에요 · 끄면 실제로 도착한 경유지에서만 물어요
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => {
+              haptic();
+              setDevAnyCongestion(!state.devAnyCongestion);
+            }}
+            style={{
+              width: 51,
+              height: 31,
+              borderRadius: 16,
+              backgroundColor: state.devAnyCongestion ? color.primary : color.track,
+              padding: 2,
+              alignItems: state.devAnyCongestion ? 'flex-end' : 'flex-start',
               justifyContent: 'center',
             }}
           >

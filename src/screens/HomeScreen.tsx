@@ -91,7 +91,7 @@ export function HomeScreen({ navigation }: Props) {
           <View style={{ width: 12, alignItems: 'center', paddingVertical: 6 }}>
             <View style={{ width: 11, height: 11, borderRadius: 5.5, borderWidth: 3, borderColor: color.primary }} />
             <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
-            <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: color.ink }} />
+            <View style={{ width: 11, height: 11, borderRadius: 5.5, backgroundColor: color.green }} />
           </View>
           <View style={{ flex: 1, gap: 14, paddingRight: 54 }}>
             <Pressable
@@ -130,8 +130,8 @@ export function HomeScreen({ navigation }: Props) {
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={({ pressed }) => ({
                   position: 'absolute',
-                  // 경계선 끝에서 살짝 떨어뜨려 선에 붙지 않게 한다
-                  right: -46,
+                  // 경계선 끝에서 떨어뜨려, 카드 안쪽 여백 경계에 맞춘다
+                  right: -54,
                   alignSelf: 'center',
                   width: 44,
                   height: 44,

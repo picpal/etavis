@@ -452,15 +452,16 @@ export function Node({
       />
     );
   }
+  // 목적지 — 도착을 뜻하는 초록. 모양은 다른 노드와 같은 점이라 타임라인이 흐트러지지 않는다.
+  // 지나온 뒤에는 흰 테두리를 빼서 커넥터 실선이 끊겨 보이지 않게 한다
   return (
     <View
       style={{
         width: size,
         height: size,
-        borderRadius: 3,
-        backgroundColor: color.ink,
-        borderWidth: 2,
-        borderColor: '#fff',
+        borderRadius: size / 2,
+        backgroundColor: color.green,
+        ...(state === 'passed' ? null : { borderWidth: 2, borderColor: '#fff' }),
       }}
     />
   );

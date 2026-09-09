@@ -641,7 +641,7 @@ function HistoryDetailSheet({
         0,
       )
     : 0;
-  const sheetHeight = SHEET_CHROME_H + bodyH + Math.max(insets.bottom, 20);
+  const sheetHeight = SHEET_CHROME_H + bodyH + insets.bottom + 24;
 
   return (
     <Sheet visible={!!record} onClose={onClose} height={sheetHeight}>
@@ -686,7 +686,7 @@ function HistoryDetailSheet({
             contentContainerStyle={{
               paddingHorizontal: 20,
               paddingTop: 14,
-              paddingBottom: Math.max(insets.bottom, 20),
+              paddingBottom: insets.bottom + 24,
             }}
           >
             {rec.rows.map((row, i) => (

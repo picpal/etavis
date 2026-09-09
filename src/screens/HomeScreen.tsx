@@ -93,7 +93,7 @@ export function HomeScreen({ navigation }: Props) {
             <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
             <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: color.ink }} />
           </View>
-          <View style={{ flex: 1, gap: 14, paddingRight: 40 }}>
+          <View style={{ flex: 1, gap: 14, paddingRight: 54 }}>
             <Pressable
               onPress={() => {
                 haptic();
@@ -121,6 +121,8 @@ export function HomeScreen({ navigation }: Props) {
             <View style={{ justifyContent: 'center' }}>
               <Hairline />
               <Pressable
+                // 목적지가 비어 있으면 바꿀 게 없다
+                disabled={!state.destinationName}
                 onPress={() => {
                   haptic();
                   swapEndpoints();
@@ -128,18 +130,19 @@ export function HomeScreen({ navigation }: Props) {
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={({ pressed }) => ({
                   position: 'absolute',
-                  right: -34,
+                  // 경계선 끝에서 살짝 떨어뜨려 선에 붙지 않게 한다
+                  right: -46,
                   alignSelf: 'center',
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
                   backgroundColor: color.bg,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  opacity: pressed ? 0.6 : 1,
+                  opacity: !state.destinationName ? 0.35 : pressed ? 0.6 : 1,
                 })}
               >
-                <SwapIcon size={18} tint={color.body} />
+                <SwapIcon size={22} tint={color.body} />
               </Pressable>
             </View>
             <Pressable

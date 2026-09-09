@@ -292,7 +292,7 @@ type Action =
   | { type: 'SET_ARRIVE_BY'; min: number | null }
   | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null }
   | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null }
-  | { type: 'SWAP_ENDPOINTS' }
+  | { type: 'SWAP_ENDPOINTS'; myLocation: LatLng | null }
   | { type: 'APPLY_OPTION'; id: string }
   | { type: 'SELECT_OPTION'; id: string }
   | { type: 'SET_OPTION_STORE'; optionId: string; baseId: string; candidateId: string }
@@ -325,15 +325,20 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, destinationName: action.name, destinationCoord: action.coord };
     case 'SET_ORIGIN':
       return { ...state, originName: action.name, originCoord: action.coord };
-    case 'SWAP_ENDPOINTS':
-      // 출발지가 '내 위치'(null)여도 스왑이 되도록 표시 이름을 넣어 굳힌다
+    case 'SWAP_ENDPOINTS': {
+      /*
+        출발지가 '내 위치'면 넘길 이름이 없어 목적지가 비어버린다.
+        그때는 지금 있는 곳을 목적지로 굳힌다 — '여기로 돌아오기'가 실제 의도다.
+      */
+      const fromMyLocation = state.originName == null;
       return {
         ...state,
         originName: state.destinationName,
         originCoord: state.destinationCoord,
-        destinationName: state.originName,
-        destinationCoord: state.originCoord,
+        destinationName: fromMyLocation ? '내 위치' : state.originName,
+        destinationCoord: fromMyLocation ? action.myLocation : state.originCoord,
       };
+    }
     case 'SELECT_OPTION':
       return { ...state, selectedOptionId: action.id };
     case 'SET_OPTION_STORE': {
@@ -497,7 +502,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setOrigin: (name, coord) => dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null }),
       swapEndpoints: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        dispatch({ type: 'SWAP_ENDPOINTS' });
+        dispatch({ type: 'SWAP_ENDPOINTS', myLocation: here.coord });
       },
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
       originDisplay: state.originName ?? (here.coord ? '내 위치' : state.dataset.origin.name),

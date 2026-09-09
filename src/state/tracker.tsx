@@ -148,6 +148,15 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const confirmRef = useRef(0);
   const tickRef = useRef(0);
   const dwellHoldRef = useRef(0);
+  /*
+    이미 알린 전환을 기억한다.
+    위치 공급원이 둘(포그라운드 watch + 배경 태스크)이고 dispatch는 비동기라,
+    같은 도착·출발을 여러 번 판정하게 된다. 상태는 멱등이지만 알림은 그대로 중복된다.
+  */
+  const notifiedRef = useRef<{ arrived: string | null; departed: string | null }>({
+    arrived: null,
+    departed: null,
+  });
 
   const setMode = (next: SimMode) => {
     setModeRaw(next);
@@ -186,15 +195,21 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       if (!atStop && distToStop < arriveR) {
         actionsRef.current.arriveAtStop();
         // 전환 순간에만 알린다 — 상시 갱신은 알림으로 흉내내면 계속 울려서 방해가 된다
-        void notifyArrival(target.id, target.name, target.tasks.length);
+        if (notifiedRef.current.arrived !== target.id) {
+          notifiedRef.current.arrived = target.id;
+          void notifyArrival(target.id, target.name, target.tasks.length);
+        }
       } else if (atStop && distToStop > departR) {
         actionsRef.current.departStop();
-        const next = stops[passedCount + 1];
-        void notifyNextLeg(
-          next?.name ?? destinationDisplay,
-          formatEta(next?.arriveAt ?? planRef.current.destArriveAt),
-          planRef.current.mode === 'transit',
-        );
+        if (notifiedRef.current.departed !== target.id) {
+          notifiedRef.current.departed = target.id;
+          const next = stops[passedCount + 1];
+          void notifyNextLeg(
+            next?.name ?? destinationDisplay,
+            formatEta(next?.arriveAt ?? planRef.current.destArriveAt),
+            planRef.current.mode === 'transit',
+          );
+        }
       }
     }
 

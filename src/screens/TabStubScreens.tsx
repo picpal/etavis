@@ -627,40 +627,45 @@ function HistoryDetailSheet({
             ]}
           />
 
-          {/* 지난 계획 타임라인 — 경로와 그때 하기로 했던 일까지 (읽기 전용) */}
-          <Card style={{ padding: 18, gap: 14 }}>
-            {rec.rows.map(row => (
-              <View key={row.name} style={{ gap: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  {row.node === 'origin' ? (
-                    <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: color.primary }} />
-                  ) : row.node === 'stop' ? (
-                    <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.primary, marginLeft: 1 }} />
-                  ) : (
-                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: color.ink }} />
-                  )}
-                  <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 18, color: color.ink }}>
-                    {row.name}
-                  </Text>
-                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
-                    {row.time}
-                  </Text>
-                </View>
-                {row.tasks?.length ? (
-                  <View style={{ paddingLeft: 22, gap: 5 }}>
-                    {row.tasks.map(t => (
-                      <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-                        <CheckCircle size={14} tint={color.green} />
-                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
-                          {t}
-                        </Text>
-                      </View>
-                    ))}
+          {/* 지난 계획 — 진행중과 같은 타임라인 구조로. 다 지나온 이동이라 커넥터는 전부 실선 */}
+          <Text style={[type.label, { color: color.muted }]}>일정 순서</Text>
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            {rec.rows.map((row, i) => (
+              <TimelineRow
+                key={row.name}
+                node={row.node}
+                nodeState="passed"
+                above={i === 0 ? 'none' : 'solid'}
+                below={i === rec.rows.length - 1 ? 'none' : 'solid'}
+              >
+                <Card style={{ padding: 16, gap: 10 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text
+                      style={{ flex: 1, fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 20, color: color.ink }}
+                      numberOfLines={1}
+                    >
+                      {row.name}
+                    </Text>
+                    <Text style={[type.time, { color: color.ink }]}>{row.time}</Text>
                   </View>
-                ) : null}
-              </View>
+                  {row.tasks?.length ? (
+                    <View style={{ gap: 6 }}>
+                      {row.tasks.map(t => (
+                        <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                          <CheckCircle size={15} tint={color.green} />
+                          <Text
+                            style={{ flex: 1, fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}
+                          >
+                            {t}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </Card>
+              </TimelineRow>
             ))}
-          </Card>
+          </ScrollView>
 
           {/* '이 경로로 다시 계획하기'는 뺐다 — 기록은 되짚어 보는 곳이지 다시 실행하는 곳이 아니다 */}
         </View>

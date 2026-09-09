@@ -1,12 +1,13 @@
 /** A9 — 경유지 할 일 체크리스트 시트 (체크는 재계산을 유발하지 않는다) */
 import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { dwellBasis, toHHMM, toMin, usePlan } from '../state/plan';
-import { Card, haptic, MicroLabelRow } from '../components/common';
-import { CONGESTION, congestionLabel } from '../lib/congestion';
-import { CheckMark, Hairline } from '../components/primitives';
+import { Card, haptic } from '../components/common';
+import { CongestionKey, CONGESTION, congestionLabel } from '../lib/congestion';
+import { CheckCircle, CheckMark, Hairline } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
 import { cancelScheduled, scheduleDepartureReminder } from '../notifications';
 
@@ -17,9 +18,10 @@ const TASK_ROW_H = 49; // paddingVertical 14×2 + lineHeight 20 + 구분선
 const TASK_WRAP_H = 20; // 긴 할 일이 두 줄로 넘어갈 때
 const ADD_ROW_H = 48;
 const LIST_CARD_PAD = 16;
-const CONGESTION_H = 123;
+const CONGESTION_CARD_H = 109;
+const CONGESTION_H = CONGESTION_CARD_H + 14;
 /** 그랩바 + 헤더 + 도착 카드 + 목록 제목 + 하단 안내 */
-const SHEET_CHROME_H = 393;
+const SHEET_CHROME_H = 235;
 
 function Checkbox({ done }: { done: boolean }) {
   if (done) {
@@ -60,13 +62,49 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   if (stopId) lastIdRef.current = stopId;
   const stop = state.stops.find(s => s.id === lastIdRef.current);
 
-  const doneCount = stop ? stop.tasks.filter(t => t.done).length : 0;
   const departAt = stop ? toHHMM(toMin(stop.arriveAt) + stop.dwellMin) : '';
   const remainMin = stop ? Math.max(stop.dwellMin - 6, 1) : 0;
   // 실제로 이 경유지에 도착해 체류 중인지 (진행중 탭의 '도착했어요'로 전환)
   const dwelling = !!stop && state.atStop && state.stops[state.passedCount]?.id === stop.id;
   // 도착해 체류 중이고 아직 제보 전일 때만 혼잡도를 묻는다
   const askCongestion = dwelling && !stop?.congestion;
+
+  /* 제보하면 그 자리에서 고맙다고 하고 시트가 닫힌다.
+     dispatch 즉시 askCongestion이 꺼지므로, 인사를 띄우는 동안은
+     이 로컬 상태가 카드를 붙들고 있어야 화면이 튀지 않는다 */
+  const [thanks, setThanks] = useState<CongestionKey | null>(null);
+  const showCongestion = askCongestion || !!thanks;
+  const thanksIn = useSharedValue(0);
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
+
+  const submitCongestion = (level: CongestionKey) => {
+    if (!stop) return;
+    haptic();
+    reportStopCongestion(stop.id, level);
+    setThanks(level);
+  };
+
+  // 시트를 다시 열면 깨끗한 상태로
+  React.useEffect(() => {
+    if (!stopId) setThanks(null);
+  }, [stopId]);
+
+  React.useEffect(() => {
+    if (!thanks) {
+      thanksIn.value = 0;
+      return;
+    }
+    thanksIn.value = withSpring(1, { damping: 13, stiffness: 210 });
+    const t = setTimeout(() => closeRef.current(), 1150);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [thanks]);
+
+  const thanksStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(thanksIn.value, { duration: 160 }),
+    transform: [{ scale: 0.9 + thanksIn.value * 0.1 }],
+  }));
 
   /* ScrollView는 콘텐츠만큼 늘어나지 않는다. 시트가 콘텐츠 높이로 뜨면
      목록에 확정 높이가 안 잡혀 maxHeight를 줘도 스크롤이 죽는다.
@@ -77,7 +115,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
       ADD_ROW_H +
       LIST_CARD_PAD
     : 0;
-  const sheetHeight = SHEET_CHROME_H + listH + (askCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
+  const sheetHeight = SHEET_CHROME_H + listH + (showCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
 
   // 경유지에 도착(시트 열림)하면 출발 5분 전 알림을 자동 예약
   const stopName = stop?.name;
@@ -132,8 +170,9 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             </Pressable>
           </View>
 
-          {/* 도착 상태 카드 */}
-          <Card style={{ padding: 18, gap: 14 }}>
+          {/* 도착 상태 — 서 있는 사람에게 필요한 건 언제 나가야 하는지 뿐이다.
+              도착 시각과 체류 예정은 '남은 N분'이 대신하므로 뺐다 */}
+          <Card style={{ padding: 14, gap: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View
                 style={{
@@ -148,45 +187,31 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                   flex: 1,
                   fontFamily: 'Pretendard-SemiBold',
                   fontSize: 15,
-                  lineHeight: 18,
+                  lineHeight: 19,
                   color: dwelling ? GREEN_DEEP : color.body,
                 }}
+                numberOfLines={1}
               >
-                {dwelling ? '도착했어요 · 체류 중' : '도착 예정'}
+                {dwelling ? `체류 중 · ${departAt} 출발` : `도착 예정 ${stop.arriveAt} · ${departAt} 출발`}
               </Text>
               {dwelling && (
-                <View style={{ backgroundColor: color.primaryTint, paddingVertical: 8, paddingHorizontal: 10, borderRadius: 9 }}>
+                <View style={{ backgroundColor: color.primaryTint, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 9 }}>
                   <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: color.primary }}>
                     남은 {remainMin}분
                   </Text>
                 </View>
               )}
             </View>
-            <MicroLabelRow
-              padV={13}
-              valueSize={16}
-              items={[
-                { label: '도착', value: stop.arriveAt },
-                { label: '체류 예정', value: `${stop.dwellMin}분` },
-                { label: '다음 출발', value: departAt },
-              ]}
-            />
-            {/* 체류시간의 근거를 밝힌다 */}
+            {/* 체류시간의 근거는 남긴다 — 왜 10분인지가 이 앱의 값이다 */}
             <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 16, color: color.muted }}>
-              체류 {stop.dwellMin}분은 {dwellBasis(stop)}이에요 · 더 머물면 다음 일정이 밀려요
+              체류 {stop.dwellMin}분은 {dwellBasis(stop)}이에요
             </Text>
           </Card>
         </View>
 
-          {/* 제목과 진행수는 고정 — 목록과 같이 밀려 올라가면 지금 몇 개 남았는지를 잃는다 */}
-          <View style={{ paddingHorizontal: 20, paddingTop: 14, gap: 10 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <Text style={[type.label, { color: color.muted }]}>여기서 할 일</Text>
-              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 12, color: color.primary }}>
-                {doneCount} / {stop.tasks.length} 완료
-              </Text>
-            </View>
-            {/* 스크롤 경계 — 없으면 카드가 제목 밑으로 파고들어 겹쳐 보인다 */}
+          {/* 스크롤 경계 — 없으면 카드가 도착 카드 밑으로 파고들어 겹쳐 보인다.
+              '여기서 할 일' 제목은 뺐다 — 시트 헤더가 이미 경유지 할 일이라고 말한다 */}
+          <View style={{ paddingTop: 14 }}>
             <Hairline />
           </View>
 
@@ -324,45 +349,54 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
           {/* 혼잡도 제보 — '다 했어요' 자리를 대신한다.
               그 버튼은 시트를 닫기만 했다. 떠나는 순간은 여기가 얼마나 붐볐는지
               사용자가 아는 유일한 시점이라, 같은 자리에서 그걸 받는 편이 값이 있다.
-              도착해 체류 중일 때만 연다 — 가보지도 않은 곳의 혼잡도는 제보가 아니라 소음이다 */}
-          {askCongestion && (
-            <Card style={{ padding: 16, gap: 12 }}>
-              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>
-                여기 얼마나 붐비나요?
-              </Text>
-              {/* 폭을 4등분해 꽉 채운다 — 한 번 스치듯 누르고 지나갈 자리라 표적이 커야 한다 */}
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {CONGESTION.map(c => (
-                  <Pressable
-                    key={c.key}
-                    onPress={() => {
-                      haptic();
-                      reportStopCongestion(stop.id, c.key);
-                    }}
-                    style={({ pressed }) => ({
-                      flex: 1,
-                      height: 46,
-                      borderRadius: 12,
-                      backgroundColor: color.bg,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      opacity: pressed ? 0.6 : 1,
-                    })}
-                  >
-                    <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: c.tint }}>
-                      {c.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+              도착해 체류 중일 때만 연다 — 가보지도 않은 곳의 혼잡도는 제보가 아니라 소음이다.
+              카드 높이는 고정 — 인사로 바뀔 때 시트가 출렁이면 안 된다 */}
+          {showCongestion && (
+            <Card style={{ padding: 16, height: CONGESTION_CARD_H, justifyContent: 'center' }}>
+              {thanks ? (
+                <Animated.View
+                  style={[
+                    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+                    thanksStyle,
+                  ]}
+                >
+                  <CheckCircle size={22} tint={color.green} />
+                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: GREEN_DEEP }}>
+                    ‘{congestionLabel(thanks)}’ 제보 고마워요
+                  </Text>
+                </Animated.View>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>
+                    여기 얼마나 붐비나요?
+                  </Text>
+                  {/* 폭을 4등분해 꽉 채운다 — 한 번 스치듯 누르고 지나갈 자리라 표적이 커야 한다 */}
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {CONGESTION.map(c => (
+                      <Pressable
+                        key={c.key}
+                        onPress={() => submitCongestion(c.key)}
+                        style={({ pressed }) => ({
+                          flex: 1,
+                          height: 46,
+                          borderRadius: 12,
+                          backgroundColor: color.bg,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: pressed ? 0.6 : 1,
+                        })}
+                      >
+                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: c.tint }}>
+                          {c.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              )}
             </Card>
           )}
 
-          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
-            {stop.congestion
-              ? `혼잡도 '${congestionLabel(stop.congestion)}' 제보 고마워요`
-              : '체크는 경로를 다시 계산하지 않아요'}
-          </Text>
           </View>
         </View>
       )}

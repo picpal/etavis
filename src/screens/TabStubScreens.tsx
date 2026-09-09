@@ -8,7 +8,7 @@ import { color, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { useTracker } from '../state/tracker';
 import { Card, haptic, MicroLabelRow } from '../components/common';
-import { CheckCircle, Chevron, HeartIcon, PencilIcon, PersonPlusIcon } from '../components/primitives';
+import { CheckCircle, Chevron, Hairline, HeartIcon, PencilIcon, PersonPlusIcon } from '../components/primitives';
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
 import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
@@ -551,6 +551,28 @@ type HistoryRecord = {
 
 const HISTORY_RECORDS: HistoryRecord[] = [
   {
+    route: '집 → 회사',
+    when: '오늘 07:40',
+    min: 62,
+    note: '경유 2곳 · 자동차',
+    rows: [
+      { name: '집', time: '07:40', node: 'origin' },
+      {
+        name: '올리브영 국회의사당역점',
+        time: '08:05',
+        node: 'stop',
+        tasks: ['선크림 리필', '클렌징폼 2+1 확인', '멤버십 적립'],
+      },
+      {
+        name: '파리바게뜨 목동역점',
+        time: '08:31',
+        node: 'stop',
+        tasks: ['샌드위치 2개', '아메리카노 픽업'],
+      },
+      { name: '회사', time: '08:42', node: 'dest' },
+    ],
+  },
+  {
     route: '집 → 평창역',
     when: '어제 14:20',
     min: 41,
@@ -583,58 +605,96 @@ const HISTORY_RECORDS: HistoryRecord[] = [
   },
 ];
 
+/** 두 시각 사이 소요 — 카드 사이 구간 표기 겸 시각적 간격 */
+function legLabel(from: string, to: string): string | undefined {
+  const [fh, fm] = from.split(':').map(Number);
+  const [th, tm] = to.split(':').map(Number);
+  const d = th * 60 + tm - (fh * 60 + fm);
+  return Number.isFinite(d) && d > 0 ? `이동 ${d}분` : undefined;
+}
+
+/** 카드 한 장 높이 어림 — 시트를 내용만큼만 띄우기 위한 계산 */
+const ROW_BASE_H = 54;
+const TASK_H = 25;
+const LEG_H = 27;
+/** 그랩바 + 헤더 + 요약 + 구분선 위아래 여백 */
+const SHEET_CHROME_H = 206;
+
 /** 기록 상세 — 지난 계획을 읽기 전용 타임라인으로 */
 function HistoryDetailSheet({
   record,
   onClose,
-  onReplan,
 }: {
   record: HistoryRecord | null;
   onClose: () => void;
-  onReplan: (destName: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const lastRef = React.useRef(record);
   if (record) lastRef.current = record;
   const rec = lastRef.current;
 
+  /* 내용이 적으면 작게, 많으면 화면을 꽉 채우고 스크롤한다.
+     ScrollView는 콘텐츠만큼 늘어나지 않으므로 시트에 확정 높이를 줘야 flex:1 스크롤이 산다 */
+  const bodyH = rec
+    ? rec.rows.reduce(
+        (sum, r, i) => sum + ROW_BASE_H + (r.tasks?.length ?? 0) * TASK_H + (i === 0 ? 0 : LEG_H),
+        0,
+      )
+    : 0;
+  const sheetHeight = SHEET_CHROME_H + bodyH + Math.max(insets.bottom, 20);
+
   return (
-    <Sheet visible={!!record} onClose={onClose}>
+    <Sheet visible={!!record} onClose={onClose} height={sheetHeight}>
       {rec && (
-        <View style={{ paddingTop: 8, paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20), gap: 14 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ gap: 4, flex: 1 }}>
-              <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
-                이동 기록 · {rec.when}
-              </Text>
-              <Text style={[type.titleL, { color: color.ink }]} numberOfLines={1}>
-                {rec.route}
-              </Text>
+        <View style={{ flex: 1, paddingTop: 8 }}>
+          <View style={{ paddingHorizontal: 20, gap: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ gap: 4, flex: 1 }}>
+                <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
+                  이동 기록 · {rec.when}
+                </Text>
+                <Text style={[type.titleL, { color: color.ink }]} numberOfLines={1}>
+                  {rec.route}
+                </Text>
+              </View>
+              <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }} style={{ paddingTop: 2 }}>
+                <Text style={[type.action, { color: color.primary }]}>완료</Text>
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Text style={[type.action, { color: color.primary }]}>완료</Text>
-            </Pressable>
+
+            <MicroLabelRow
+              padV={13}
+              valueSize={16}
+              background={color.surface}
+              items={[
+                { label: '총 소요', value: `${rec.min}분` },
+                { label: '경유지', value: `${Math.max(0, rec.rows.length - 2)}곳` },
+                { label: '이동수단', value: '자동차' },
+              ]}
+            />
+
           </View>
 
-          <MicroLabelRow
-            padV={13}
-            valueSize={16}
-            background={color.surface}
-            items={[
-              { label: '총 소요', value: `${rec.min}분` },
-              { label: '경유지', value: `${rec.rows.length - 2}곳` },
-              { label: '이동수단', value: '자동차' },
-            ]}
-          />
+          {/* 스크롤 경계 — 구분선이 없으면 카드가 요약 밑으로 파고들어 겹쳐 보인다.
+              '일정 순서' 라벨은 뺐다 — 헤더가 이미 어떤 이동인지 말해준다 */}
+          <View style={{ height: 16 }} />
+          <Hairline />
 
           {/* 지난 계획 — 진행중과 같은 타임라인 구조로. 다 지나온 이동이라 커넥터는 전부 실선 */}
-          <Text style={[type.label, { color: color.muted }]}>일정 순서</Text>
-          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              paddingHorizontal: 20,
+              paddingTop: 14,
+              paddingBottom: Math.max(insets.bottom, 20),
+            }}
+          >
             {rec.rows.map((row, i) => (
               <TimelineRow
                 key={row.name}
                 node={row.node}
                 nodeState="passed"
+                leg={i === 0 ? undefined : legLabel(rec.rows[i - 1].time, row.time)}
                 above={i === 0 ? 'none' : 'solid'}
                 below={i === rec.rows.length - 1 ? 'none' : 'solid'}
               >
@@ -675,23 +735,13 @@ function HistoryDetailSheet({
 }
 
 export function HistoryScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { setDestination } = usePlan();
   const [selected, setSelected] = useState<HistoryRecord | null>(null);
 
   return (
     <TabPage
       title="이동 기록"
       overlay={
-        <HistoryDetailSheet
-          record={selected}
-          onClose={() => setSelected(null)}
-          onReplan={destName => {
-            setDestination(destName);
-            setSelected(null);
-            navigation.navigate('Home');
-          }}
-        />
+        <HistoryDetailSheet record={selected} onClose={() => setSelected(null)} />
       }
     >
       <Text style={[type.label, { color: color.muted }]}>지난 이동</Text>

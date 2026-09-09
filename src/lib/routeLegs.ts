@@ -12,6 +12,7 @@
 import { useMemo } from 'react';
 import { usePlan } from '../state/plan';
 import { useCurrentPlace } from './currentPlace';
+import { useTracker } from '../state/tracker';
 import { RoutePoint } from './mapLinks';
 
 export type Leg = {
@@ -26,7 +27,14 @@ export type Leg = {
 
 export function useRouteLegs() {
   const { state, destinationDisplay, originDisplay } = usePlan();
-  const here = useCurrentPlace();
+  const place = useCurrentPlace();
+  const tracker = useTracker();
+  /*
+    '내 위치'는 추적 중인 실시간 좌표를 우선 쓴다.
+    useCurrentPlace는 앱을 켤 때 한 번 잡은 값이라, 한참 이동한 뒤에는
+    이름만 '내 위치'이고 좌표는 출발지에 굳어 있게 된다.
+  */
+  const here = { coord: tracker.position ?? place.coord };
 
   const points = useMemo<RoutePoint[]>(
     () => [

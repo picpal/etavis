@@ -8,7 +8,7 @@ import { color, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { useTracker } from '../state/tracker';
 import { Card, haptic, MicroLabelRow } from '../components/common';
-import { Chevron, HeartIcon, PencilIcon, ShareIcon } from '../components/primitives';
+import { CheckCircle, Chevron, HeartIcon, PencilIcon, ShareIcon } from '../components/primitives';
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
 import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
@@ -155,26 +155,29 @@ function StopCard({
   const active = placeState === 'current' || placeState === 'next';
 
   if (placeState === 'passed') {
+    /*
+      지나온 곳도 눌러서 할 일을 볼 수 있어야 한다 — "여기서 뭐 했더라"가 나중에 궁금해진다.
+      취소선은 지우고 회색조만 남겼다. 완료는 우측 초록 체크가 말한다.
+    */
     return (
-      <Card style={{ padding: 16, opacity: 0.6 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Text
-            style={{
-              flex: 1,
-              fontFamily: 'Pretendard-Medium',
-              fontSize: 15,
-              lineHeight: 19,
-              color: color.muted,
-              textDecorationLine: 'line-through',
-            }}
-          >
-            {stop.name}
-          </Text>
-          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
-            들렀어요
-          </Text>
-        </View>
-      </Card>
+      <Pressable onPress={onOpenTasks} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 0.65 })}>
+        <Card style={{ padding: 16, gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 19, color: color.body }}>
+              {stop.name}
+            </Text>
+            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 13, color: color.muted }}>
+              {stop.arriveAt} 들름
+            </Text>
+            <CheckCircle size={22} tint={color.green} />
+          </View>
+          {stop.tasks.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              <SmallChip label={`할 일 ${doneCount} / ${stop.tasks.length}`} tint={color.body} background={color.bg} />
+            </View>
+          )}
+        </Card>
+      </Pressable>
     );
   }
 
@@ -476,7 +479,7 @@ export function TodayScreen() {
 
       <View style={{ flexDirection: 'row', gap: 10 }}>
         <PrimaryButton
-          label={byLeg ? '다음 구간 길찾기' : '지도 앱에서 열기'}
+          label={byLeg ? '구간별 지도 보기' : '지도 앱에서 열기'}
           chevron
           height={56}
           borderRadius={18}
@@ -521,7 +524,13 @@ export function TodayScreen() {
   );
 }
 
-type HistoryRow = { name: string; time: string; node: 'origin' | 'stop' | 'dest' };
+type HistoryRow = {
+  name: string;
+  time: string;
+  node: 'origin' | 'stop' | 'dest';
+  /** 그때 그 장소에서 하기로 했던 일 — '여기서 뭐 했더라'를 되짚는 게 기록의 쓸모다 */
+  tasks?: string[];
+};
 type HistoryRecord = {
   route: string;
   when: string;
@@ -538,7 +547,7 @@ const HISTORY_RECORDS: HistoryRecord[] = [
     note: '경유 1곳 · 자동차',
     rows: [
       { name: '집', time: '14:20', node: 'origin' },
-      { name: '스타벅스 평창점', time: '14:38', node: 'stop' },
+      { name: '스타벅스 평창점', time: '14:38', node: 'stop', tasks: ['아메리카노 2잔 포장', '기프티콘 사용'] },
       { name: '평창역', time: '15:01', node: 'dest' },
     ],
   },
@@ -608,48 +617,42 @@ function HistoryDetailSheet({
             ]}
           />
 
-          {/* 지난 계획 타임라인 (읽기 전용) */}
+          {/* 지난 계획 타임라인 — 경로와 그때 하기로 했던 일까지 (읽기 전용) */}
           <Card style={{ padding: 18, gap: 14 }}>
             {rec.rows.map(row => (
-              <View key={row.name} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                {row.node === 'origin' ? (
-                  <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: color.primary }} />
-                ) : row.node === 'stop' ? (
-                  <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.primary, marginLeft: 1 }} />
-                ) : (
-                  <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: color.ink }} />
-                )}
-                <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 18, color: color.ink }}>
-                  {row.name}
-                </Text>
-                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
-                  {row.time}
-                </Text>
+              <View key={row.name} style={{ gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  {row.node === 'origin' ? (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: color.primary }} />
+                  ) : row.node === 'stop' ? (
+                    <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.primary, marginLeft: 1 }} />
+                  ) : (
+                    <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: color.ink }} />
+                  )}
+                  <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 18, color: color.ink }}>
+                    {row.name}
+                  </Text>
+                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
+                    {row.time}
+                  </Text>
+                </View>
+                {row.tasks?.length ? (
+                  <View style={{ paddingLeft: 22, gap: 5 }}>
+                    {row.tasks.map(t => (
+                      <View key={t} style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                        <CheckCircle size={14} tint={color.green} />
+                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
+                          {t}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
               </View>
             ))}
           </Card>
 
-          <View style={{ gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                haptic();
-                onReplan(rec.rows[rec.rows.length - 1].name);
-              }}
-              style={({ pressed }) => ({
-                minHeight: 54,
-                borderRadius: 16,
-                backgroundColor: color.primary,
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: pressed ? 0.9 : 1,
-              })}
-            >
-              <Text style={[type.btn, { color: '#fff' }]}>이 경로로 다시 계획하기</Text>
-            </Pressable>
-            <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
-              목적지가 채워진 상태로 계획 화면이 열려요
-            </Text>
-          </View>
+          {/* '이 경로로 다시 계획하기'는 뺐다 — 기록은 되짚어 보는 곳이지 다시 실행하는 곳이 아니다 */}
         </View>
       )}
     </Sheet>
@@ -863,6 +866,27 @@ export function NearbyScreen() {
             </Text>
           </View>
           <Card style={{ padding: 8 }}>
+            {/* 빈 카드만 덩그러니 있으면 고장 난 줄 안다. 왜 비었는지 + 뭘 하면 되는지 적는다 */}
+            {visiblePosts.length === 0 && (
+              <View style={{ paddingVertical: 26, paddingHorizontal: 16, gap: 6, alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.body }}>
+                  아직 올라온 소식이 없어요
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: 'Pretendard-Regular',
+                    fontSize: 13,
+                    lineHeight: 19,
+                    color: color.muted,
+                    textAlign: 'center',
+                  }}
+                >
+                  {state.planConfirmed
+                    ? '내 경로와 관련된 소식만 보여드려요.\n아래에서 지금 상황을 한 줄 남기면 첫 소식이 돼요.'
+                    : '아래에서 지금 상황을 한 줄 남겨보세요.\n같은 길을 가는 분들께 도움이 돼요.'}
+                </Text>
+              </View>
+            )}
             {visiblePosts.map((post, i) => {
               const mine = post.id.startsWith('me-');
               return (

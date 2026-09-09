@@ -67,6 +67,10 @@ export const toHHMM = (min: number) =>
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** 마감 시각 표기 — 자정을 넘긴 값은 '내일'로 붙인다 */
+export const arriveByText = (min: number) =>
+  `${min >= 24 * 60 ? '내일' : '오늘'} ${toHHMM(min).padStart(5, '0')}까지`;
+
 /** 구간 이동시간 목 테이블 (from>to, 역방향 fallback) */
 const LEGS: Record<string, { min: number; km: number }> = {
   'origin>s1': { min: 12, km: 6.4 },
@@ -470,12 +474,15 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setDestination: (name, coord) => dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null }),
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
       originDisplay: here.coord ? '내 위치' : state.dataset.origin.name,
+      /*
+        마감 후보는 '지금' 이후만 보여준다. 목 데이터의 출발 시각을 기준으로 잡으면
+        이미 지나간 시각이 목록에 남아 고를 수 있게 된다.
+        30분 뒤부터 12시간치. 자정을 넘어가는 항목은 '내일'로 붙는다.
+      */
       arriveByOptions: (() => {
-        const departMin = toMin(state.dataset.origin.departAt);
-        const start = Math.ceil((departMin + 60) / 30) * 30;
-        const options: number[] = [];
-        for (let m = start; m <= 23 * 60 + 30; m += 30) options.push(m);
-        return options;
+        const now = new Date();
+        const start = Math.ceil((now.getHours() * 60 + now.getMinutes() + 30) / 30) * 30;
+        return Array.from({ length: 24 }, (_, i) => start + i * 30);
       })(),
       selectOption: id => dispatch({ type: 'SELECT_OPTION', id }),
       applyOption: id => dispatch({ type: 'APPLY_OPTION', id }),
@@ -511,8 +518,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'DEPART_STOP' });
       },
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
-      arriveByLabel:
-        state.arriveByMin == null ? '도착 시각 상관없어요' : `오늘 ${toHHMM(state.arriveByMin).padStart(5, '0')}까지`,
+      arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),
     };
   }, [state, here.coord]);

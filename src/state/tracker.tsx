@@ -11,6 +11,7 @@
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
+import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
 import {
   buildPolyline,
@@ -58,6 +59,8 @@ type TrackerState = {
   mode: SimMode;
   /** 위치 권한이 거부돼 실제 GPS를 못 쓰는 상태 */
   permissionDenied: boolean;
+  /** 배경 위치 구독이 켜졌는지 — 앱이 뒤에 있어도 도착·출발을 잡는다 */
+  background: boolean;
   status: TrackStatus;
   position: LatLng | null;
   crossTrackM: number;
@@ -95,6 +98,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const [tracker, setTracker] = useState<TrackerState>({
     mode: 'off',
     permissionDenied: false,
+    background: false,
     status: 'idle',
     position: null,
     crossTrackM: 0,
@@ -280,6 +284,13 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     let sub: Location.LocationSubscription | null = null;
     let cancelled = false;
 
+    /*
+      배경 위치도 함께 켠다. watchPositionAsync는 포그라운드에서만 도는데,
+      도착·출발 감지가 정작 필요한 순간은 지도 앱이 앞에 있고 화면이 잠긴 운전 중이다.
+      둘 다 같은 판정 함수로 흘려보내므로 중복 호출은 문제가 되지 않는다.
+    */
+    const unsubBackground = subscribeBackgroundLocation(p => detectRef.current(p));
+
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (cancelled) return;
@@ -289,6 +300,9 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setTracker(t => ({ ...t, permissionDenied: false }));
+      startBackgroundLocation().then(r => {
+        if (!cancelled) setTracker(t => ({ ...t, background: r === 'started' }));
+      });
       // 기기가 멈춰 있으면 watch 콜백이 안 오므로 현재 위치로 한 번 즉시 판정한다
       try {
         const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
@@ -312,8 +326,14 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       sub?.remove();
+      unsubBackground();
     };
   }, [mode, offset]);
+
+  // 추적을 끄면 배경 구독도 반드시 내린다 — 안 그러면 배터리를 계속 먹는다
+  useEffect(() => {
+    if (mode === 'off') void stopBackgroundLocation();
+  }, [mode]);
 
   const api = useMemo<TrackerApi>(
     () => ({

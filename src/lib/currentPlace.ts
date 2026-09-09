@@ -9,6 +9,7 @@
  * 화면 여러 곳에서 같은 값을 보므로 모듈 단위 스토어로 한 번만 받아 공유한다.
  */
 import { useEffect, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 import { LatLng } from '../data/mockData';
 
@@ -63,6 +64,7 @@ export function refreshCurrentPlace(): Promise<void> {
       }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      fetchedAt = Date.now();
       set({ status: 'ready', coord });
       try {
         const [first] = await Location.reverseGeocodeAsync(coord);
@@ -86,10 +88,28 @@ const subscribe = (listener: () => void) => {
   };
 };
 
+/** 이 시간이 지난 위치는 낡은 것으로 본다 — 운전 중이면 몇 분 만에 수 km를 간다 */
+const STALE_MS = 60_000;
+let fetchedAt = 0;
+
+/** 낡았을 때만 다시 잡는다 */
+export function refreshIfStale(): void {
+  if (Date.now() - fetchedAt > STALE_MS) void refreshCurrentPlace();
+}
+
 export function useCurrentPlace(): CurrentPlace {
   const value = useSyncExternalStore(subscribe, () => snapshot);
   useEffect(() => {
     if (snapshot.status === 'idle') void refreshCurrentPlace();
+    /*
+      앱이 다시 앞으로 나오면 위치를 새로 잡는다.
+      한 번만 잡아두면 '내 위치'가 앱을 처음 켠 자리(집)에 굳어버려서,
+      한참 이동한 뒤 지도 앱으로 넘길 때 엉뚱한 출발지가 전달된다.
+    */
+    const sub = AppState.addEventListener('change', s => {
+      if (s === 'active') refreshIfStale();
+    });
+    return () => sub.remove();
   }, []);
   return value;
 }

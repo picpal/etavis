@@ -71,8 +71,9 @@ export function HomeScreen({ navigation }: Props) {
         <View style={{ gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
             <PinIcon />
+            {/* 시각은 여기 말고 도착 목표 시트에서 보여준다 — 마감을 고를 때만 필요한 정보다 */}
             <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 14, lineHeight: 21, color: color.muted }}>
-              {here.area ? `현재 위치 ${here.area} · ` : ''}오늘 {state.dataset.origin.departAt}
+              {here.area ? `현재 위치 ${here.area}` : '현재 위치 확인 중'}
             </Text>
           </View>
           <Pressable onLongPress={() => setDevOpen(true)} delayLongPress={600}>

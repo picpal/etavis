@@ -8,7 +8,7 @@
  * 리스트로 보여주면 목적지를 고르는 데 충분하다.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, shadow, type } from '../theme/tokens';
 import { LatLng, RECENT_DESTINATIONS } from '../data/mockData';
@@ -33,6 +33,7 @@ export function DestinationSheet({
   onPicked?: (name: string) => void;
 }) {
   const insets = useSafeAreaInsets();
+  const { height: H } = useWindowDimensions();
   const { state, setDestination } = usePlan();
   const here = useCurrentPlace();
   const [query, setQuery] = useState('');
@@ -105,9 +106,6 @@ export function DestinationSheet({
   };
 
   const recents = RECENT_DESTINATIONS;
-  // 검색으로 못 찾는 곳도 있으니 입력값 그대로 쓰는 길은 항상 남겨둔다
-  const showRawRow =
-    trimmed.length > 0 && !searching && !results.some(p => p.name === trimmed);
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -147,12 +145,22 @@ export function DestinationSheet({
             selectionColor={color.primary}
             returnKeyType="search"
             autoCorrect={false}
-            onSubmitEditing={() => trimmed && finish(trimmed, null)}
             style={[type.bodyL, { flex: 1, color: color.ink, paddingVertical: 0 }]}
           />
           {searching && <ActivityIndicator size="small" color={color.stroke} />}
         </View>
 
+        {/*
+          결과가 15건까지 오므로 반드시 스크롤 영역이어야 한다.
+          키보드가 올라오면 남는 높이가 확 줄어서, 높이를 화면에서 계산해 묶는다.
+          keyboardShouldPersistTaps — 키보드가 떠 있어도 결과를 한 번에 고를 수 있게
+        */}
+        <ScrollView
+          style={{ maxHeight: Math.max(180, H - kbHeight - 330) }}
+          contentContainerStyle={{ gap: 14 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         {/* 검색 결과 */}
         {trimmed.length > 0 && (
           <Card style={{ padding: 8 }}>
@@ -197,49 +205,29 @@ export function DestinationSheet({
               );
             })}
 
-            {showRawRow && (
-              <>
-                {results.length > 0 && (
-                  <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />
-                )}
-                <Pressable
-                  onPress={() => finish(trimmed, null)}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    paddingVertical: 14,
-                    paddingHorizontal: 12,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  <PinIcon />
+            {/*
+              '입력한 대로 설정'은 없앴다. 좌표 없이 이름만 있는 목적지는
+              경로를 산정할 수도, 지도 앱에 넘길 수도 없다 — 조용히 엉뚱한 곳으로 안내하게 된다.
+            */}
+            {results.length === 0 && (
+              <View style={{ paddingVertical: 22, paddingHorizontal: 16, gap: 6, alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.body }}>
+                  {searching ? '찾는 중이에요' : '조회된 결과가 없습니다'}
+                </Text>
+                {!searching && (
                   <Text
-                    style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 16, lineHeight: 20, color: color.ink }}
-                    numberOfLines={1}
+                    style={{
+                      fontFamily: 'Pretendard-Regular',
+                      fontSize: 13,
+                      lineHeight: 19,
+                      color: color.muted,
+                      textAlign: 'center',
+                    }}
                   >
-                    {trimmed}
+                    건물 이름이나 상호, 도로명 주소로{'\n'}다시 검색해 보세요
                   </Text>
-                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.primary }}>
-                    입력한 대로 설정
-                  </Text>
-                </Pressable>
-              </>
-            )}
-
-            {searching && results.length === 0 && (
-              <Text
-                style={{
-                  fontFamily: 'Pretendard-Regular',
-                  fontSize: 13,
-                  lineHeight: 17,
-                  color: color.muted,
-                  paddingVertical: 16,
-                  textAlign: 'center',
-                }}
-              >
-                검색 중이에요
-              </Text>
+                )}
+              </View>
             )}
           </Card>
         )}
@@ -248,17 +236,17 @@ export function DestinationSheet({
           <>
             <Text style={[type.label, { color: color.muted }]}>최근 목적지</Text>
             <Card style={{ padding: 8 }}>
-              {recents.map((name, i) => {
-                const active = name === state.destinationName;
+              {recents.map((recent, i) => {
+                const active = recent.name === state.destinationName;
                 return (
-                  <React.Fragment key={name}>
+                  <React.Fragment key={recent.name}>
                     {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
                     <Pressable
-                      onPress={() => finish(name, null)}
+                      onPress={() => finish(recent.name, recent.coord)}
                       style={({ pressed }) => ({
                         flexDirection: 'row',
                         alignItems: 'center',
-                        gap: 14,
+                        gap: 12,
                         paddingVertical: 14,
                         paddingHorizontal: 12,
                         opacity: pressed ? 0.7 : 1,
@@ -266,14 +254,28 @@ export function DestinationSheet({
                     >
                       <Text
                         style={{
-                          flex: 1,
                           fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
                           fontSize: 16,
                           lineHeight: 20,
                           color: color.ink,
                         }}
+                        numberOfLines={1}
                       >
-                        {name}
+                        {recent.name}
+                      </Text>
+                      {/* 주소는 우측 여백에 작게 — 이름이 주인공이고 주소는 확인용 */}
+                      <Text
+                        style={{
+                          flex: 1,
+                          textAlign: 'right',
+                          fontFamily: 'Pretendard-Regular',
+                          fontSize: 12,
+                          lineHeight: 16,
+                          color: color.muted,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {recent.address}
                       </Text>
                       {active && (
                         <View
@@ -296,13 +298,14 @@ export function DestinationSheet({
             </Card>
           </>
         )}
+        </ScrollView>
 
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
           {failed
             ? '검색에 실패했어요 · 연결 상태나 API 키를 확인해 주세요'
             : here.status === 'denied'
               ? '위치 권한이 없어 거리는 표시되지 않아요'
-              : '검색 결과는 현재 위치에서 가까운 순으로 보여드려요'}
+              : '경로를 계산하려면 목록에서 골라야 해요 · 가까운 순으로 보여드려요'}
         </Text>
       </View>
     </Sheet>

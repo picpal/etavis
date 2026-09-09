@@ -258,6 +258,23 @@ export function PencilIcon({ size = 14, tint = color.muted }: { size?: number; t
 }
 
 /** 설정 톱니바퀴 아이콘 */
+/** 완료 — 채워진 원 안의 체크 */
+export function CheckCircle({ size = 22, tint = color.green }: { size?: number; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={11} fill={tint} />
+      <Path
+        d="M7.2 12.3l3.3 3.2 6.3-6.4"
+        stroke="#fff"
+        strokeWidth={2.4}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** 공유 — 상자에서 위로 나가는 화살표 */
 export function ShareIcon({ size = 20, tint = color.body }: { size?: number; tint?: string }) {
   return (

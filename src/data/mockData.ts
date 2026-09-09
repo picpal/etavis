@@ -339,4 +339,11 @@ export const calcSteps = [
   { id: 'k4', text: '추천 경로 정리', state: 'pending' },
 ] as const;
 
-export const RECENT_DESTINATIONS = ['회사', '집', '오크밸리 숙소'];
+export type RecentDestination = { name: string; address: string; coord: LatLng };
+
+/** 최근 목적지 — 이름이 주인공, 주소는 확인용 */
+export const RECENT_DESTINATIONS: RecentDestination[] = [
+  { name: '회사', address: '서울 양천구 신정동', coord: OFFICE },
+  { name: '집', address: '서울 영등포구 여의도동', coord: HOME },
+  { name: '오크밸리 숙소', address: '강원 원주시 지정면', coord: OAKVALLEY },
+];

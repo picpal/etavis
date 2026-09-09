@@ -93,30 +93,6 @@ export function HomeScreen({ navigation }: Props) {
             <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
             <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: color.ink }} />
           </View>
-          {/* 두 행 사이 높이 가운데에 걸치도록 절대배치 — 되돌아오는 경로를 만들 때 쓴다 */}
-          <Pressable
-            onPress={() => {
-              haptic();
-              swapEndpoints();
-            }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={({ pressed }) => ({
-              position: 'absolute',
-              right: 14,
-              top: '50%',
-              marginTop: -18,
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: color.bg,
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 2,
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <SwapIcon size={18} tint={color.body} />
-          </Pressable>
           <View style={{ flex: 1, gap: 14, paddingRight: 40 }}>
             <Pressable
               onPress={() => {
@@ -141,7 +117,31 @@ export function HomeScreen({ navigation }: Props) {
                 {originSub}
               </Text>
             </Pressable>
-            <Hairline />
+            {/* 경계선 위에 얹어 두 행의 정확한 가운데에 오게 한다 — 카드 기준 50%로는 텍스트 높이 차이로 쏠린다 */}
+            <View style={{ justifyContent: 'center' }}>
+              <Hairline />
+              <Pressable
+                onPress={() => {
+                  haptic();
+                  swapEndpoints();
+                }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={({ pressed }) => ({
+                  position: 'absolute',
+                  right: -34,
+                  alignSelf: 'center',
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: color.bg,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                <SwapIcon size={18} tint={color.body} />
+              </Pressable>
+            </View>
             <Pressable
               onPress={() => {
                 haptic();

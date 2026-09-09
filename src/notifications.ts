@@ -2,6 +2,13 @@
 import * as Notifications from 'expo-notifications';
 
 export const CONGESTION_CATEGORY = 'congestion-report';
+/** 도착 알림 — 여기서 할 일을 바로 열 수 있게 */
+export const ARRIVAL_CATEGORY = 'stop-arrival';
+/** 출발 알림(대중교통) — 다음 구간 길찾기를 바로 열 수 있게 */
+export const NEXT_LEG_CATEGORY = 'next-leg';
+
+export const ACTION_OPEN_TASKS = 'open-tasks';
+export const ACTION_OPEN_LEG = 'open-leg';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -26,6 +33,12 @@ export function ensureNotificationsReady(): Promise<boolean> {
           { identifier: 'mid', buttonTitle: '보통' },
           { identifier: 'high', buttonTitle: '혼잡' },
           { identifier: 'veryhigh', buttonTitle: '매우혼잡' },
+        ]);
+        await Notifications.setNotificationCategoryAsync(ARRIVAL_CATEGORY, [
+          { identifier: ACTION_OPEN_TASKS, buttonTitle: '할 일 보기' },
+        ]);
+        await Notifications.setNotificationCategoryAsync(NEXT_LEG_CATEGORY, [
+          { identifier: ACTION_OPEN_LEG, buttonTitle: '구간 길찾기' },
         ]);
         return true;
       } catch {
@@ -59,6 +72,41 @@ export async function scheduleDepartureReminder(
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: MOCK_LEAD_SECONDS,
     },
+  });
+}
+
+/**
+ * 경유지 도착 — 여기서 할 일이 뭐였는지 그 순간에 알려준다.
+ *
+ * 잠금화면에 상주하는 Live Activity가 아니라 '전환 순간'에만 보낸다.
+ * 상시 갱신을 알림으로 흉내내면 갱신할 때마다 다시 울려서 방해가 된다 (issue #1)
+ */
+export async function notifyArrival(stopId: string, stopName: string, taskCount: number) {
+  const ok = await ensureNotificationsReady();
+  if (!ok) return;
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${stopName} 도착`,
+      body: taskCount > 0 ? `여기서 할 일 ${taskCount}개가 있어요` : '체류를 시작할게요',
+      categoryIdentifier: taskCount > 0 ? ARRIVAL_CATEGORY : undefined,
+      data: { screen: 'today', stopId },
+    },
+    trigger: null,
+  });
+}
+
+/** 경유지 출발 — 다음이 어디이고 몇 시 도착인지. 대중교통이면 구간 길찾기 액션을 붙인다 */
+export async function notifyNextLeg(toName: string, etaLabel: string, transit: boolean) {
+  const ok = await ensureNotificationsReady();
+  if (!ok) return;
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `다음 · ${toName}`,
+      body: `${etaLabel} 도착 예정`,
+      categoryIdentifier: transit ? NEXT_LEG_CATEGORY : undefined,
+      data: { screen: 'today', leg: transit ? 1 : 0 },
+    },
+    trigger: null,
   });
 }
 

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
@@ -253,6 +253,16 @@ export function TodayScreen() {
   const { legs, nextLeg, byLeg } = useRouteLegs();
   const [taskStopId, setTaskStopId] = useState<string | null>(null);
   const [mapAppOpen, setMapAppOpen] = useState(false);
+
+  /*
+    알림에서 들어온 경우 해당 시트를 바로 연다.
+    도착 알림 → 그 경유지 할 일 / 대중교통 출발 알림 → 구간 길찾기
+  */
+  const params = (useRoute().params ?? {}) as { sheet?: 'task' | 'mapapp'; stopId?: string };
+  React.useEffect(() => {
+    if (params.sheet === 'task' && params.stopId) setTaskStopId(params.stopId);
+    if (params.sheet === 'mapapp') setMapAppOpen(true);
+  }, [params.sheet, params.stopId]);
   useDeadlineRiskAlert(state.planConfirmed ? slackMin : null, arriveByLabel);
 
   if (!state.planConfirmed) {
@@ -558,7 +568,7 @@ const HISTORY_RECORDS: HistoryRecord[] = [
     note: '직행 · 자동차',
     rows: [
       { name: '평창역', time: '16:05', node: 'origin' },
-      { name: '알펜시아 리조트', time: '16:29', node: 'dest' },
+      { name: '알펜시아 리조트', time: '16:29', node: 'dest', tasks: ['체크인', '주차 등록'] },
     ],
   },
   {
@@ -568,7 +578,7 @@ const HISTORY_RECORDS: HistoryRecord[] = [
     note: '직행 · 자동차',
     rows: [
       { name: '알펜시아 리조트', time: '11:30', node: 'origin' },
-      { name: '대관령 양떼목장', time: '11:48', node: 'dest' },
+      { name: '대관령 양떼목장', time: '11:48', node: 'dest', tasks: ['입장권 예매 확인'] },
     ],
   },
 ];

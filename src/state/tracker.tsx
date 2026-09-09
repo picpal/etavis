@@ -13,6 +13,8 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import * as Location from 'expo-location';
 import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
+import { formatEta } from '../lib/geo';
+import { notifyArrival, notifyNextLeg } from '../notifications';
 import {
   buildPolyline,
   crossTrack,
@@ -90,8 +92,20 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const { state, destinationDisplay, arriveAtStop, departStop } = usePlan();
 
   // 인터벌 안에서 최신 계획 상태·액션을 읽기 위한 ref (인터벌 재생성을 피한다)
-  const planRef = useRef({ stops: state.stops, passedCount: state.passedCount, atStop: state.atStop });
-  planRef.current = { stops: state.stops, passedCount: state.passedCount, atStop: state.atStop };
+  const planRef = useRef({
+    stops: state.stops,
+    passedCount: state.passedCount,
+    atStop: state.atStop,
+    mode: state.mode,
+    destArriveAt: state.destArriveAt,
+  });
+  planRef.current = {
+    stops: state.stops,
+    passedCount: state.passedCount,
+    atStop: state.atStop,
+    mode: state.mode,
+    destArriveAt: state.destArriveAt,
+  };
   const actionsRef = useRef({ arriveAtStop, departStop });
   actionsRef.current = { arriveAtStop, departStop };
   const [mode, setModeRaw] = useState<SimMode>('off');
@@ -169,8 +183,19 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     const target = stops[passedCount];
     if (target) {
       const distToStop = haversineM(position, shift(target.coord));
-      if (!atStop && distToStop < arriveR) actionsRef.current.arriveAtStop();
-      else if (atStop && distToStop > departR) actionsRef.current.departStop();
+      if (!atStop && distToStop < arriveR) {
+        actionsRef.current.arriveAtStop();
+        // 전환 순간에만 알린다 — 상시 갱신은 알림으로 흉내내면 계속 울려서 방해가 된다
+        void notifyArrival(target.id, target.name, target.tasks.length);
+      } else if (atStop && distToStop > departR) {
+        actionsRef.current.departStop();
+        const next = stops[passedCount + 1];
+        void notifyNextLeg(
+          next?.name ?? destinationDisplay,
+          formatEta(next?.arriveAt ?? planRef.current.destArriveAt),
+          planRef.current.mode === 'transit',
+        );
+      }
     }
 
     // 이탈 판정 — 폴리라인까지 수직거리

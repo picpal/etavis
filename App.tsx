@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFonts } from 'expo-font';
 import * as Linking from 'expo-linking';
@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { color } from './src/theme/tokens';
 import { PlanProvider, usePlan } from './src/state/plan';
+import { ACTION_OPEN_LEG, ACTION_OPEN_TASKS } from './src/notifications';
 import { TrackerProvider } from './src/state/tracker';
 import './src/notifications';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -27,7 +28,7 @@ export type RootStackParamList = {
   Options: { pick?: string } | undefined;
   Timeline: { sheet?: 'task' | 'candidate' | 'mapapp' } | undefined;
   Error: undefined;
-  Today: undefined;
+  Today: { sheet?: 'task' | 'mapapp'; stopId?: string } | undefined;
   History: undefined;
   Settings: undefined;
   Nearby: undefined;
@@ -60,6 +61,9 @@ const theme = {
 };
 
 /** 알림 액션(여유/보통/혼잡/매우혼잡) 응답 → 혼잡도 제보로 반영 */
+/** 알림에서 화면으로 보내려면 NavigationContainer 밖에서도 쓸 수 있는 ref가 필요하다 */
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
 function NotificationBridge() {
   const { setCongestionReport } = usePlan();
   React.useEffect(() => {
@@ -67,6 +71,23 @@ function NotificationBridge() {
       const action = response.actionIdentifier;
       if (['low', 'mid', 'high', 'veryhigh'].includes(action)) {
         setCongestionReport(action);
+        return;
+      }
+      /*
+        도착·출발 알림에서 들어온 경우 — 진행중으로 보내되 필요한 시트까지 열어준다.
+        알림을 눌렀는데 홈이 뜨면 다시 두세 번 눌러야 한다.
+      */
+      const data = (response.notification.request.content.data ?? {}) as {
+        screen?: string;
+        stopId?: string;
+      };
+      if (data.screen !== 'today' || !navigationRef.isReady()) return;
+      if (action === ACTION_OPEN_LEG) {
+        navigationRef.navigate('Today', { sheet: 'mapapp' });
+      } else if (action === ACTION_OPEN_TASKS && data.stopId) {
+        navigationRef.navigate('Today', { sheet: 'task', stopId: data.stopId });
+      } else {
+        navigationRef.navigate('Today', data.stopId ? { sheet: 'task', stopId: data.stopId } : {});
       }
     });
     return () => sub.remove();
@@ -92,7 +113,7 @@ export default function App() {
         <PlanProvider>
           <TrackerProvider>
           <NotificationBridge />
-          <NavigationContainer theme={theme} linking={linking}>
+          <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
             <StatusBar style="dark" />
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="Home" component={HomeScreen} />

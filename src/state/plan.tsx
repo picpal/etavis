@@ -6,6 +6,7 @@
 import React, { createContext, useContext, useMemo, useReducer, useRef } from 'react';
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
+import { CongestionKey } from '../lib/congestion';
 import {
   Candidate,
   Dataset,
@@ -22,6 +23,8 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 export type StopState = Stop & {
   /** 원본 stop id — 교체돼도 유지되며 LEGS 조회 키로 쓴다 */
   baseId: string;
+  /** 이 경유지에서 남긴 혼잡도 제보. 실제로 도착해 체류 중일 때만 기록된다 */
+  congestion?: CongestionKey;
   /** 후보 교체 누적 추가시간(분). 추천 후보 대비 */
   replaceDeltaMin: number;
   selectedCandidateId?: string;
@@ -297,6 +300,7 @@ type Action =
   | { type: 'SELECT_OPTION'; id: string }
   | { type: 'SET_OPTION_STORE'; optionId: string; baseId: string; candidateId: string }
   | { type: 'REORDER_LOCAL'; stops: StopState[] }
+  | { type: 'REPORT_STOP_CONGESTION'; stopId: string; level: CongestionKey }
   | { type: 'REMOVE_LOCAL'; stopId: string }
   | { type: 'REPLACE_LOCAL'; stopId: string; candidateId: string }
   | { type: 'RECALC' }
@@ -425,6 +429,16 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, failNext: action.value };
     case 'SET_CONGESTION':
       return { ...state, congestionReport: action.value };
+    case 'REPORT_STOP_CONGESTION': {
+      /* 실제로 그 경유지에 도착해 체류 중일 때만 받는다.
+         화면에서도 막지만, 여기서 한 번 더 막아야 다른 경로로 들어와도 오제보가 안 생긴다 */
+      const target = state.stops[state.passedCount];
+      if (!state.atStop || !target || target.id !== action.stopId) return state;
+      const stops = state.stops.map(s =>
+        s.id === action.stopId ? { ...s, congestion: action.level } : s,
+      );
+      return { ...state, stops };
+    }
     case 'CONFIRM_PLAN':
       return state.planConfirmed ? state : { ...state, planConfirmed: true };
     case 'ARRIVE_AT_STOP':
@@ -468,6 +482,8 @@ type PlanApi = {
   removeTask: (stopId: string, taskId: string) => void;
   setFailNext: (value: boolean) => void;
   setCongestionReport: (value: string | null) => void;
+  /** 경유지 혼잡도 제보 — 도착해 체류 중인 경유지에만 먹는다 */
+  reportStopCongestion: (stopId: string, level: CongestionKey) => void;
   /** 확정 상태로 표시 — A6(최종 경로)에 들어왔다는 건 계획이 있다는 뜻 */
   confirmPlan: () => void;
   arriveAtStop: () => void;
@@ -540,6 +556,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       removeTask: (stopId, taskId) => dispatch({ type: 'REMOVE_TASK', stopId, taskId }),
       setFailNext: value => dispatch({ type: 'SET_FAIL_NEXT', value }),
       setCongestionReport: value => dispatch({ type: 'SET_CONGESTION', value }),
+      reportStopCongestion: (stopId, level) => dispatch({ type: 'REPORT_STOP_CONGESTION', stopId, level }),
       confirmPlan: () => dispatch({ type: 'CONFIRM_PLAN' }),
       arriveAtStop: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

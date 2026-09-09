@@ -352,7 +352,7 @@ function LegPicker({
             <View style={{ width: 12, alignItems: 'center', paddingVertical: 6 }}>
               <View style={{ width: 11, height: 11, borderRadius: 5.5, borderWidth: 3, borderColor: color.primary }} />
               <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
-              <View style={{ width: 11, height: 11, borderRadius: 3, backgroundColor: color.ink }} />
+              <View style={{ width: 11, height: 11, borderRadius: 5.5, backgroundColor: color.green }} />
             </View>
             <View style={{ flex: 1, gap: 14 }}>
               <View style={{ gap: 3 }}>

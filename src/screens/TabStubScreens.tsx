@@ -12,6 +12,7 @@ import { CheckCircle, Chevron, Hairline, HeartIcon, PencilIcon, PersonPlusIcon }
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
 import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
+import { CONGESTION } from '../lib/congestion';
 import { notifyDeadlineRisk, scheduleThanksNotification } from '../notifications';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
@@ -800,14 +801,6 @@ const NEARBY_POSTS: NearbyPost[] = [
   { id: 'p3', text: '교촌 평창점 포장 20분 정도 걸린대요', place: '교촌치킨 평창점', when: '25분 전', author: '수현', avatarColor: color.amber, likes: 7, anchor: '교촌치킨 평창점' },
 ];
 
-/** 체류시간 제보 선택지(분) */
-
-const CONGESTION = [
-  { key: 'low', label: '여유', tint: color.green },
-  { key: 'mid', label: '보통', tint: color.primary },
-  { key: 'high', label: '혼잡', tint: color.amber },
-  { key: 'veryhigh', label: '매우혼잡', tint: '#B33B2B' },
-] as const;
 
 export function NearbyScreen() {
   const insets = useSafeAreaInsets();

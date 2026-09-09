@@ -65,7 +65,7 @@ function ExpandedOption({
             i === 0 ? (
               <View style={{ width: 9, height: 9, borderRadius: 4.5, borderWidth: 2.5, borderColor: color.primary }} />
             ) : i === names.length - 1 ? (
-              <View style={{ width: 9, height: 9, borderRadius: 2, backgroundColor: color.ink }} />
+              <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.green }} />
             ) : (
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.primary }} />
             );

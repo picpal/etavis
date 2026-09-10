@@ -11,6 +11,7 @@
 import Constants from 'expo-constants';
 import { LatLng } from '../data/mockData';
 import { haversineM } from './geo';
+import type { PlaceCandidate } from './routePlan/types';
 
 export type Place = {
   id: string;
@@ -24,8 +25,8 @@ export type ProviderKey = 'kakao' | 'google' | 'mock';
 
 export interface PlaceSearchProvider {
   readonly key: ProviderKey;
-  /** near가 주어지면 가까운 순으로 정렬한다 */
-  search(query: string, near: LatLng | null): Promise<Place[]>;
+  /** near가 주어지면 가까운 순으로 정렬한다. radiusM이 있으면 그 안으로 가둔다(구글은 아직 무시) */
+  search(query: string, near: LatLng | null, radiusM?: number): Promise<Place[]>;
 }
 
 /** 한국 본토 + 제주 + 울릉/독도를 덮는 대략적 바운딩 박스 */
@@ -91,13 +92,14 @@ const SEARCH_LATENCY = 220;
 
 const mockProvider: PlaceSearchProvider = {
   key: 'mock',
-  search(query, near) {
+  search(query, near, radiusM) {
     const q = norm(query);
     return new Promise(resolve => {
       setTimeout(() => {
         if (!q) return resolve([]);
-        const hits = CATALOG.filter(p => norm(p.name).includes(q) || norm(p.address).includes(q));
+        let hits = CATALOG.filter(p => norm(p.name).includes(q) || norm(p.address).includes(q));
         if (!near) return resolve(hits);
+        if (radiusM != null) hits = hits.filter(p => haversineM(near, p.coord) <= radiusM);
         resolve(
           [...hits].sort((a, b) => haversineM(near, a.coord) - haversineM(near, b.coord)),
         );
@@ -142,7 +144,7 @@ async function kakaoFetch(kind: 'keyword' | 'address', params: URLSearchParams) 
 
 const kakaoProvider: PlaceSearchProvider = {
   key: 'kakao',
-  async search(query, near) {
+  async search(query, near, radiusM) {
     const keywordParams = new URLSearchParams({ query, size: '15' });
     // 기준 좌표를 주면 카카오가 가까운 순으로 정렬해 준다.
     // 국내 좌표일 때만 넘긴다 — 해외에 있으면서 한국 장소를 찾는 경우 거리순이 무의미하다
@@ -150,6 +152,8 @@ const kakaoProvider: PlaceSearchProvider = {
       keywordParams.set('x', String(near.longitude));
       keywordParams.set('y', String(near.latitude));
       keywordParams.set('sort', 'distance');
+      // 회랑 검색은 반지름으로 가둔다. 카카오 상한 20km
+      if (radiusM != null) keywordParams.set('radius', String(Math.min(20000, Math.round(radiusM))));
     }
 
     /*
@@ -250,4 +254,12 @@ export function getProvider(near: LatLng | null): PlaceSearchProvider {
   if (kakaoRestKey) return kakaoProvider;
   if (googlePlacesKey) return googleProvider;
   return mockProvider;
+}
+
+/** 플래너용 검색 함수 — Place를 PlaceCandidate로. hours는 아직 없다(다음 계획) */
+export function planSearchFn(): (query: string, near: LatLng, radiusM: number) => Promise<PlaceCandidate[]> {
+  return async (query, near, radiusM) => {
+    const places = await getProvider(near).search(query, near, radiusM);
+    return places.map(p => ({ id: p.id, name: p.name, coord: p.coord }));
+  };
 }

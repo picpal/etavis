@@ -71,9 +71,17 @@ cd server && npm i
 npx wrangler kv namespace create RATE     # id를 wrangler.toml에
 npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret put APP_TOKEN
+npx wrangler secret put KAKAO_MOBILITY_KEY  # developers.kakaomobility.com 키. 카카오 로컬 키와 별개
 npx wrangler dev                          # 로컬에서 147개 돌려 기준선과 비교
 npx wrangler deploy
 ```
+
+앱 `.env`에 `SERVER_URL=https://…workers.dev`, `APP_TOKEN=…`을 넣으면 `app.config.js`가 extra로 올린다.
+
+**`/route`(2026-09-11 추가)** — 카카오모빌리티 자동차 길찾기 프록시. 경유지 ≤ 5, 미래운행(departAt).
+앱은 `serverRouteProvider`로 부른다. 쿼터는 자동차 **일 10,000건 무료, 초과 8원/건**, 미래운행 일 5,000건
+(요금표 developers.kakaomobility.com/price). 계획당 5~9회니 하루 1,000건 남짓 무료. 다중 목적지(일 1,000건
+무료, 초과 20원)도 요금표에 있어 제휴 없이 될 수 있다 — V=1에 쓰면 2회로 끝난다. 나중에 확인.
 
 그 다음 `src/lib/intent.ts`가 서버를 보게 바꾼다. **실패하면 로컬 목으로 떨어지게** —
 서버가 죽어도 계획은 세워져야 한다.
@@ -95,7 +103,7 @@ npx wrangler deploy
 
 **2026-09-11 구현 상태:** 1·1.5단계 완료 — `src/lib/routePlan/`(plan·corridor·enumerate·legs·score·select·mockProvider)과
 `src/lib/corridorSearch.ts`. `npm test`로 목 공급자 기준 전 단계가 돈다. 아직 UI·서버에 연결 안 됨.
-다음: Workers `/route` 프록시(카카오 쿼터 확인 먼저) → `OptionsScreen`·`CandidateSheet` 연결.
+2단계(Workers `/route`, `serverRouteProvider`)도 완료. 배포는 아직. 다음: `OptionsScreen`·`CandidateSheet`·`plan.tsx` 연결.
 
 ### 4. 사용자 대화 이력 축적 → 정기 분석
 

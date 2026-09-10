@@ -68,7 +68,12 @@ export async function plan(
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];
   const measure = async (visits: Visit[]) => {
     const est = scorePlan(visits, ctx); // 실측 전 추정 — 오차 계산용
-    const route = await call(visits);
+    let route;
+    try {
+      route = await call(visits);
+    } catch {
+      return; // 시드 하나 실패는 그 안만 버린다. 직행은 위에서 이미 성공했다
+    }
     const ids = [ORIGIN_ID, ...visits.map(v => v.candidate.id), DEST_ID];
     learnLegs(legs, ids, route, input.departAtMin, visits.map(v => v.dwellMin), input.mode);
     route.sections.forEach((sec, i) => {
@@ -113,9 +118,14 @@ export async function plan(
       if (!worst || est.totalMin < worst.totalMin) worst = { slotId, visits: rest, totalMin: est.totalMin };
     }
     if (worst) {
-      const route = await call(worst.visits);
-      learnLegs(legs, [ORIGIN_ID, ...worst.visits.map(v => v.candidate.id), DEST_ID], route, input.departAtMin, worst.visits.map(v => v.dwellMin), input.mode);
-      relaxed = { ...toOption(scorePlan(worst.visits, ctx)), droppedSlotId: worst.slotId };
+      try {
+        const route = await call(worst.visits);
+        learnLegs(legs, [ORIGIN_ID, ...worst.visits.map(v => v.candidate.id), DEST_ID], route, input.departAtMin, worst.visits.map(v => v.dwellMin), input.mode);
+        relaxed = { ...toOption(scorePlan(worst.visits, ctx)), droppedSlotId: worst.slotId };
+      } catch {
+        // 완화안 실측 실패 — 추정치로라도 낸다. estimated 표시는 UI 몫
+        relaxed = { ...toOption(scorePlan(worst.visits, ctx)), droppedSlotId: worst.slotId };
+      }
     }
   }
 

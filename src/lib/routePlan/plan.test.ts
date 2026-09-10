@@ -99,3 +99,25 @@ test('슬롯이 하나도 없으면 직행만', async () => {
   assert.equal(r.options[0].visits.length, 0);
   assert.ok(Math.abs(r.options[0].deltaMin) < 1e-9);
 });
+
+test('시드 하나가 실패해도 나머지로 계획한다', async () => {
+  const inner = mockRouteProvider();
+  let n = 0;
+  const flaky = {
+    route: (pts: typeof O[], t: number, m: 'car' | 'walk' | 'transit') => {
+      n++;
+      if (n === 3) return Promise.reject(new Error('timeout'));
+      return inner.route(pts, t, m);
+    },
+  };
+  const r = await plan(base([slot('a', [far, near, on])]), flaky);
+  assert.equal(r.apiCalls, 4);
+  // 실패한 건 3번째 호출 = near. 1안은 on, 대안 중 near만 추정치로 남는다
+  assert.equal(r.options[0].visits[0].candidate.id, 'on');
+  assert.deepEqual(r.alternatives.map(a => [a.candidate.id, a.estimated]).sort(), [['far', false], ['near', true]]);
+});
+
+test('직행이 실패하면 계획 자체가 실패한다', async () => {
+  const dead = { route: () => Promise.reject(new Error('down')) };
+  await assert.rejects(plan(base([slot('a', [on])]), dead));
+});

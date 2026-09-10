@@ -93,6 +93,10 @@ npx wrangler deploy
 
 구현 순서는 설계 문서 끝에 있다. 1단계는 `src/lib/routePlan/` 순수 모듈 + 목 공급자 + `node --test`.
 
+**2026-09-11 구현 상태:** 1·1.5단계 완료 — `src/lib/routePlan/`(plan·corridor·enumerate·legs·score·select·mockProvider)과
+`src/lib/corridorSearch.ts`. `npm test`로 목 공급자 기준 전 단계가 돈다. 아직 UI·서버에 연결 안 됨.
+다음: Workers `/route` 프록시(카카오 쿼터 확인 먼저) → `OptionsScreen`·`CandidateSheet` 연결.
+
 ### 4. 사용자 대화 이력 축적 → 정기 분석
 
 사용자가 실제로 뭐라고 치는지가 케이스보다 값지다. 익명화해서 쌓고 주기적으로

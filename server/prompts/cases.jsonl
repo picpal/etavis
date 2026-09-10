@@ -6,25 +6,25 @@
 {"g":"basic","text":"문 연 약국만","expect":{"open":true}}
 {"g":"basic","text":"은행 먼저 갔다가 우체국","expect":{"lock":true}}
 {"g":"basic","text":"올리브영 3개 들러서 비교해볼래","expect":{"n":3}}
-{"g":"typo","text":"올리브용 들르고 싶어","expect":{"nostop":true,"amb":true,"note":"못 잡으면 되묻는다"}}
-{"g":"typo","text":"스타벅쓰 들렀다 가자","expect":{"nostop":true,"amb":true}}
-{"g":"typo","text":"파리바게트 들러줘","expect":{"amb":true,"note":"표기 오류 — LLM이면 잡힐 것"}}
-{"g":"typo","text":"편의젬 들러야해","expect":{"nostop":true,"amb":true}}
+{"g":"typo","text":"올리브용 들르고 싶어","expect":{"qhas":["올리브영"],"note":"오타 교정 — Codex 통과, 목 실패"}}
+{"g":"typo","text":"스타벅쓰 들렀다 가자","expect":{"qhas":["스타벅스"],"note":"오타 교정"}}
+{"g":"typo","text":"파리바게트 들러줘","expect":{"qhas":["파리바게뜨"],"note":"표기 오류 교정"}}
+{"g":"typo","text":"편의젬 들러야해","expect":{"qhas":["편의점","CU","GS25"],"note":"오타 교정"}}
 {"g":"typo","text":"9시 까 지 도착","expect":{"at":540,"note":"띄어쓰기 파괴"}}
-{"g":"abbrev","text":"올영 들러야 해","expect":{"amb":true,"note":"줄임말 — LLM이면 잡힐 것"}}
+{"g":"abbrev","text":"올영 들러야 해","expect":{"qhas":["올리브영"],"note":"줄임말"}}
 {"g":"abbrev","text":"스벅에서 커피","expect":{"qhas":["스타벅스","카페"],"note":"스벅은 못 잡아도 커피로 잡힘"}}
-{"g":"abbrev","text":"파바 들르자","expect":{"amb":true}}
+{"g":"abbrev","text":"파바 들르자","expect":{"qhas":["파리바게뜨"],"note":"줄임말"}}
 {"g":"abbrev","text":"다이소 들를래","expect":{"amb":true,"note":"사전 밖 브랜드 — 되묻는다"}}
 {"g":"abbrev","text":"메가커피 갈래","expect":{"qhas":["스타벅스","카페"],"note":"커피로 잡힘"}}
 {"g":"spacing","text":"올리브영들르고빵도사고싶어","expect":{"qhas":["올리브영"],"note":"띄어쓰기 없음"}}
 {"g":"spacing","text":"9시까지회사","expect":{"at":540}}
 {"g":"spacing","text":"약국이랑은행","expect":{"qhas":["약국"]}}
 {"g":"spacing","text":"커피사고은행들러야해","expect":{"qhas":["은행"]}}
-{"g":"english","text":"olive young 들러줘","expect":{"amb":true}}
-{"g":"english","text":"starbucks 들렀다 가자","expect":{"amb":true}}
+{"g":"english","text":"olive young 들러줘","expect":{"qhas":["올리브영"],"note":"영문 브랜드"}}
+{"g":"english","text":"starbucks 들렀다 가자","expect":{"qhas":["스타벅스"],"note":"영문 브랜드"}}
 {"g":"english","text":"CU 들러서 담배","expect":{"qhas":["CU"],"note":"영문이 정식 표기"}}
 {"g":"english","text":"GS25 잠깐","expect":{"qhas":["GS25"]}}
-{"g":"english","text":"pharmacy 들러야 해","expect":{"amb":true}}
+{"g":"english","text":"pharmacy 들러야 해","expect":{"qhas":["약국"],"note":"영어 카테고리"}}
 {"g":"numtrap","text":"2호선 타고 갈래","expect":{"m":"transit","n":1,"note":"2를 개수로 읽으면 안 된다"}}
 {"g":"numtrap","text":"3번 출구에서 만나기로 했어","expect":{"n":1,"note":"3은 출구 번호"}}
 {"g":"numtrap","text":"올리브영 1층에 있어","expect":{"n":1,"note":"1은 층수"}}
@@ -33,10 +33,10 @@
 {"g":"numtrap","text":"샌드위치 2개 사기","expect":{"n":1,"note":"물건 개수"}}
 {"g":"numtrap","text":"아메리카노 두 잔 사고","expect":{"n":1,"note":"잔은 장소 단위가 아니다"}}
 {"g":"numtrap","text":"5천원짜리 빵","expect":{"n":1,"note":"금액"}}
-{"g":"timetrap","text":"3시간 걸려도 괜찮아","expect":{"at":null,"note":"소요시간이지 마감이 아니다"}}
+{"g":"timetrap","text":"3시간 걸려도 괜찮아","expect":{"at":null,"rej":false,"note":"길찾기 맥락 — 거절하면 안 된다"}}
 {"g":"timetrap","text":"5분 거리에 있는 편의점","expect":{"at":null,"qhas":["편의점"]}}
-{"g":"timetrap","text":"1시간 뒤에 출발할 거야","expect":{"at":null,"note":"출발 시각이지 도착 마감이 아니다"}}
-{"g":"timetrap","text":"10분만 들렀다 갈게","expect":{"at":null,"note":"체류시간"}}
+{"g":"timetrap","text":"1시간 뒤에 출발할 거야","expect":{"at":null,"rej":false,"note":"길찾기 맥락 — 거절하면 안 된다"}}
+{"g":"timetrap","text":"10분만 들렀다 갈게","expect":{"at":null,"rej":false,"note":"체류시간"}}
 {"g":"timetrap","text":"7시 영업 시작하는 곳","expect":{"at":null,"note":"영업시간"}}
 {"g":"timetrap","text":"내일 아침 9시까지","expect":{"note":"날짜 처리는 미정 — 스키마에 date가 없다"}}
 {"g":"timetrap","text":"주말에 갈 건데","expect":{"at":null,"note":"날짜"}}
@@ -103,7 +103,7 @@
 {"g":"people","text":"엄마 모시러 갔다가 병원","expect":{"amb":true,"note":"픽업 + 실제 장소"}}
 {"g":"people","text":"동생 집 들렀다 가자","expect":{"amb":true}}
 {"g":"nonplace","text":"주차장 있는 데로","expect":{"amb":true,"note":"조건이지 장소가 아니다"}}
-{"g":"nonplace","text":"화장실 급해","expect":{"amb":true,"note":"앱에 긴급/최근접 개념이 없다"}}
+{"g":"nonplace","text":"화장실 급해","expect":{"note":"급한데 되묻는 건 짜증난다 — Codex는 바로 추출. 미정"}}
 {"g":"nonplace","text":"기름 넣어야 해","expect":{"qhas":["주유소"]}}
 {"g":"nonplace","text":"충전하고 가야 해","expect":{"amb":true,"note":"전기차인지 휴대폰인지 모호"}}
 {"g":"nonplace","text":"현금 뽑아야 해","expect":{"qhas":["은행"],"note":"ATM → 은행"}}
@@ -137,11 +137,11 @@
 {"g":"abuse","text":"야 이 멍청한 앱아","expect":{"nostop":true}}
 {"g":"abuse","text":"쓸모없네 진짜","expect":{"nostop":true}}
 {"g":"abuse","text":"돈 내놔","expect":{"nostop":true}}
-{"g":"multilang","text":"I want to stop by a pharmacy","expect":{"amb":true}}
-{"g":"multilang","text":"コンビニに寄りたい","expect":{"amb":true}}
-{"g":"multilang","text":"我想去便利店","expect":{"amb":true}}
+{"g":"multilang","text":"I want to stop by a pharmacy","expect":{"qhas":["약국"],"note":"영어 문장"}}
+{"g":"multilang","text":"コンビニに寄りたい","expect":{"qhas":["편의점","CU","GS25"],"note":"일본어"}}
+{"g":"multilang","text":"我想去便利店","expect":{"qhas":["편의점","CU","GS25"],"note":"중국어"}}
 {"g":"multilang","text":"편의점 stop by 하고 싶어","expect":{"qhas":["편의점"],"note":"한영 혼용"}}
 {"g":"voice","text":"올리브영 들르고 어 아니 그 뭐냐 빵집","expect":{"qhas":["올리브영"],"note":"음성인식 더듬음"}}
-{"g":"voice","text":"구시까지 도착","expect":{"at":null,"note":"한글 숫자 시각은 미지원"}}
-{"g":"voice","text":"올 리브 영 들러 줘","expect":{"amb":true}}
+{"g":"voice","text":"구시까지 도착","expect":{"at":540,"note":"음성인식 오류 교정 — Codex 통과"}}
+{"g":"voice","text":"올 리브 영 들러 줘","expect":{"qhas":["올리브영"],"note":"음성인식 띄어쓰기"}}
 {"g":"voice","text":"편의점이요","expect":{"qhas":["편의점"]}}

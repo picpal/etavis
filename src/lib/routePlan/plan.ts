@@ -8,9 +8,9 @@ import { polylineLengthM } from '../geo';
 import { destinationPoint, estimateA, estimateB, estimateC, originPoint, projectOnCorridor, type CorridorPoint } from './corridor';
 import { enumeratePlans, totalVisits } from './enumerate';
 import { DEST_ID, LegStore, learnLegs, ORIGIN_ID } from './legs';
-import { allClosedAtArrival, scorePlan, type ScoreContext, type Scored } from './score';
+import { allClosedAtArrival, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
 import { pickOptions, pickSeeds, round2Plan, type Ranked } from './select';
-import type { Alternative, PlanInput, PlanOption, PlanResult, RouteProvider, SlotStatus, Visit } from './types';
+import type { Alternative, LatLng, PlanInput, PlanOption, PlanResult, Rescored, RouteProvider, RouteResult, SlotStatus, Visit } from './types';
 
 const DEFAULT_R = 4;
 const BEAM_FULL_UPTO = 3;
@@ -19,7 +19,7 @@ const BEAM_WIDTH = 64;
 export async function plan(
   input: PlanInput,
   provider: RouteProvider,
-  opts: { R?: number; beamWidth?: number } = {},
+  opts: { R?: number; beamWidth?: number; direct?: RouteResult } = {},
 ): Promise<PlanResult> {
   const R = opts.R ?? DEFAULT_R;
   let apiCalls = 0;
@@ -29,8 +29,8 @@ export async function plan(
     return provider.route(points, input.departAtMin, input.mode);
   };
 
-  // 0. 직행
-  const direct = await call([]);
+  // 0. 직행 — 파이프라인이 이미 실측했으면 재사용
+  const direct = opts.direct ?? (await call([]));
   const directMin = direct.durationMin;
   const directKm = direct.distanceKm;
   const legs = new LegStore();
@@ -162,5 +162,37 @@ export async function plan(
     slotStatus[slot.id] = 'ok';
   }
 
-  return { directMin, directKm, options, relaxed, alternatives, slotStatus, apiCalls };
+  const rescore = (visits: Visit[]): Rescored => {
+    // 교체 시트는 회랑에 없던 후보도 넣을 수 있다 — 그 자리에서 투영한다
+    const localCps = new Map<string, CorridorPoint>();
+    for (const v of visits) if (!corridor.has(v.candidate.id)) localCps.set(v.candidate.id, projectOnCorridor(poly, v.candidate.coord));
+    const rescoreCtx: ScoreContext = { ...ctx, corridorOf: id => corridor.get(id) ?? localCps.get(id)! };
+    const s = scorePlan(visits, rescoreCtx);
+    return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0 };
+  };
+
+  // leg 표 — 옵션·완화안에 등장한 후보 전부 × 양끝
+  const nodeIds = new Set<string>();
+  const nodeCoord = new Map<string, LatLng>([[ORIGIN_ID, input.origin], [DEST_ID, input.destination]]);
+  const nodeCp = new Map<string, CorridorPoint>([[ORIGIN_ID, originPoint()], [DEST_ID, destinationPoint(L)]]);
+  for (const o of [...chosen, ...(relaxed ? [relaxed] : [])]) {
+    for (const v of o.visits) {
+      nodeIds.add(v.candidate.id);
+      nodeCoord.set(v.candidate.id, v.candidate.coord);
+      nodeCp.set(v.candidate.id, corridor.get(v.candidate.id)!);
+    }
+  }
+  const nodes = [ORIGIN_ID, ...nodeIds, DEST_ID];
+  const legTable: PlanResult['legTable'] = {};
+  for (const a of nodes) for (const b of nodes) {
+    if (a === b || a === DEST_ID || b === ORIGIN_ID) continue;
+    const hit = legs.lookup(a, b, input.mode, input.departAtMin);
+    if (hit) legTable[`${a}>${b}`] = { min: hit.durationMin, km: hit.distanceKm, measured: true };
+    else {
+      const km = estimateLegKm(nodeCoord.get(a)!, nodeCoord.get(b)!, nodeCp.get(a)!, nodeCp.get(b)!);
+      legTable[`${a}>${b}`] = { min: km * ctx.rhoMinPerKm, km, measured: false };
+    }
+  }
+
+  return { directMin, directKm, options, relaxed, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount: measured.length + 1 };
 }

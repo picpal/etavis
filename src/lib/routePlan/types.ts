@@ -84,6 +84,8 @@ export type Alternative = {
   estimated: boolean;
 };
 
+export type Rescored = { totalMin: number; arrivals: number[]; distanceKm: number; estimated: boolean };
+
 export type PlanResult = {
   directMin: number;
   directKm: number;
@@ -93,4 +95,10 @@ export type PlanResult = {
   alternatives: Alternative[];
   slotStatus: Record<string, SlotStatus>;
   apiCalls: number;
+  /** 실측 leg가 있으면 실측, 없으면 추정으로 임의 방문 순서를 다시 채점한다(교체 시트용) */
+  rescore: (visits: Visit[]) => Rescored;
+  /** 선택된 후보 전부 × 출발·도착의 leg 표. 키 'O>c1' · 'c1>D'. 확정 변환이 쓴다 */
+  legTable: Record<string, { min: number; km: number; measured: boolean }>;
+  /** 성공한 라우팅 호출 수(직행 포함). "실측 6회" */
+  measuredCount: number;
 };

@@ -7,6 +7,7 @@ import React, { createContext, useContext, useMemo, useReducer, useRef } from 'r
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
+import { extractIntent, Intent } from '../lib/intent';
 import {
   Candidate,
   Dataset,
@@ -19,6 +20,12 @@ import {
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+/** 채팅 추출 결과를 화면에 드러내는 단위. 조용한 실패를 보이는 실패로 바꾼다 */
+export type IntentChip =
+  | { id: string; kind: 'stop'; label: string; queries: string[] }
+  | { id: string; kind: 'arriveBy'; label: string; value: number }
+  | { id: string; kind: 'mode'; label: string; value: 'car' | 'walk' | 'transit' };
 
 export type StopState = Stop & {
   /** 원본 stop id — 교체돼도 유지되며 LEGS 조회 키로 쓴다 */
@@ -68,6 +75,8 @@ export type PlanState = {
   arrivedAtDest: boolean;
   /** 채팅에서 지정한 경유지 개수(목 데이터). null이면 옵션이 정한 대로 */
   stopCount: number | null;
+  /** 채팅에서 뽑아낸 조건 칩. 잘못 잡힌 걸 사용자가 그 자리에서 지울 수 있어야 한다 */
+  chips: IntentChip[];
   /** 출발 시각(자정 기준 분) — 계획을 확정한 그 시각. 목 데이터의 08:10이 아니다 */
   departMin: number;
 };
@@ -105,6 +114,9 @@ function nowMin(): number {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
 }
+
+const MODE_TEXT = { car: '자동차', walk: '도보', transit: '대중교통' } as const;
+let chipSeq = 0;
 
 const asStopState = (s: Stop): StopState => ({
   ...s,
@@ -149,8 +161,18 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
 
 function initState(ds: Dataset): PlanState {
   const departMin = nowMin();
+  // 첫 메시지도 사용자가 한 말이다 — 알아들은 걸 칩으로 보여준다
+  const seeded = extractIntent(ds.userMessage, { currentStops: [] });
+  const seedChips: IntentChip[] = seeded.stops.map(st => ({
+    id: `s-${chipSeq++}`,
+    kind: 'stop' as const,
+    label: st.queries[0],
+    queries: st.queries,
+  }));
+  seedChips.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[ds.mode], value: ds.mode });
   return {
     departMin,
+    chips: seedChips,
     dataset: ds,
     mode: ds.mode,
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
@@ -173,6 +195,22 @@ function initState(ds: Dataset): PlanState {
     arrivedAtDest: false,
     stopCount: null,
   };
+}
+
+/** 칩의 검색어를 데이터셋 풀의 경유지에 맞춘다.
+    실제 서버에서는 이 자리가 카카오 로컬 검색 결과가 된다 */
+function stopsForChips(ds: Dataset, chips: IntentChip[]): StopState[] {
+  const pool = [...ds.stops, ...(ds.extraStops ?? [])];
+  const used = new Set<string>();
+  const out: StopState[] = [];
+  for (const chip of chips) {
+    if (chip.kind !== 'stop') continue;
+    const hit = pool.find(p => !used.has(p.id) && chip.queries.some(q => p.name.includes(q) || p.category === q));
+    if (!hit) continue; // 못 찾은 건 칩만 남는다 — 사용자가 보고 지울 수 있다
+    used.add(hit.id);
+    out.push(asStopState(hit));
+  }
+  return out;
 }
 
 /** 채팅에서 지정한 개수만큼 경유지를 뽑는다 (목 데이터 전용) */
@@ -320,6 +358,8 @@ type Action =
   | { type: 'DEPART_STOP' }
   | { type: 'ARRIVE_AT_DESTINATION' }
   | { type: 'SET_STOP_COUNT'; count: number }
+  | { type: 'APPLY_INTENT'; intent: Intent }
+  | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'PUSH_CHAT'; text: string };
 
 function reducer(state: PlanState, action: Action): PlanState {
@@ -465,6 +505,60 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, atStop: false, passedCount: Math.min(state.stops.length, state.passedCount + 1) };
     case 'ARRIVE_AT_DESTINATION':
       return state.arrivedAtDest ? state : { ...state, arrivedAtDest: true };
+    case 'APPLY_INTENT': {
+      const it = action.intent;
+      if (it.reject) return state; // 길찾기와 무관한 말은 계획을 건드리지 않는다
+      let chips = state.chips;
+      if (it.op === 'remove') {
+        const gone = it.stops.flatMap(s2 => s2.queries);
+        chips = chips.filter(c => !(c.kind === 'stop' && c.queries.some(q => gone.includes(q))));
+      } else {
+        const next: IntentChip[] = it.stops.flatMap(s2 =>
+          Array.from({ length: Math.max(1, s2.count) }, (_, k) => ({
+            id: `s-${chipSeq++}`,
+            kind: 'stop' as const,
+            label: s2.queries[0],
+            queries: s2.queries,
+          })),
+        );
+        chips = it.op === 'add' ? [...chips.filter(c => c.kind === 'stop'), ...next] : next;
+      }
+      // 조건 칩은 항상 최신 하나만 유지한다
+      const keep: IntentChip[] = chips.filter(c => c.kind === 'stop');
+      const arriveBy = it.arriveBy ?? state.arriveByMin;
+      const mode = it.mode ?? state.mode;
+      if (arriveBy != null) {
+        keep.push({ id: `a-${chipSeq++}`, kind: 'arriveBy', label: `${toHHMM(arriveBy).padStart(5, '0')}까지`, value: arriveBy });
+      }
+      keep.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[mode], value: mode });
+      const stops = stopsForChips(state.dataset, keep);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      return {
+        ...state,
+        chips: keep,
+        arriveByMin: arriveBy,
+        mode,
+        stopCount: stops.length,
+        optionOverrides: {},
+        ...computeChain(stops, state.dataset, state.departMin),
+      };
+    }
+    case 'REMOVE_CHIP': {
+      const chip = state.chips.find(c => c.id === action.id);
+      if (!chip) return state;
+      const chips = state.chips.filter(c => c.id !== action.id);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      const patch =
+        chip.kind === 'arriveBy' ? { arriveByMin: null } : chip.kind === 'mode' ? {} : {};
+      const stops = stopsForChips(state.dataset, chips);
+      return {
+        ...state,
+        ...patch,
+        chips,
+        stopCount: stops.length,
+        ...computeChain(stops, state.dataset, state.departMin),
+      };
+    }
     case 'SET_STOP_COUNT': {
       /* 목 데이터로 개수별 화면을 보기 위한 것. 실제 최적 순서 계산이 아니다 —
          그건 구간별 실제 소요시간이 있어야 하고, 그 API 키는 서버에 있어야 한다 */
@@ -526,6 +620,8 @@ type PlanApi = {
   arriveAtDestination: () => void;
   /** 목 데이터 경유지 개수 변경 — 채팅에서 'N개'를 말했을 때 */
   setStopCount: (count: number) => void;
+  applyIntent: (intent: Intent) => void;
+  removeChip: (id: string) => void;
   pushChat: (text: string) => void;
   arriveByLabel: string;
 };
@@ -611,6 +707,8 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'ARRIVE_AT_DESTINATION' });
       },
       setStopCount: count => dispatch({ type: 'SET_STOP_COUNT', count }),
+      applyIntent: intent => dispatch({ type: 'APPLY_INTENT', intent }),
+      removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),

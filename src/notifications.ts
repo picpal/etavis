@@ -95,6 +95,20 @@ export async function notifyArrival(stopId: string, stopName: string, taskCount:
   });
 }
 
+/** 최종 목적지 도착 — 여정의 끝. 여기서 알림은 멈춘다 */
+export async function notifyDestinationArrival(name: string, onTime: boolean, label: string) {
+  const ok = await ensureNotificationsReady();
+  if (!ok) return;
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${name} 도착`,
+      body: onTime ? `${label} · 목표 시각 안에 도착했어요` : `${label} 도착`,
+      data: { screen: 'today' },
+    },
+    trigger: null,
+  });
+}
+
 /** 경유지 출발 — 다음이 어디이고 몇 시 도착인지. 대중교통이면 구간 길찾기 액션을 붙인다 */
 export async function notifyNextLeg(toName: string, etaLabel: string, transit: boolean) {
   const ok = await ensureNotificationsReady();

@@ -64,6 +64,8 @@ export type PlanState = {
   passedCount: number;
   /** 다음 경유지에 도착해 체류 중인지 */
   atStop: boolean;
+  /** 최종 목적지 도착 — 경유지를 다 지난 뒤의 마지막 지오펜스 */
+  arrivedAtDest: boolean;
 };
 
 export const toMin = (hhmm: string) => {
@@ -177,6 +179,7 @@ function initState(ds: Dataset): PlanState {
     congestionReport: null,
     passedCount: 0,
     atStop: false,
+    arrivedAtDest: false,
   };
 }
 
@@ -317,6 +320,7 @@ type Action =
   | { type: 'CONFIRM_PLAN' }
   | { type: 'ARRIVE_AT_STOP' }
   | { type: 'DEPART_STOP' }
+  | { type: 'ARRIVE_AT_DESTINATION' }
   | { type: 'PUSH_CHAT'; text: string };
 
 function reducer(state: PlanState, action: Action): PlanState {
@@ -452,6 +456,8 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, atStop: true };
     case 'DEPART_STOP':
       return { ...state, atStop: false, passedCount: Math.min(state.stops.length, state.passedCount + 1) };
+    case 'ARRIVE_AT_DESTINATION':
+      return state.arrivedAtDest ? state : { ...state, arrivedAtDest: true };
     case 'PUSH_CHAT':
       return { ...state, chat: [...state.chat, action.text] };
     default:
@@ -496,6 +502,7 @@ type PlanApi = {
   confirmPlan: () => void;
   arriveAtStop: () => void;
   departStop: () => void;
+  arriveAtDestination: () => void;
   pushChat: (text: string) => void;
   arriveByLabel: string;
 };
@@ -574,6 +581,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       departStop: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'DEPART_STOP' });
+      },
+      arriveAtDestination: () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        dispatch({ type: 'ARRIVE_AT_DESTINATION' });
       },
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),

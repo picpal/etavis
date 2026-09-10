@@ -14,7 +14,7 @@ import * as Location from 'expo-location';
 import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
 import { formatEta } from '../lib/geo';
-import { notifyArrival, notifyNextLeg } from '../notifications';
+import { notifyArrival, notifyDestinationArrival, notifyNextLeg } from '../notifications';
 import {
   buildPolyline,
   crossTrack,
@@ -23,7 +23,7 @@ import {
   pointAtProgress,
   polylineLengthM,
 } from '../lib/geo';
-import { usePlan } from './plan';
+import { toMin, usePlan } from './plan';
 
 /** 위치 공급원 — live는 실제 GPS, 나머지는 개발용 시뮬레이션 */
 export type SimMode = 'off' | 'live' | 'driving' | 'deviate' | 'stuck';
@@ -89,7 +89,7 @@ type TrackerApi = TrackerState & {
 const TrackerContext = createContext<TrackerApi | null>(null);
 
 export function TrackerProvider({ children }: { children: React.ReactNode }) {
-  const { state, destinationDisplay, arriveAtStop, departStop } = usePlan();
+  const { state, destinationDisplay, arriveAtStop, departStop, arriveAtDestination } = usePlan();
 
   // 인터벌 안에서 최신 계획 상태·액션을 읽기 위한 ref (인터벌 재생성을 피한다)
   const planRef = useRef({
@@ -98,6 +98,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     atStop: state.atStop,
     mode: state.mode,
     destArriveAt: state.destArriveAt,
+    arrivedAtDest: state.arrivedAtDest,
+    arriveByMin: state.arriveByMin,
   });
   planRef.current = {
     stops: state.stops,
@@ -105,9 +107,11 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     atStop: state.atStop,
     mode: state.mode,
     destArriveAt: state.destArriveAt,
+    arrivedAtDest: state.arrivedAtDest,
+    arriveByMin: state.arriveByMin,
   };
-  const actionsRef = useRef({ arriveAtStop, departStop });
-  actionsRef.current = { arriveAtStop, departStop };
+  const actionsRef = useRef({ arriveAtStop, departStop, arriveAtDestination });
+  actionsRef.current = { arriveAtStop, departStop, arriveAtDestination };
   const [mode, setModeRaw] = useState<SimMode>('off');
   const [tracker, setTracker] = useState<TrackerState>({
     mode: 'off',
@@ -131,12 +135,16 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     offset ? { latitude: c.latitude + offset.dLat, longitude: c.longitude + offset.dLng } : c;
 
   // 현재 계획의 경로 폴리라인 (최초 계산 때 내비가 준 경로에 해당)
+  /* 사용자가 고른 좌표를 쓴다. 목 데이터 좌표로 그리면 경로도 도착 판정도
+     엉뚱한 지점을 기준으로 삼는다 — 지도 앱은 제대로 갔는데 앱만 못 알아보는 일이 생긴다 */
+  const destCoord = state.destinationCoord ?? state.dataset.destination.coord;
+  const originCoord = state.originCoord ?? state.dataset.origin.coord;
   const polyline = useMemo(() => {
-    const pts = [state.dataset.origin.coord, ...state.stops.map(s => s.coord), state.dataset.destination.coord].map(
-      c => (offset ? { latitude: c.latitude + offset.dLat, longitude: c.longitude + offset.dLng } : c),
+    const pts = [originCoord, ...state.stops.map(s => s.coord), destCoord].map(c =>
+      offset ? { latitude: c.latitude + offset.dLat, longitude: c.longitude + offset.dLng } : c,
     );
     return buildPolyline(pts, 16);
-  }, [state.dataset, state.stops, offset]);
+  }, [originCoord, destCoord, state.stops, offset]);
 
   const routeLengthM = useMemo(() => polylineLengthM(polyline), [polyline]);
 
@@ -153,10 +161,14 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     위치 공급원이 둘(포그라운드 watch + 배경 태스크)이고 dispatch는 비동기라,
     같은 도착·출발을 여러 번 판정하게 된다. 상태는 멱등이지만 알림은 그대로 중복된다.
   */
-  const notifiedRef = useRef<{ arrived: string | null; departed: string | null }>({
+  const notifiedRef = useRef<{ arrived: string | null; departed: string | null; dest: boolean }>({
     arrived: null,
     departed: null,
+    dest: false,
   });
+  // detect는 ref로 호출돼 클로저가 오래된 값을 잡는다 — 목적지 좌표도 ref로 넘긴다
+  const destCoordRef = useRef(destCoord);
+  destCoordRef.current = destCoord;
 
   const setMode = (next: SimMode) => {
     setModeRaw(next);
@@ -208,6 +220,22 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
             next?.name ?? destinationDisplay,
             formatEta(next?.arriveAt ?? planRef.current.destArriveAt),
             planRef.current.mode === 'transit',
+          );
+        }
+      }
+    } else if (!planRef.current.arrivedAtDest) {
+      /* 경유지를 다 지났으면 남은 건 최종 목적지뿐이다.
+         여기가 비어 있어서 '회사 도착'이 영영 잡히지 않았다 */
+      const distToDest = haversineM(position, shift(destCoordRef.current));
+      if (distToDest < arriveR) {
+        actionsRef.current.arriveAtDestination();
+        if (!notifiedRef.current.dest) {
+          notifiedRef.current.dest = true;
+          const p = planRef.current;
+          void notifyDestinationArrival(
+            destinationDisplay,
+            p.arriveByMin == null || toMin(p.destArriveAt) <= p.arriveByMin,
+            formatEta(p.destArriveAt),
           );
         }
       }

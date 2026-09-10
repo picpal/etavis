@@ -474,15 +474,25 @@ export function TodayScreen() {
         <TimelineRow
           node="dest"
           leg={`이동 ${state.finalLegMin}분 · ${state.finalLegKm}km`}
-          legActive={activeSeg === state.stops.length}
-          above={segStyle(state.stops.length, 'above')}
+          legActive={!state.arrivedAtDest && activeSeg === state.stops.length}
+          nodeState={state.arrivedAtDest ? 'passed' : 'upcoming'}
+          above={state.arrivedAtDest ? 'solid' : segStyle(state.stops.length, 'above')}
         >
           <Card style={{ padding: 16 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={{ flex: 1, fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 20, color: color.ink }}>
                 {destinationDisplay}
               </Text>
-              <Text style={[type.time, { color: color.ink }]}>{state.destArriveAt}</Text>
+              {state.arrivedAtDest ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle size={16} tint={color.green} />
+                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: color.green }}>
+                    도착
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[type.time, { color: color.ink }]}>{state.destArriveAt}</Text>
+              )}
             </View>
           </Card>
         </TimelineRow>

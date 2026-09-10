@@ -1,0 +1,15 @@
+{
+  "name": "etavia-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cases": "node run-cases.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "~6.0.3",
+    "wrangler": "^4.0.0"
+  }
+}

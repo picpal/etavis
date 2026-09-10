@@ -22,7 +22,8 @@ const cases = readFileSync(new URL('./prompts/cases.jsonl', import.meta.url), 'u
   .filter(Boolean)
   .map(l => JSON.parse(l));
 
-const only = process.argv[2];
+const only = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
+const asJson = process.argv.includes('--json');
 const rows = [];
 
 for (const c of cases) {
@@ -74,6 +75,30 @@ for (const r of rows) {
   byGroup[r.g].n++;
   if (!r.checked) byGroup[r.g].un++;
   else if (r.fails.length) byGroup[r.g].bad++;
+}
+
+if (asJson) {
+  // 엑셀 기록용 — server/results.json 으로 받아 쓴다
+  console.log(
+    JSON.stringify(
+      rows.map(r => ({
+        group: r.g,
+        text: r.text,
+        stops: r.flat.join(', '),
+        arriveBy: r.got.arriveBy,
+        mode: r.got.mode,
+        order: r.got.order,
+        reject: r.got.reject?.say ?? '',
+        ambiguous: r.got.ambiguous.map(a => a.question).join(' / '),
+        verdict: !r.checked ? '미검증' : r.fails.length ? '실패' : '통과',
+        fails: r.fails.join(' · '),
+        note: r.note ?? '',
+      })),
+      null,
+      2,
+    ),
+  );
+  process.exit(0);
 }
 
 console.log('그룹별 (실패 / 미검증 / 전체)');

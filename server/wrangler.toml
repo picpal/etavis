@@ -1,0 +1,13 @@
+name = "etavia"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# 무료 티어 KV — 기기당 rate limit 카운터만 쓴다
+# npx wrangler kv namespace create RATE
+[[kv_namespaces]]
+binding = "RATE"
+id = "여기에_KV_ID"
+
+# 비밀은 파일에 두지 않는다
+#   npx wrangler secret put OPENAI_API_KEY
+#   npx wrangler secret put APP_TOKEN

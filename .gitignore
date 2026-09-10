@@ -42,3 +42,5 @@ yarn-error.*
 
 # 로컬 API 키
 .env
+
+server/results.json

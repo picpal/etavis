@@ -57,12 +57,13 @@ const CATEGORIES: { keys: string[]; queries: string[]; why: string }[] = [
   { keys: ['커피', '카페', '아메리카노'], queries: ['스타벅스', '카페'], why: '커피 사기' },
   { keys: ['택배', '등기', '소포'], queries: ['우체국', '편의점'], why: '택배 부치기' },
   { keys: ['약국', '약'], queries: ['약국'], why: '약 사기' },
-  { keys: ['은행', '입금', '출금'], queries: ['은행'], why: '은행 업무' },
+  { keys: ['은행', '입금', '출금', '현금', 'ATM'], queries: ['은행'], why: '은행 업무' },
   { keys: ['편의점'], queries: ['CU', 'GS25', '편의점'], why: '편의점 들르기' },
   { keys: ['마트', '장보기'], queries: ['이마트', '마트'], why: '장보기' },
   { keys: ['밥', '식사', '점심', '저녁'], queries: ['음식점'], why: '식사' },
   { keys: ['치킨'], queries: ['교촌', '치킨'], why: '치킨 포장' },
   { keys: ['화장품', '선크림'], queries: ['올리브영'], why: '화장품 사기' },
+  { keys: ['기름', '주유', '휘발유'], queries: ['주유소'], why: '주유' },
 ];
 
 /** 길찾기와 무관한 요청 */
@@ -70,17 +71,22 @@ const OFF_TOPIC = ['날씨', '뉴스', '주가', '번역', '노래', '농담'];
 
 const NUM_WORDS: Record<string, number> = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6 };
 
-/** '9시까지', '오후 6시반까지' → 자정 기준 분 */
+/** '9시까지', '오후 6시반까지' → 자정 기준 분.
+    여러 개면 가장 이른 것 — 마감은 빡빡한 쪽으로 잡아야 안전하다 */
 function parseArriveBy(text: string): number | null {
-  const m = text.match(/(오전|오후|아침|저녁|밤)?\s*([0-9]{1,2})\s*시\s*(반|[0-9]{1,2}\s*분)?\s*(까지|전에)/);
-  if (!m) return null;
-  let h = parseInt(m[2], 10);
-  const half = m[3];
-  const min = half ? (half.includes('반') ? 30 : parseInt(half, 10)) : 0;
-  const pm = m[1] === '오후' || m[1] === '저녁' || m[1] === '밤';
-  if (pm && h < 12) h += 12;
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
+  const re = /(오전|오후|아침|저녁|밤)?\s*([0-9]{1,2})\s*시\s*(반|[0-9]{1,2}\s*분)?\s*(까지|전에)/g;
+  let best: number | null = null;
+  for (const m of text.matchAll(re)) {
+    let h = parseInt(m[2], 10);
+    const half = m[3];
+    const min = half ? (half.includes('반') ? 30 : parseInt(half, 10)) : 0;
+    const pm = m[1] === '오후' || m[1] === '저녁' || m[1] === '밤';
+    if (pm && h < 12) h += 12;
+    if (h > 23 || min > 59) continue;
+    const v = h * 60 + min;
+    if (best == null || v < best) best = v;
+  }
+  return best;
 }
 
 function parseCount(text: string): number {
@@ -90,11 +96,12 @@ function parseCount(text: string): number {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-function parseMode(text: string): Intent['mode'] {
-  if (/지하철|버스|대중교통|전철/.test(text)) return 'transit';
-  if (/걸어|도보|걸어서/.test(text)) return 'walk';
-  if (/차로|운전|자차|자동차/.test(text)) return 'car';
-  return null;
+function modeHits(text: string): Intent['mode'][] {
+  const hits: Intent['mode'][] = [];
+  if (/지하철|버스|대중교통|전철/.test(text)) hits.push('transit');
+  if (/걸어|도보/.test(text)) hits.push('walk');
+  if (/차로|운전|자차|자동차/.test(text)) hits.push('car');
+  return hits;
 }
 
 /** 계획에 들어 있는 경유지 중 문장이 가리키는 것을 찾는다 */
@@ -125,6 +132,7 @@ function parseEndpoints(text: string): Intent['endpoints'] {
 }
 
 export function extractIntent(text: string, ctx: IntentContext): Intent {
+  const modes = modeHits(text);
   const base: Intent = {
     resetStops: false,
     stops: [],
@@ -135,10 +143,14 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
         ? 'locked'
         : 'auto',
     arriveBy: parseArriveBy(text),
-    mode: parseMode(text),
+    mode: modes.length === 1 ? modes[0] : null,
     reject: null,
     ambiguous: [],
   };
+
+  if (modes.length > 1) {
+    base.ambiguous.push({ field: 'mode', question: '어떤 이동수단으로 갈까요?' });
+  }
 
   // 길찾기와 무관하면 경유지를 억지로 만들지 않는다
   if (OFF_TOPIC.some(k => text.includes(k))) {
@@ -204,8 +216,41 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   if (/픽업|태우|태워|데리러|모시러/.test(text)) {
     base.ambiguous.push({ field: 'stops', question: '어디서 태우면 될까요?' });
   }
+  // '동생 집', '친구 집' — 사람 이름이 붙은 장소는 좌표를 모른다
+  if (/(동생|친구|엄마|아빠|형|누나|언니|오빠)\s*집/.test(text)) {
+    base.ambiguous.push({ field: 'stops', question: '그곳 주소를 검색해서 골라주세요.' });
+  }
 
-  return { ...base, stops: extractStops(text, openNow, count) };
+  /* 부정 — 통째로 비우면 '커피는 됐고 은행만'의 은행까지 날아간다.
+     부정어 앞은 버리고 뒤만 본다 */
+  const NEG = /안 ?들러|들르지 ?마|안 ?가|가지 ?마|필요 ?없|됐고|됐어|말고/;
+  let scope = text;
+  if (NEG.test(text)) {
+    scope = text.split(NEG).pop() ?? '';
+    if (/딴 ?데|다른 ?데|다른 ?곳/.test(text)) {
+      base.ambiguous.push({ field: 'stops', question: '어떤 곳으로 바꿀까요?' });
+    }
+  }
+
+  const stops = extractStops(scope, openNow, count);
+
+  /* 아무것도 못 뽑았는데 문장이 '부탁'처럼 보이면 침묵하지 않는다.
+     오타·줄임말·영문·다국어가 여기로 떨어진다 — 조용히 비면 인사와 구별이 안 된다 */
+  const looksLikeRequest =
+    /들르|들러|들렀|들를|갔다|가야|가자|사야|사고|해야|필요|급해|뽑아|넣어|추가|있는 ?데|좀|줘|래|하고 싶|寄り|去|stop by|want/i.test(
+      text,
+    );
+  const nothingFound =
+    stops.length === 0 &&
+    base.arriveBy == null &&
+    base.mode == null &&
+    !base.resetStops &&
+    base.ambiguous.length === 0;
+  if (nothingFound && looksLikeRequest) {
+    base.ambiguous.push({ field: 'text', question: '어디를 들르실지 다시 말씀해 주세요.' });
+  }
+
+  return { ...base, stops };
 }
 
 /** 문장에서 브랜드·카테고리를 뽑아 add 경유지로 만든다 */

@@ -34,6 +34,10 @@ for (const c of cases) {
   const flat = got.stops.filter(s => s.op !== 'remove').flatMap(s => s.queries);
   if (e.qhas && !e.qhas.some(q => flat.includes(q))) fails.push(`qhas ${e.qhas}`);
   if (e.qmulti && !got.stops.some(s => s.queries.length > 1)) fails.push('qmulti');
+  if (e.qnot && e.qnot.some(q => flat.includes(q))) fails.push(`qnot ${e.qnot}`);
+  const adds = got.stops.filter(s => s.op !== 'remove').length;
+  if (e.nstops != null && adds !== e.nstops) fails.push(`stops=${adds}≠${e.nstops}`);
+  if (e.minstops != null && adds < e.minstops) fails.push(`stops=${adds}<${e.minstops}`);
   if (e.n != null && !got.stops.every(s => s.count === e.n)) {
     if (got.stops.length) fails.push(`n=${got.stops[0].count}≠${e.n}`);
   }
@@ -59,7 +63,7 @@ for (const c of cases) {
      자동 통과를 통과로 세면 합격률이 부풀려진다 */
   const checked = [
     'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
-    'swap', 'reset', 'dest', 'origin', 'order',
+    'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops',
   ].some(k => k in e);
   rows.push({ g: c.g, text: c.text, fails, note: e.note, flat, got, checked });
 }

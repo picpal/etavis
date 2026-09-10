@@ -47,3 +47,7 @@ server/results.json
 
 server/bench-*.jsonl
 server/llm-results.json
+
+# 로컬 도구 상태
+.context/
+.claude/launch.json

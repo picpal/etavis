@@ -121,3 +121,36 @@ test('직행이 실패하면 계획 자체가 실패한다', async () => {
   const dead = { route: () => Promise.reject(new Error('down')) };
   await assert.rejects(plan(base([slot('a', [on])]), dead));
 });
+
+test('direct 옵션 — 직행을 다시 부르지 않는다', async () => {
+  const p = mockRouteProvider();
+  const direct = await p.route([O, D], 480, 'car');
+  const r = await plan(base([slot('a', [on])]), p, { direct });
+  assert.equal(r.apiCalls, 1); // 후보 1개 실측만
+  assert.equal(r.directMin, direct.durationMin);
+  assert.equal(r.measuredCount, 2); // 직행 + 1
+});
+
+test('rescore — 실측 leg면 estimated=false, 없으면 true', async () => {
+  const r = await plan(base([slot('a', [on, near])]), mockRouteProvider());
+  const best = r.options[0].visits;
+  const same = r.rescore(best);
+  assert.equal(same.estimated, false);
+  assert.ok(Math.abs(same.totalMin - r.options[0].totalMin) < 1e-9);
+  const unknown = r.rescore([{ ...best[0], candidate: far }]);
+  assert.equal(unknown.estimated, true);
+  assert.equal(unknown.arrivals.length, 2);
+});
+
+test('legTable — 선택 후보 × 양끝의 완전 표, 실측 여부 표시', async () => {
+  const b1 = c('b1', at(37.5, 127.09));
+  const r = await plan(base([slot('a', [on, near]), slot('b', [b1])]), mockRouteProvider(), { R: 4 });
+  const ids = new Set<string>();
+  for (const o of r.options) for (const v of o.visits) ids.add(v.candidate.id);
+  const nodes = ['O', ...ids, 'D'];
+  for (const a of nodes) for (const b of nodes) {
+    if (a === b || a === 'D' || b === 'O') continue;
+    assert.ok(r.legTable[`${a}>${b}`], `missing ${a}>${b}`);
+  }
+  assert.equal(r.legTable['O>on'].measured, true);
+});

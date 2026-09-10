@@ -27,11 +27,11 @@ const rows = [];
 
 for (const c of cases) {
   if (only && c.g !== only) continue;
-  const got = extractIntent(c.text, { currentStops: c.ctx ?? [] });
+  const got = extractIntent(c.text, { currentStops: c.ctx ?? [], knownPlaces: ['회사', '집', '오크밸리 숙소'] });
   const e = c.expect ?? {};
   const fails = [];
 
-  const flat = got.stops.flatMap(s => s.queries);
+  const flat = got.stops.filter(s => s.op !== 'remove').flatMap(s => s.queries);
   if (e.qhas && !e.qhas.some(q => flat.includes(q))) fails.push(`qhas ${e.qhas}`);
   if (e.qmulti && !got.stops.some(s => s.queries.length > 1)) fails.push('qmulti');
   if (e.n != null && !got.stops.every(s => s.count === e.n)) {
@@ -39,8 +39,14 @@ for (const c of cases) {
   }
   if ('at' in e && got.arriveBy !== e.at) fails.push(`at=${got.arriveBy}≠${e.at}`);
   if ('m' in e && got.mode !== e.m) fails.push(`m=${got.mode}≠${e.m}`);
-  if (e.op && got.op !== e.op) fails.push(`op=${got.op}≠${e.op}`);
-  if ('lock' in e && got.orderLocked !== e.lock) fails.push(`lock=${got.orderLocked}`);
+  if (e.op === 'remove' && !got.stops.some(s2 => s2.op === 'remove')) fails.push('remove 없음');
+  if (e.swap && !(got.stops.some(s2 => s2.op === 'remove') && got.stops.some(s2 => s2.op === 'add')))
+    fails.push('교체(remove+add) 아님');
+  if (e.reset && !got.resetStops) fails.push('resetStops 아님');
+  if (e.dest && got.endpoints.destination !== e.dest) fails.push(`dest=${got.endpoints.destination}≠${e.dest}`);
+  if (e.origin && got.endpoints.origin !== e.origin) fails.push(`origin=${got.endpoints.origin}≠${e.origin}`);
+  if (e.order && got.order !== e.order) fails.push(`order=${got.order}≠${e.order}`);
+  if ('lock' in e && (got.order === 'locked') !== e.lock) fails.push(`order=${got.order}`);
   if ('flex' in e && got.stops.length && got.stops[0].flexible !== e.flex) fails.push(`flex=${got.stops[0].flexible}`);
   if (e.open && !got.stops.some(s => s.openNow)) fails.push('open');
   if (e.rej === true && !got.reject) fails.push('reject 안 함');
@@ -51,9 +57,10 @@ for (const c of cases) {
 
   /* note만 있고 검증 조건이 없는 케이스는 '통과'가 아니라 '미검증'이다.
      자동 통과를 통과로 세면 합격률이 부풀려진다 */
-  const checked = ['qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop'].some(
-    k => k in e,
-  );
+  const checked = [
+    'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
+    'swap', 'reset', 'dest', 'origin', 'order',
+  ].some(k => k in e);
   rows.push({ g: c.g, text: c.text, fails, note: e.note, flat, got, checked });
 }
 

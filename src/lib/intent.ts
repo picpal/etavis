@@ -8,7 +8,12 @@
  * '10분 안에 마트'가 가능한지는 라우팅 결과로 코드가 판정한다.
  */
 
+/** 경유지마다 붙는 동작. v2에서는 문장당 하나였고, 그래서
+    '올리브영 대신 이마트'(제거+추가)를 표현할 수 없었다 */
+export type StopOp = 'add' | 'remove';
+
 export type IntentStop = {
+  op: StopOp;
   /** 검색어 후보. 하나로 좁히지 않는다 — '택배'는 우체국일 수도 편의점일 수도 있다 */
   queries: string[];
   kind: 'brand' | 'category' | 'specific';
@@ -21,10 +26,14 @@ export type IntentStop = {
 };
 
 export type Intent = {
-  op: 'replace' | 'add' | 'remove';
+  /** true면 기존 경유지를 비우고 stops로 새로 시작한다 */
+  resetStops: boolean;
   stops: IntentStop[];
-  /** 사용자가 순서를 지정했으면 재정렬하지 않는다 */
-  orderLocked: boolean;
+  /** 출발지·목적지 변경. 경유지가 아니다 —
+      좌표를 아는 곳이 아니면 적용하지 않고 되묻는다 */
+  endpoints: { origin?: string; destination?: string };
+  /** auto=코드가 정렬 · locked=사용자가 순서를 지정 · reshuffle=다시 짜달라 */
+  order: 'auto' | 'locked' | 'reshuffle';
   /** 자정 기준 분 */
   arriveBy: number | null;
   mode: 'car' | 'walk' | 'transit' | null;
@@ -33,7 +42,11 @@ export type Intent = {
   ambiguous: { field: string; question: string }[];
 };
 
-export type IntentContext = { currentStops: string[] };
+export type IntentContext = {
+  currentStops: string[];
+  /** 좌표를 아는 장소 이름들 — 목적지 변경은 여기 있을 때만 적용한다 */
+  knownPlaces?: string[];
+};
 
 /* 목 사전 — 실제 서버에서는 LLM이 뽑고 카카오 로컬이 후보를 찾는다.
    여기서는 데이터셋 풀에 있는 이름까지 후보에 넣어야 매칭이 된다 */
@@ -84,11 +97,43 @@ function parseMode(text: string): Intent['mode'] {
   return null;
 }
 
+/** 계획에 들어 있는 경유지 중 문장이 가리키는 것을 찾는다 */
+function findInPlan(text: string, currentStops: string[]): string | undefined {
+  return currentStops.find(s => {
+    const brand = s.split(' ')[0];
+    if (text.includes(brand)) return true;
+    return CATEGORIES.some(c => c.keys.some(k => text.includes(k) && c.queries.some(q => s.includes(q))));
+  });
+}
+
+/** '목적지를 강남역으로', '회사 말고 집으로' → 출발지·목적지 변경 */
+function parseEndpoints(text: string): Intent['endpoints'] {
+  const out: Intent['endpoints'] = {};
+  const dest = text.match(/목적지(?:를|는)?\s*([가-힣A-Za-z0-9 ]{1,20}?)(?:으로|로)/);
+  if (dest) out.destination = dest[1].trim();
+  const origin = text.match(/출발지(?:를|는)?\s*([가-힣A-Za-z0-9 ]{1,20}?)(?:으로|로)/);
+  if (origin) out.origin = origin[1].trim();
+  // '회사 말고 집으로 가자' — 목적지 교체
+  if (!out.destination) {
+    const swap = text.match(/([가-힣A-Za-z0-9]{1,12})\s*말고\s*([가-힣A-Za-z0-9]{1,12}?)(?:으로|로)\s*(?:가|갈|갑)/);
+    if (swap) out.destination = swap[2];
+  }
+  if (!out.origin && /([가-힣A-Za-z0-9]{1,12})에서\s*출발/.test(text)) {
+    out.origin = text.match(/([가-힣A-Za-z0-9]{1,12})에서\s*출발/)![1];
+  }
+  return out;
+}
+
 export function extractIntent(text: string, ctx: IntentContext): Intent {
   const base: Intent = {
-    op: 'replace',
+    resetStops: false,
     stops: [],
-    orderLocked: /먼저|순서대로|그다음|그 다음/.test(text),
+    endpoints: {},
+    order: /순서\s*(바꿔|다시|재배치)|다시\s*짜/.test(text)
+      ? 'reshuffle'
+      : /먼저|순서대로|그다음|그 다음/.test(text)
+        ? 'locked'
+        : 'auto',
     arriveBy: parseArriveBy(text),
     mode: parseMode(text),
     reject: null,
@@ -99,24 +144,72 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   if (OFF_TOPIC.some(k => text.includes(k))) {
     return { ...base, reject: { say: '길 찾는 것만 도와드릴 수 있어요.' } };
   }
+  // 시스템을 캐거나 조종하려는 말 — 계획을 건드리지 않고 거절한다.
+  // 진짜 방어는 서버의 스키마 검증이고, 이건 1차선일 뿐이다
+  if (/이전\s*지시|시스템\s*프롬프트|규칙\s*(다\s*)?무시|너는\s*이제|API\s*키/i.test(text)) {
+    return { ...base, reject: { say: '길 찾는 것만 도와드릴 수 있어요.' } };
+  }
 
-  // 앞선 계획을 고치는 말 — currentStops를 알아야 해석된다
-  if (/빼|삭제|취소|말고/.test(text)) {
-    const target = ctx.currentStops.find(s => {
-      const brand = s.split(' ')[0];
-      return text.includes(brand) || CATEGORIES.some(c => c.keys.some(k => text.includes(k) && s.includes(c.queries[0])));
-    });
+  // 출발지·목적지 변경은 경유지가 아니다
+  const endpoints = parseEndpoints(text);
+  if (endpoints.origin || endpoints.destination) {
+    const known = ctx.knownPlaces ?? [];
+    const name = endpoints.destination ?? endpoints.origin!;
+    if (!known.some(k => k.includes(name) || name.includes(k))) {
+      return {
+        ...base,
+        endpoints,
+        ambiguous: [{ field: 'endpoints', question: `'${name}'이 어디인지 검색해서 골라주세요.` }],
+      };
+    }
+    return { ...base, endpoints };
+  }
+
+  // 전체 초기화
+  if (/다\s*(지우|지워|취소)|처음부터|전부\s*(지우|삭제)/.test(text)) {
+    return { ...base, resetStops: true };
+  }
+
+  // 'A 대신 B' — 제거와 추가가 한 문장에 있다. v2에서 표현 못 하던 자리다
+  const swap = text.match(/([가-힣A-Za-z0-9]{1,12})\s*(?:대신|말고)\s*([가-힣A-Za-z0-9]{1,12})/);
+  if (swap) {
+    const gone = findInPlan(swap[1], ctx.currentStops) ?? swap[1];
+    const add = extractStops(swap[2], false, 1);
+    if (add.length) {
+      return {
+        ...base,
+        stops: [
+          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false },
+          ...add,
+        ],
+      };
+    }
+  }
+
+  // 제거만 하는 말
+  if (/빼|삭제|취소/.test(text)) {
+    const target = findInPlan(text, ctx.currentStops);
     if (target) {
       return {
         ...base,
-        op: 'remove',
-        stops: [{ queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false }],
+        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false }],
       };
     }
   }
 
   const openNow = /문 ?연|영업 ?중|열려/.test(text);
   const count = parseCount(text);
+
+  // 사람은 장소가 아니다 — 어디서 태울지 모르면 되묻는다
+  if (/픽업|태우|태워|데리러|모시러/.test(text)) {
+    base.ambiguous.push({ field: 'stops', question: '어디서 태우면 될까요?' });
+  }
+
+  return { ...base, stops: extractStops(text, openNow, count) };
+}
+
+/** 문장에서 브랜드·카테고리를 뽑아 add 경유지로 만든다 */
+function extractStops(text: string, openNow: boolean, count: number): IntentStop[] {
   const found: IntentStop[] = [];
   const seen = new Set<string>();
 
@@ -126,6 +219,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     // '강남역 스타벅스'처럼 앞에 지역이 붙으면 특정 지점으로 본다
     const specific = new RegExp(`[가-힣A-Za-z0-9]+(역|점|동|구)\\s*${brand}|${brand}\\s*[가-힣]+점`).test(text);
     found.push({
+      op: 'add',
       queries: [brand],
       kind: specific ? 'specific' : 'brand',
       why: CATEGORIES.find(c => c.queries.includes(brand))?.why ?? `${brand} 들르기`,
@@ -139,13 +233,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     if (!cat.keys.some(k => text.includes(k))) continue;
     if (cat.queries.some(q => seen.has(q))) continue;
     cat.queries.forEach(q => seen.add(q));
-    found.push({ queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow });
+    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow });
   }
-
-  // 사람은 장소가 아니다 — 어디서 태울지 모르면 되묻는다
-  if (/픽업|태우|데리러|모시러/.test(text)) {
-    base.ambiguous.push({ field: 'stops', question: '어디서 태우면 될까요?' });
-  }
-
-  return { ...base, stops: found };
+  return found;
 }

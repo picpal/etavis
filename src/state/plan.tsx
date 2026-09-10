@@ -13,6 +13,7 @@ import {
   Dataset,
   datasets,
   LatLng,
+  RECENT_DESTINATIONS,
   RouteOption,
   Stop,
 } from '../data/mockData';
@@ -508,22 +509,19 @@ function reducer(state: PlanState, action: Action): PlanState {
     case 'APPLY_INTENT': {
       const it = action.intent;
       if (it.reject) return state; // 길찾기와 무관한 말은 계획을 건드리지 않는다
-      let chips = state.chips;
-      if (it.op === 'remove') {
-        const gone = it.stops.flatMap(s2 => s2.queries);
-        chips = chips.filter(c => !(c.kind === 'stop' && c.queries.some(q => gone.includes(q))));
-      } else {
-        const next: IntentChip[] = it.stops.flatMap(s2 =>
-          Array.from({ length: Math.max(1, s2.count) }, (_, k) => ({
-            id: `s-${chipSeq++}`,
-            kind: 'stop' as const,
-            label: s2.queries[0],
-            queries: s2.queries,
-          })),
-        );
-        chips = it.op === 'add' ? [...chips.filter(c => c.kind === 'stop'), ...next] : next;
+
+      /* v3 — 제거와 추가가 한 문장에 섞일 수 있다.
+         '올리브영 대신 이마트'가 remove + add 두 항목으로 온다 */
+      let chips: IntentChip[] = it.resetStops ? [] : state.chips.filter(c => c.kind === 'stop');
+      for (const st of it.stops) {
+        if (st.op === 'remove') {
+          chips = chips.filter(c => !(c.kind === 'stop' && c.queries.some(q => st.queries.includes(q))));
+          continue;
+        }
+        for (let k = 0; k < Math.max(1, st.count); k++) {
+          chips.push({ id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries });
+        }
       }
-      // 조건 칩은 항상 최신 하나만 유지한다
       const keep: IntentChip[] = chips.filter(c => c.kind === 'stop');
       const arriveBy = it.arriveBy ?? state.arriveByMin;
       const mode = it.mode ?? state.mode;
@@ -532,6 +530,13 @@ function reducer(state: PlanState, action: Action): PlanState {
       }
       keep.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[mode], value: mode });
       const stops = stopsForChips(state.dataset, keep);
+      /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
+         이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다) */
+      const known = RECENT_DESTINATIONS;
+      const pick = (name?: string) =>
+        name ? known.find(r => r.name.includes(name) || name.includes(r.name)) : undefined;
+      const nextDest = pick(it.endpoints.destination);
+      const nextOrigin = pick(it.endpoints.origin);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       return {
         ...state,
@@ -540,6 +545,8 @@ function reducer(state: PlanState, action: Action): PlanState {
         mode,
         stopCount: stops.length,
         optionOverrides: {},
+        ...(nextDest ? { destinationName: nextDest.name, destinationCoord: nextDest.coord } : null),
+        ...(nextOrigin ? { originName: nextOrigin.name, originCoord: nextOrigin.coord } : null),
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }

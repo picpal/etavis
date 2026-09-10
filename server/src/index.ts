@@ -1,11 +1,15 @@
 /**
  * Etavia 서버 — Cloudflare Workers.
  *
- * 하는 일은 하나다: 키를 가리고, LLM 응답을 검증해서 넘긴다.
- * 경로 계산·시간 판정은 앱이 한다. 여기서 하면 느려지고 배터리만 먹는다.
+ * 하는 일은 둘이다: 키를 가리고, 바깥 응답을 검증해서 넘긴다.
+ *   /extract — LLM 의도 추출
+ *   /route   — 카카오모빌리티 자동차 길찾기(경유지 ≤ 5)
+ * 경로 조합·시간 판정은 앱이 한다. 여기서 하면 느려지고 배터리만 먹는다.
  */
 import { parseIntent } from './schema';
 import { SYSTEM_PROMPT } from './prompt';
+import { parseRouteRequest } from './routeSchema';
+import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -14,6 +18,8 @@ export interface Env {
   OPENAI_MODEL?: string;
   /** 앱이 보내는 공유 토큰. 없으면 누구나 이 엔드포인트로 남의 요금을 쓴다 */
   APP_TOKEN: string;
+  /** developers.kakaomobility.com REST 키. 카카오 로컬(developers.kakao.com) 키와 다르다 */
+  KAKAO_MOBILITY_KEY: string;
   RATE: KVNamespace;
 }
 
@@ -21,40 +27,64 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
-/** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다 */
-const PER_MIN = 10;
+/** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다.
+    /route는 계획 하나에 5~9회가 나가므로(설계 문서 호출 수 표) 더 넉넉하다 */
+const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40 };
 
 /** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
 const DEFAULT_MODEL = 'gpt-5.6-sol';
 
-async function rateLimited(env: Env, deviceId: string): Promise<boolean> {
-  const key = `rl:${deviceId}:${Math.floor(Date.now() / 60000)}`;
+async function rateLimited(env: Env, path: string, deviceId: string): Promise<boolean> {
+  const key = `rl:${path}:${deviceId}:${Math.floor(Date.now() / 60000)}`;
   const hit = Number((await env.RATE.get(key)) ?? 0) + 1;
   await env.RATE.put(key, String(hit), { expirationTtl: 120 });
-  return hit > PER_MIN;
+  return hit > (PER_MIN[path] ?? 10);
+}
+
+/** 두 엔드포인트가 공유하는 문지기. 토큰 → rate limit → JSON 파싱 */
+async function gate(req: Request, env: Env, path: string): Promise<{ body: unknown } | Response> {
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  if (req.headers.get('x-app-token') !== env.APP_TOKEN) return json({ error: 'unauthorized' }, 401);
+  const deviceId = req.headers.get('x-device-id') ?? 'unknown';
+  if (await rateLimited(env, path, deviceId)) return json({ error: 'rate limited' }, 429);
+  try {
+    return { body: await req.json() };
+  } catch {
+    return json({ error: 'bad json' }, 400);
+  }
+}
+
+/** 카카오 길찾기 프록시. 응답은 앱의 RouteResult 형식으로 정규화해서만 내보낸다 */
+async function handleRoute(body: unknown, env: Env): Promise<Response> {
+  const parsed = parseRouteRequest(body);
+  if (!parsed) return json({ error: 'bad request' }, 400);
+  const res = await fetch(kakaoDirectionsUrl(parsed), {
+    headers: { authorization: `KakaoAK ${env.KAKAO_MOBILITY_KEY}` },
+  });
+  if (!res.ok) return json({ error: 'upstream', status: res.status }, 502);
+  let raw: unknown;
+  try {
+    raw = await res.json();
+  } catch {
+    return json({ error: 'unparseable' }, 502);
+  }
+  const norm = normalizeKakao(raw, parsed.polyline);
+  // result_code≠0(예: 104 출발·도착 5m 이내)은 앱이 사용자에게 설명할 수 있게 코드를 넘긴다
+  if (!norm.ok) return json({ error: 'route', code: norm.code, msg: norm.msg }, 422);
+  return json(norm.route);
 }
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
-    if (url.pathname !== '/extract') return json({ error: 'not found' }, 404);
-    if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+    if (url.pathname !== '/extract' && url.pathname !== '/route') return json({ error: 'not found' }, 404);
 
-    if (req.headers.get('x-app-token') !== env.APP_TOKEN) {
-      return json({ error: 'unauthorized' }, 401);
-    }
-    const deviceId = req.headers.get('x-device-id') ?? 'unknown';
-    if (await rateLimited(env, deviceId)) {
-      return json({ error: 'rate limited' }, 429);
-    }
+    const gated = await gate(req, env, url.pathname);
+    if (gated instanceof Response) return gated;
+    if (url.pathname === '/route') return handleRoute(gated.body, env);
 
-    let body: { text?: string; context?: unknown };
-    try {
-      body = await req.json();
-    } catch {
-      return json({ error: 'bad json' }, 400);
-    }
+    const body = (gated.body ?? {}) as { text?: string; context?: unknown };
     const text = (body.text ?? '').slice(0, 500);
     if (!text.trim()) return json({ error: 'empty text' }, 400);
 

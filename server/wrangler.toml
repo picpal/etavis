@@ -11,3 +11,4 @@ id = "여기에_KV_ID"
 # 비밀은 파일에 두지 않는다
 #   npx wrangler secret put OPENAI_API_KEY
 #   npx wrangler secret put APP_TOKEN
+#   npx wrangler secret put KAKAO_MOBILITY_KEY   # developers.kakaomobility.com 키 (카카오 로컬 키와 별개)

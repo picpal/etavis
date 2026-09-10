@@ -5,7 +5,7 @@ import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { Candidate } from '../data/mockData';
-import { usePlan } from '../state/plan';
+import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SegmentControl } from '../components/common';
 import { StripePhoto } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
@@ -56,6 +56,17 @@ export function CandidateSheet({
 }) {
   const insets = useSafeAreaInsets();
   const { state } = usePlan();
+
+  /* 후보의 arriveAt은 목 데이터에 박힌 아침 시각이라 지금 경로와 맞지 않는다.
+     현재 이 경유지의 도착 시각에 후보 간 추가시간 차이를 더해 보여준다 */
+  const stopNow = baseId ? state.stops.find(st => st.baseId === baseId) : undefined;
+  const candList = baseId ? state.dataset.candidates[baseId] ?? [] : [];
+  const currentCand =
+    candList.find(c => c.id === stopNow?.selectedCandidateId) ?? candList.find(c => c.recommended) ?? candList[0];
+  const arriveFor = (cand: Candidate): string => {
+    if (!stopNow || !currentCand) return cand.arriveAt;
+    return toHHMM(toMin(stopNow.arriveAt) + (cand.addedMin - currentCand.addedMin));
+  };
   const [sortIdx, setSortIdx] = useState(0);
 
   // 닫힘 애니메이션 동안 콘텐츠 유지
@@ -164,7 +175,7 @@ export function CandidateSheet({
                     <MicroLabelRow
                       items={[
                         { label: '추가시간', value: `+${cand.addedMin}분`, tint: color.amber },
-                        { label: '도착', value: cand.arriveAt },
+                        { label: '도착', value: arriveFor(cand) },
                         { label: '체류', value: `${cand.dwellMin}분` },
                         { label: '주차', value: cand.parking },
                       ]}
@@ -243,7 +254,7 @@ export function CandidateSheet({
                         </Text>
                         {!disabled && (
                           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
-                            {cand.arriveAt}
+                            {arriveFor(cand)}
                           </Text>
                         )}
                       </View>

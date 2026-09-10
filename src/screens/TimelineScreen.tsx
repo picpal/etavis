@@ -29,7 +29,7 @@ let guideSeen = false;
 
 export function TimelineScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
-  const { state, reorderStops, removeStop, replaceStop, destinationDisplay, originDisplay, slackMin, arriveByLabel, confirmPlan } = usePlan();
+  const { state, reorderStops, removeStop, replaceStop, destinationDisplay, originDisplay, slackMin, arriveByLabel, confirmPlan, departAtLabel } = usePlan();
   const [taskStopId, setTaskStopId] = useState<string | null>(null);
   const [candidateStopId, setCandidateStopId] = useState<string | null>(null);
 
@@ -261,7 +261,7 @@ export function TimelineScreen({ navigation, route }: Props) {
                     {ds.origin.note}
                   </Text>
                 </View>
-                <Text style={[type.time, { color: color.ink }]}>{ds.origin.departAt}</Text>
+                <Text style={[type.time, { color: color.ink }]}>{departAtLabel}</Text>
               </View>
             </Card>
           </TimelineRow>

@@ -68,6 +68,8 @@ export type PlanState = {
   arrivedAtDest: boolean;
   /** 채팅에서 지정한 경유지 개수(목 데이터). null이면 옵션이 정한 대로 */
   stopCount: number | null;
+  /** 출발 시각(자정 기준 분) — 계획을 확정한 그 시각. 목 데이터의 08:10이 아니다 */
+  departMin: number;
 };
 
 export const toMin = (hhmm: string) => {
@@ -98,44 +100,29 @@ const legBetween = (a: string, b: string, ds?: Dataset) => {
   return table[`${a}>${b}`] ?? table[`${b}>${a}`] ?? { min: 10, km: 5.0 };
 };
 
+/** 지금 시각(자정 기준 분) — 출발은 목 데이터가 아니라 현재 시각에서 시작한다 */
+function nowMin(): number {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+
 const asStopState = (s: Stop): StopState => ({
   ...s,
   baseId: s.id,
   replaceDeltaMin: 0,
 });
 
-/** 로드 시: stops 수치는 데이터 그대로, 목적지 도착만 체인으로 파생 */
-function deriveFromDataset(ds: Dataset) {
-  const stops = ds.stops.map(asStopState);
-  const departMin = toMin(ds.origin.departAt);
-  let finalLegMin: number;
-  let finalLegKm: number;
-  let destArrive: number;
-  if (stops.length) {
-    const last = stops[stops.length - 1];
-    const fin = legBetween(last.baseId, 'dest', ds);
-    finalLegMin = fin.min;
-    finalLegKm = fin.km;
-    destArrive = toMin(last.arriveAt) + last.dwellMin + fin.min;
-  } else {
-    const fin = legBetween('origin', 'dest', ds);
-    finalLegMin = fin.min;
-    finalLegKm = fin.km;
-    destArrive = departMin + fin.min;
-  }
-  const totalMin = destArrive - departMin;
-  return {
-    stops,
-    finalLegMin,
-    finalLegKm,
-    destArriveAt: toHHMM(destArrive),
-    totals: { totalMin, deltaMin: totalMin - ds.directMin, stopCount: stops.length },
-  };
+/**
+ * 로드 시에도 체인으로 전부 계산한다.
+ * 예전엔 목 데이터의 arriveAt('08:22')을 그대로 썼는데, 출발이 현재 시각이 되면서
+ * 출발만 저녁이고 경유지는 아침인 상태가 나왔다 — 총 소요가 음수로 찍혔다.
+ */
+function deriveFromDataset(ds: Dataset, departMin: number) {
+  return computeChain(ds.stops.map(asStopState), ds, departMin);
 }
 
 /** 변경 후: LEGS 체인으로 전체 재계산 */
-function computeChain(stops: StopState[], ds: Dataset) {
-  const departMin = toMin(ds.origin.departAt);
+function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
   let clock = departMin;
   const out = stops.map((s, i) => {
     const prevKey = i === 0 ? 'origin' : stops[i - 1].baseId;
@@ -161,7 +148,9 @@ function computeChain(stops: StopState[], ds: Dataset) {
 }
 
 function initState(ds: Dataset): PlanState {
+  const departMin = nowMin();
   return {
+    departMin,
     dataset: ds,
     mode: ds.mode,
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
@@ -169,7 +158,7 @@ function initState(ds: Dataset): PlanState {
     destinationCoord: null,
     originName: null,
     originCoord: null,
-    ...deriveFromDataset(ds),
+    ...deriveFromDataset(ds, departMin),
     options: ds.options,
     selectedOptionId: (ds.options.find(o => o.recommended) ?? ds.options[0]).id,
     optionOverrides: {},
@@ -388,11 +377,16 @@ function reducer(state: PlanState, action: Action): PlanState {
       const recommendedId = (state.dataset.options.find(o => o.recommended) ?? state.dataset.options[0]).id;
       const untouched =
         state.stopCount == null && option.id === recommendedId && Object.keys(overrides).length === 0;
+      // 계획을 확정하는 그 순간이 출발 시각이다
+      const depart = nowMin();
       return {
         ...state,
         selectedOptionId: option.id,
         planConfirmed: true,
-        ...(untouched ? deriveFromDataset(state.dataset) : computeChain(stops, state.dataset)),
+        departMin: depart,
+        ...(untouched
+          ? deriveFromDataset(state.dataset, depart)
+          : computeChain(stops, state.dataset, depart)),
       };
     }
     case 'REORDER_LOCAL':
@@ -409,7 +403,7 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, stops, recalcPending: true };
     }
     case 'RECALC': {
-      const next = computeChain(state.stops, state.dataset);
+      const next = computeChain(state.stops, state.dataset, state.departMin);
       // 히스테리시스: 도착 예정이 3분 미만으로 흔들리면 표기를 유지한다.
       // 값이 볼 때마다 바뀌면 사용자가 그 숫자를 믿지 않게 된다.
       const drift = Math.abs(toMin(next.destArriveAt) - toMin(state.destArriveAt));
@@ -480,7 +474,7 @@ function reducer(state: PlanState, action: Action): PlanState {
         ...state,
         stopCount: stops.length,
         optionOverrides: {},
-        ...computeChain(stops, state.dataset),
+        ...computeChain(stops, state.dataset, state.departMin),
       };
     }
     case 'PUSH_CHAT':
@@ -506,6 +500,8 @@ type PlanApi = {
   destinationDisplay: string;
   /** 표시용 출발지 이름 — GPS를 잡았으면 '내 위치'. 목 데이터셋 이름이 새어 나가지 않게 한 곳에서 만든다 */
   originDisplay: string;
+  /** 출발 시각 표시 — 목 데이터가 아니라 계획을 확정한 시각 */
+  departAtLabel: string;
   /** 선택 가능한 도착 시각 옵션 (30분 단위) */
   arriveByOptions: number[];
   selectOption: (id: string) => void;
@@ -564,6 +560,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       },
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
       originDisplay: state.originName ?? (here.coord ? '내 위치' : state.dataset.origin.name),
+      departAtLabel: toHHMM(state.departMin).padStart(5, '0'),
       /*
         마감 후보는 '지금' 이후만 보여준다. 목 데이터의 출발 시각을 기준으로 잡으면
         이미 지나간 시각이 목록에 남아 고를 수 있게 된다.

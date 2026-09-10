@@ -146,7 +146,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, setArriveBy } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, setArriveBy, setStopCount } = usePlan();
   const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
@@ -159,6 +159,21 @@ export function PlanScreen({ navigation }: Props) {
     이 앱이 하는 일이 시간 타당성 판단이니 그 답이 제일 먼저 나와야 한다.
   */
   const [impossible, setImpossible] = useState<{ arriveMin: number; overMin: number } | null>(null);
+
+  /* 목 데이터 전용 — 채팅에서 '경유지 3개' 같은 말을 잡아 개수를 맞춘다.
+     진짜 파싱이 아니라 개수별 화면을 보기 위한 장치다 */
+  const applyChat = (text: string) => {
+    pushChat(text);
+    const m = text.match(/([0-9]+|한|두|세|네|다섯|여섯)\s*(개|곳|군데)/);
+    if (!m) return;
+    // '개'는 물건도 센다 — '샌드위치 2개 사기'가 경유지 수를 바꾸면 안 된다.
+    // 장소를 세는 '곳·군데'거나, 문장에 경유 이야기가 있을 때만 받는다
+    const aboutStops = m[2] !== '개' || /경유|들르|들를|들러|들렀/.test(text);
+    if (!aboutStops) return;
+    const words: Record<string, number> = { 한: 1, 두: 2, 세: 3, 네: 4, 다섯: 5, 여섯: 6 };
+    const n = words[m[1]] ?? parseInt(m[1], 10);
+    if (Number.isFinite(n) && n >= 0) setStopCount(n);
+  };
 
   const startSearch = () => {
     if (state.arriveByMin != null) {
@@ -204,7 +219,9 @@ export function PlanScreen({ navigation }: Props) {
           {state.chat.length > 1 && (
             <AssistantShell>
               <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
-                반영했어요. 조건이 바뀌면 경로도 달라져요.
+                {state.stops.length > 0
+                  ? `경유지 ${state.stops.length}곳으로 잡았어요. 조건이 바뀌면 경로도 달라져요.`
+                  : '반영했어요. 조건이 바뀌면 경로도 달라져요.'}
               </Text>
             </AssistantShell>
           )}
@@ -216,7 +233,7 @@ export function PlanScreen({ navigation }: Props) {
         <BottomInputBar
           placeholder="조건을 더 말해보세요"
           autoFocus
-          onSubmit={text => pushChat(text)}
+          onSubmit={applyChat}
         />
       </KeyboardAvoidingView>
       <TabBar />

@@ -69,6 +69,11 @@ export type Dataset = {
    * 데이터셋마다 지역이 다르므로 여기에 같이 둔다.
    */
   legs?: Record<string, { min: number; km: number }>;
+  /**
+   * 채팅에서 '경유지 N개'를 말했을 때 붙일 여분 경유지.
+   * stops 뒤에 순서대로 이어 붙여 N개를 맞춘다 (목 데이터 전용).
+   */
+  extraStops?: Stop[];
 };
 
 const ALPENSIA: LatLng = { latitude: 37.6605, longitude: 128.6754 };
@@ -218,6 +223,11 @@ const OY_IFC: LatLng = { latitude: 37.52503, longitude: 126.92576 };      // 올
 const PB_MOKDONG: LatLng = { latitude: 37.52731, longitude: 126.86443 };  // 파리바게뜨 목동역점
 const PB_OMOKGYO: LatLng = { latitude: 37.5246, longitude: 126.87291 };   // 파리바게뜨 오목교역점
 const PB_PARAGON: LatLng = { latitude: 37.52919, longitude: 126.87483 };  // 파리바게뜨 목동파라곤점
+/* 경유지 개수 실험용 — 여의도→목동 축 위의 실제 지점들 */
+const CU_YEOUIDO: LatLng = { latitude: 37.52643, longitude: 126.92401 };  // CU 여의도역점
+const SB_YEOUINARU: LatLng = { latitude: 37.52717, longitude: 126.93312 }; // 스타벅스 여의나루역점
+const POST_YEONGDEUNGPO: LatLng = { latitude: 37.52209, longitude: 126.90767 }; // 영등포우체국
+const GS_MOKDONG: LatLng = { latitude: 37.52585, longitude: 126.87612 };  // GS25 목동점
 
 export const datasetCommute: Dataset = {
   key: 'commute',
@@ -282,6 +292,34 @@ export const datasetCommute: Dataset = {
         { id: 't11', text: '여기서도 도착·출발이 자동 전환되는지', done: false },
         { id: 't12', text: '대중교통 선택 → 다음 구간 길찾기로 바뀌는지', done: false },
       ],
+    },
+  ],
+  /* 채팅에서 개수를 말하면 여기서 앞에서부터 붙인다.
+     실제 최적화가 아니라 개수별 UI를 보기 위한 목 데이터다 */
+  extraStops: [
+    {
+      id: 's3', name: '스타벅스 여의나루역점', category: '카페', coord: SB_YEOUINARU,
+      dwellMin: 8, arriveAt: '08:18', legMin: 6, legKm: 1.4,
+      openState: 'open', openNote: '체류 8분 · 영업 중',
+      tasks: [{ id: 'e1', text: '아메리카노 2잔 포장', done: false }],
+    },
+    {
+      id: 's4', name: 'CU 여의도역점', category: '편의점', coord: CU_YEOUIDO,
+      dwellMin: 4, arriveAt: '08:30', legMin: 5, legKm: 1.1,
+      openState: 'open', openNote: '체류 4분 · 24시간',
+      tasks: [{ id: 'e2', text: '택배 접수', done: false }],
+    },
+    {
+      id: 's5', name: '영등포우체국', category: '우체국', coord: POST_YEONGDEUNGPO,
+      dwellMin: 7, arriveAt: '08:38', legMin: 7, legKm: 2.3,
+      openState: 'open', openNote: '체류 7분 · 09시 오픈',
+      tasks: [{ id: 'e3', text: '등기 보내기', done: false }],
+    },
+    {
+      id: 's6', name: 'GS25 목동점', category: '편의점', coord: GS_MOKDONG,
+      dwellMin: 3, arriveAt: '08:52', legMin: 4, legKm: 1.2,
+      openState: 'open', openNote: '체류 3분 · 24시간',
+      tasks: [{ id: 'e4', text: '커피 한 잔', done: false }],
     },
   ],
   candidates: {

@@ -66,6 +66,8 @@ export type PlanState = {
   atStop: boolean;
   /** 최종 목적지 도착 — 경유지를 다 지난 뒤의 마지막 지오펜스 */
   arrivedAtDest: boolean;
+  /** 채팅에서 지정한 경유지 개수(목 데이터). null이면 옵션이 정한 대로 */
+  stopCount: number | null;
 };
 
 export const toMin = (hhmm: string) => {
@@ -180,7 +182,14 @@ function initState(ds: Dataset): PlanState {
     passedCount: 0,
     atStop: false,
     arrivedAtDest: false,
+    stopCount: null,
   };
+}
+
+/** 채팅에서 지정한 개수만큼 경유지를 뽑는다 (목 데이터 전용) */
+function stopsForCount(ds: Dataset, count: number): StopState[] {
+  const pool = [...ds.stops, ...(ds.extraStops ?? [])];
+  return pool.slice(0, Math.max(0, Math.min(pool.length, count))).map(asStopState);
 }
 
 /** A5 선택안 → stops 구성. stopNames의 중간 항목을 stop/candidate 이름과 매칭 */
@@ -321,6 +330,7 @@ type Action =
   | { type: 'ARRIVE_AT_STOP' }
   | { type: 'DEPART_STOP' }
   | { type: 'ARRIVE_AT_DESTINATION' }
+  | { type: 'SET_STOP_COUNT'; count: number }
   | { type: 'PUSH_CHAT'; text: string };
 
 function reducer(state: PlanState, action: Action): PlanState {
@@ -366,7 +376,9 @@ function reducer(state: PlanState, action: Action): PlanState {
     case 'APPLY_OPTION': {
       const option = state.options.find(o => o.id === action.id) ?? state.options[0];
       const overrides = state.optionOverrides?.[option.id] ?? {};
-      const stops = stopsForOption(state.dataset, option).map(s => {
+      const base =
+        state.stopCount == null ? stopsForOption(state.dataset, option) : stopsForCount(state.dataset, state.stopCount);
+      const stops = base.map(s => {
         const overrideId = overrides[s.baseId];
         if (!overrideId) return s;
         const cands = state.dataset.candidates[s.baseId] ?? [];
@@ -374,7 +386,8 @@ function reducer(state: PlanState, action: Action): PlanState {
         return cand ? applyCandidate(s, cand, cands) : s;
       });
       const recommendedId = (state.dataset.options.find(o => o.recommended) ?? state.dataset.options[0]).id;
-      const untouched = option.id === recommendedId && Object.keys(overrides).length === 0;
+      const untouched =
+        state.stopCount == null && option.id === recommendedId && Object.keys(overrides).length === 0;
       return {
         ...state,
         selectedOptionId: option.id,
@@ -458,6 +471,18 @@ function reducer(state: PlanState, action: Action): PlanState {
       return { ...state, atStop: false, passedCount: Math.min(state.stops.length, state.passedCount + 1) };
     case 'ARRIVE_AT_DESTINATION':
       return state.arrivedAtDest ? state : { ...state, arrivedAtDest: true };
+    case 'SET_STOP_COUNT': {
+      /* 목 데이터로 개수별 화면을 보기 위한 것. 실제 최적 순서 계산이 아니다 —
+         그건 구간별 실제 소요시간이 있어야 하고, 그 API 키는 서버에 있어야 한다 */
+      const stops = stopsForCount(state.dataset, action.count);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      return {
+        ...state,
+        stopCount: stops.length,
+        optionOverrides: {},
+        ...computeChain(stops, state.dataset),
+      };
+    }
     case 'PUSH_CHAT':
       return { ...state, chat: [...state.chat, action.text] };
     default:
@@ -503,6 +528,8 @@ type PlanApi = {
   arriveAtStop: () => void;
   departStop: () => void;
   arriveAtDestination: () => void;
+  /** 목 데이터 경유지 개수 변경 — 채팅에서 'N개'를 말했을 때 */
+  setStopCount: (count: number) => void;
   pushChat: (text: string) => void;
   arriveByLabel: string;
 };
@@ -586,6 +613,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'ARRIVE_AT_DESTINATION' });
       },
+      setStopCount: count => dispatch({ type: 'SET_STOP_COUNT', count }),
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),

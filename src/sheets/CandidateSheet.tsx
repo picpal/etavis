@@ -1,4 +1,4 @@
-/** A4 — 후보 비교 시트 (height 730, 정렬 세그먼트 동작)
+/** A4 — 후보 비교 시트 (height 730, 정렬 세그먼트는 candidateRank.ts 가 정한다)
  *  A6 타임라인의 `매장 교체`와 A5 추천 경로의 매장 선택 칩이 공용으로 쓴다. */
 import React, { useMemo, useState } from 'react';
 import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native';
@@ -7,16 +7,9 @@ import { color, type } from '../theme/tokens';
 import { Candidate } from '../data/mockData';
 import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SegmentControl } from '../components/common';
+import { CANDIDATE_SORTS, CandidateSort, rankCandidates } from '../lib/candidateRank';
 import { StripePhoto } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
-
-const SORTS = ['추가시간', '영업 상태', '거리'] as const;
-
-const openRank = { open: 0, closing_soon: 1, closed: 2 } as const;
-const parseKm = (c: Candidate) => {
-  const m = c.note.match(/([\d.]+)km/);
-  return m ? parseFloat(m[1]) : 99;
-};
 
 function OpenStateRow({ cand }: { cand: Candidate }) {
   const tint = cand.openState === 'closed' ? color.muted : color.green;
@@ -67,7 +60,7 @@ export function CandidateSheet({
     if (!stopNow || !currentCand) return cand.arriveAt;
     return toHHMM(toMin(stopNow.arriveAt) + (cand.addedMin - currentCand.addedMin));
   };
-  const [sortIdx, setSortIdx] = useState(0);
+  const [sortIdx, setSortIdx] = useState<CandidateSort>(0);
 
   // 닫힘 애니메이션 동안 콘텐츠 유지
   const lastRef = React.useRef({ baseId, currentCandidateId });
@@ -76,7 +69,9 @@ export function CandidateSheet({
   const currentId = lastRef.current.currentCandidateId;
 
   const candidates = effBaseId ? state.dataset.candidates[effBaseId] ?? [] : [];
-  const recommended = candidates.find(c => c.recommended) ?? candidates[0];
+  // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다. 마감·선택불가는 여기서 걸러진다
+  const sorted = useMemo(() => rankCandidates(candidates, sortIdx), [candidates, sortIdx]);
+  const recommended = sorted.find(c => c.recommended) ?? sorted[0];
   const current = candidates.find(c => c.id === currentId);
 
   /**
@@ -87,18 +82,7 @@ export function CandidateSheet({
   React.useEffect(() => {
     if (baseId) setExpandedId(null); // 시트가 새로 열리면 추천으로 되돌림
   }, [baseId]);
-  const expanded = candidates.find(c => c.id === expandedId) ?? recommended;
-
-  // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다
-  const sorted = useMemo(() => {
-    const list = [...candidates];
-    if (sortIdx === 0) list.sort((a, b) => a.addedMin - b.addedMin);
-    if (sortIdx === 1) list.sort((a, b) => openRank[a.openState] - openRank[b.openState]);
-    if (sortIdx === 2) list.sort((a, b) => parseKm(a) - parseKm(b));
-    // 선택 불가 후보는 항상 마지막
-    list.sort((a, b) => Number(!!a.disabled) - Number(!!b.disabled));
-    return list;
-  }, [candidates, sortIdx]);
+  const expanded = sorted.find(c => c.id === expandedId) ?? recommended;
 
   /** 카드 탭 — 선택이 아니라 '그 자리에서 펼치기' */
   const focus = (cand: Candidate) => {
@@ -126,16 +110,16 @@ export function CandidateSheet({
                 <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
                   {(current ?? recommended).name} 교체
                 </Text>
-                <Text style={[type.titleL, { color: color.ink }]}>후보 {candidates.length}곳</Text>
+                <Text style={[type.titleL, { color: color.ink }]}>후보 {sorted.length}곳</Text>
               </View>
               <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                 <Text style={[type.action, { color: color.primary }]}>완료</Text>
               </Pressable>
             </View>
             <SegmentControl
-              options={[...SORTS]}
+              options={[...CANDIDATE_SORTS]}
               value={sortIdx}
-              onChange={setSortIdx}
+              onChange={i => setSortIdx(i as CandidateSort)}
               track={color.track}
               fontSize={14}
               padV={11}
@@ -149,13 +133,12 @@ export function CandidateSheet({
           >
             {/* 후보 목록 — 순서는 정렬 기준만 따르고, 탭하면 그 자리에서 펼쳐진다 */}
             {sorted.map(cand => {
-              const disabled = !!cand.disabled;
               const isCurrent = cand.id === currentId;
               const isOpen = cand.id === expanded.id;
 
               if (isOpen) {
                 return (
-                  <Card key={cand.id} elevated style={{ padding: 18, gap: 16, opacity: disabled ? 0.55 : 1 }}>
+                  <Card key={cand.id} elevated style={{ padding: 18, gap: 16 }}>
                     <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
                       <StripePhoto size={64} radius={16} />
                       <View style={{ flex: 1, gap: 6 }}>
@@ -217,7 +200,7 @@ export function CandidateSheet({
               }
 
               return (
-                <Pressable key={cand.id} disabled={disabled} onPress={() => focus(cand)}>
+                <Pressable key={cand.id} onPress={() => focus(cand)}>
                   {({ pressed }) => (
                     <Card
                       style={{
@@ -225,7 +208,7 @@ export function CandidateSheet({
                         flexDirection: 'row',
                         gap: 14,
                         alignItems: 'center',
-                        opacity: disabled ? 0.55 : pressed ? 0.8 : 1,
+                        opacity: pressed ? 0.8 : 1,
                       }}
                     >
                       <StripePhoto size={52} radius={14} />
@@ -235,28 +218,15 @@ export function CandidateSheet({
                           {cand.recommended && <RecommendBadge />}
                           {isCurrent && <CurrentBadge />}
                         </View>
-                        {disabled ? (
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: color.muted }} />
-                            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 13, color: color.muted }}>
-                              {cand.openNote}
-                            </Text>
-                          </View>
-                        ) : (
-                          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
-                            {cand.note}
-                          </Text>
-                        )}
+                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
+                          {cand.note}
+                        </Text>
                       </View>
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        <Text style={[type.statS, { color: disabled ? color.muted : color.amber }]}>
-                          +{cand.addedMin}분
+                        <Text style={[type.statS, { color: color.amber }]}>+{cand.addedMin}분</Text>
+                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
+                          {arriveFor(cand)}
                         </Text>
-                        {!disabled && (
-                          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
-                            {arriveFor(cand)}
-                          </Text>
-                        )}
                       </View>
                     </Card>
                   )}

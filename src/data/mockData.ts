@@ -27,6 +27,7 @@ export type Candidate = {
   name: string;
   note: string;              // '화장품 · 경로에서 1.1km'
   addedMin: number;          // +4
+  detourKm: number;          // 경로에서 벗어나는 거리(km). 라우팅 API 값이 들어올 자리
   arriveAt: string;
   dwellMin: number;
   parking: '가능' | '어려움' | '없음';
@@ -133,32 +134,32 @@ export const datasetBase: Dataset = {
   candidates: {
     s1: [
       {
-        id: 'c1', name: '올리브영 평창점', note: '화장품 · 경로에서 1.1km', addedMin: 4,
+        id: 'c1', name: '올리브영 평창점', note: '화장품 · 경로에서 1.1km', addedMin: 4, detourKm: 1.1,
         arriveAt: '19:12', dwellMin: 15, parking: '가능', openState: 'open',
         openNote: '영업 중 · 22시 마감',
         reason: '숙소 방향에서 벗어나지 않고, 치킨집까지 이어지는 구간이 가장 짧아요.',
         verifiedNote: '영업시간 12분 전 확인', recommended: true, coord: OLIVE_PC,
       },
       {
-        id: 'c2', name: '올리브영 대관령점', note: '영업 중 · 재고 많음 · 역방향', addedMin: 11,
+        id: 'c2', name: '올리브영 대관령점', note: '영업 중 · 재고 많음 · 역방향', addedMin: 11, detourKm: 4.8,
         arriveAt: '19:19', dwellMin: 15, parking: '가능', openState: 'open',
         openNote: '영업 중', coord: OLIVE_DGR,
       },
       {
-        id: 'c3', name: '올리브영 진부점', note: '영업 종료 · 선택 불가', addedMin: 6,
+        id: 'c3', name: '올리브영 진부점', note: '영업 종료 · 선택 불가', addedMin: 6, detourKm: 2.6,
         arriveAt: '19:14', dwellMin: 15, parking: '어려움', openState: 'closed',
         openNote: '영업 종료 · 선택 불가', disabled: true, coord: OLIVE_JB,
       },
     ],
     s2: [
       {
-        id: 'c4', name: '교촌치킨 평창점', note: '포장 · 경로에서 0.6km', addedMin: 8,
+        id: 'c4', name: '교촌치킨 평창점', note: '포장 · 경로에서 0.6km', addedMin: 8, detourKm: 0.6,
         arriveAt: '19:28', dwellMin: 12, parking: '가능', openState: 'open',
         openNote: '영업 중 · 24시 마감', reason: '포장 대기가 이동 중에 끝나요.',
         recommended: true, coord: KYOCHON,
       },
       {
-        id: 'c5', name: 'BBQ 대관령점', note: '포장 대기 4분 · 역방향', addedMin: 14,
+        id: 'c5', name: 'BBQ 대관령점', note: '포장 대기 4분 · 역방향', addedMin: 14, detourKm: 5.2,
         arriveAt: '19:36', dwellMin: 8, parking: '없음', openState: 'closing_soon',
         openNote: '21시 마감', coord: BBQ_DGR,
       },
@@ -325,37 +326,37 @@ export const datasetCommute: Dataset = {
   candidates: {
     s1: [
       {
-        id: 'g1', name: '올리브영 국회의사당역점', note: '화장품 · 국회대로 지하 758', addedMin: 5,
+        id: 'g1', name: '올리브영 국회의사당역점', note: '화장품 · 국회대로 지하 758', addedMin: 5, detourKm: 0.8,
         arriveAt: '08:22', dwellMin: 10, parking: '가능', openState: 'open',
         openNote: '영업 중 · 22시 마감',
         reason: '회사 방향에서 벗어나지 않고, 목동까지 이어지는 구간이 가장 짧아요.',
         verifiedNote: '카카오 로컬 기준 실제 지점', recommended: true, coord: OY_GUKHOE,
       },
       {
-        id: 'g2', name: '올리브영 서여의도점', note: '국회대로74길 19 · 조금 위쪽', addedMin: 9,
+        id: 'g2', name: '올리브영 서여의도점', note: '국회대로74길 19 · 조금 위쪽', addedMin: 9, detourKm: 1.6,
         arriveAt: '08:26', dwellMin: 10, parking: '가능', openState: 'open',
         openNote: '영업 중', coord: OY_SEOYEOUI,
       },
       {
-        id: 'g3', name: '올리브영 여의도IFC점', note: '국제금융로 10 · 역방향', addedMin: 12,
+        id: 'g3', name: '올리브영 여의도IFC점', note: '국제금융로 10 · 역방향', addedMin: 12, detourKm: 2.9,
         arriveAt: '08:29', dwellMin: 10, parking: '가능', openState: 'open',
         openNote: '10시 오픈 · 이른 아침은 닫혀 있어요', coord: OY_IFC,
       },
     ],
     s2: [
       {
-        id: 'g4', name: '파리바게뜨 목동역점', note: '포장 · 목동로 210', addedMin: 4,
+        id: 'g4', name: '파리바게뜨 목동역점', note: '포장 · 목동로 210', addedMin: 4, detourKm: 0.3,
         arriveAt: '08:46', dwellMin: 5, parking: '가능', openState: 'open',
         openNote: '영업 중 · 07시 오픈', reason: '회사 바로 앞 구간이라 거의 돌아가지 않아요.',
         recommended: true, coord: PB_MOKDONG,
       },
       {
-        id: 'g5', name: '파리바게뜨 오목교역점', note: '오목로 320 · 조금 돌아감', addedMin: 7,
+        id: 'g5', name: '파리바게뜨 오목교역점', note: '오목로 320 · 조금 돌아감', addedMin: 7, detourKm: 1.2,
         arriveAt: '08:49', dwellMin: 5, parking: '어려움', openState: 'open',
         openNote: '영업 중', coord: PB_OMOKGYO,
       },
       {
-        id: 'g6', name: '파리바게뜨 목동파라곤점', note: '목동서로 155 · 역방향', addedMin: 9,
+        id: 'g6', name: '파리바게뜨 목동파라곤점', note: '목동서로 155 · 역방향', addedMin: 9, detourKm: 2.1,
         arriveAt: '08:51', dwellMin: 5, parking: '가능', openState: 'open',
         openNote: '영업 중', coord: PB_PARAGON,
       },

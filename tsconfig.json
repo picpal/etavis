@@ -3,5 +3,5 @@
   "compilerOptions": {
     "strict": true
   },
-  "exclude": ["server", "node_modules"]
+  "exclude": ["server", "node_modules", "**/*.test.ts"]
 }

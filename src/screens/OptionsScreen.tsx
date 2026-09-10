@@ -11,6 +11,7 @@ import { Chevron, DottedLineH, Hairline } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
+import { isSelectable } from '../lib/candidateRank';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -170,7 +171,7 @@ export function OptionsScreen({ navigation, route }: Props) {
   React.useEffect(() => {
     if (askedRef.current || route.params?.pick) return;
     for (const slot of selectedView.slots) {
-      const cands = (state.dataset.candidates[slot.baseId] ?? []).filter(c => !c.disabled);
+      const cands = (state.dataset.candidates[slot.baseId] ?? []).filter(isSelectable);
       if (cands.length < 2) continue;
       const sorted = [...cands].sort((a, b) => a.addedMin - b.addedMin);
       if (Math.abs(sorted[0].addedMin - sorted[1].addedMin) <= AMBIGUOUS_MIN) {

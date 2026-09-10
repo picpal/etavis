@@ -42,19 +42,23 @@ node server/bench-models.mjs <model>                          # 모델 벤치마
 
 ## 다음 작업
 
-### 1. 모델 비교 — API 키가 필요하다 (막힘)
+### 1. 모델 — gpt-5.6-sol로 결정됨
 
-벤치마크 하네스(`server/bench-models.mjs`)는 완성됐지만 **ChatGPT 계정으로는 설정된 모델 하나만 쓸 수 있다.**
+여러 모델 비교는 하지 않기로 했다(ChatGPT 계정은 설정된 모델만 허용해서
+`gpt-5.3-codex`·`gpt-5.1` 모두 400이었고, 굳이 비교할 필요 없다는 판단).
 
-```
-The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.
-```
+`server/src/index.ts`의 `DEFAULT_MODEL`이 `gpt-5.6-sol`이고 `OPENAI_MODEL`
+secret으로 덮을 수 있다. **Codex CLI(ChatGPT 계정)에서 쓰는 이름과 API에서
+쓰는 이름이 다를 수 있으니 배포 전에 확인할 것.**
 
-`gpt-5.1`, `gpt-5.3-codex` 모두 400. **OpenAI API 키를 넣어야 비교가 된다.**
+**전체 147건 실측 기준선(2026-09-10):**
 
-할 일: `bench-models.mjs`에 codex 대신 OpenAI API를 직접 호출하는 경로를 추가하고,
-저렴한 모델부터 올려가며 정확도가 꺾이는 지점을 찾는다. 후보는
-`gpt-4o-mini` → `gpt-4.1-mini` → `gpt-4o` 순.
+| | 통과 | 실패 | 미검증 | 무응답 |
+|---|---|---|---|---|
+| 로컬 목 | 128 | 17 | 2 | — |
+| gpt-5.6-sol | **133** | 12 | 2 | **0** |
+
+101K 토큰(40건씩 4배치). `node server/run-llm.mjs`로 재현·재실행.
 
 **예상 비용은 무시해도 될 수준이다.** 추출 1건 ≈ 810토큰(시스템 600 + 입력 60 + 출력 150).
 `gpt-4o-mini` 기준 **1건 0.0002달러**, 1000건 300원. 프롬프트 캐싱을 켜면 더 낮아진다.
@@ -126,6 +130,17 @@ npx wrangler deploy
 **키를 서버로 옮겨도 문이 열려 있으면 의미가 없다.** 앱 토큰과 rate limit이 함께 가야 한다.
 
 ---
+
+## LLM 실측에서 드러난 것
+
+**`endpoints`를 4건 전부 놓쳤다.** 스키마엔 있는데 프롬프트가 시키지 못했다.
+`회사 말고 집으로 가자`가 `dest=null`로 나왔다. 프롬프트에 예시 3개를 박아 넣었고,
+**재실행으로 확인해야 한다** (`node server/run-llm.mjs`).
+
+**비결정성이 실측됐다.** `구시까지 도착`이 36건 테스트에선 09:00, 147건에선 null.
+같은 입력에 다른 답이다. `temperature=0`으로 낮췄지만 근본 해결은 아니다.
+**실질 방어는 칩 UI** — 사용자가 뭘 알아들었는지 보고 고칠 수 있으면 비결정성이
+치명상이 되지 않는다.
 
 ## 미해결로 남긴 것
 

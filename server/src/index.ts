@@ -9,6 +9,9 @@ import { SYSTEM_PROMPT } from './prompt';
 
 export interface Env {
   OPENAI_API_KEY: string;
+  /** 모델 이름. Codex CLI(ChatGPT 계정)에서 쓰는 이름과 API에서 쓰는 이름이
+      다를 수 있으므로 env로 뺐다 — 바꿔야 하면 secret 하나만 고치면 된다 */
+  OPENAI_MODEL?: string;
   /** 앱이 보내는 공유 토큰. 없으면 누구나 이 엔드포인트로 남의 요금을 쓴다 */
   APP_TOKEN: string;
   RATE: KVNamespace;
@@ -20,6 +23,9 @@ const json = (body: unknown, status = 200) =>
 
 /** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다 */
 const PER_MIN = 10;
+
+/** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
+const DEFAULT_MODEL = 'gpt-5.6-sol';
 
 async function rateLimited(env: Env, deviceId: string): Promise<boolean> {
   const key = `rl:${deviceId}:${Math.floor(Date.now() / 60000)}`;
@@ -59,7 +65,7 @@ export default {
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: env.OPENAI_MODEL ?? DEFAULT_MODEL,
         temperature: 0,
         response_format: { type: 'json_object' },
         messages: [

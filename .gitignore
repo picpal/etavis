@@ -46,3 +46,4 @@ yarn-error.*
 server/results.json
 
 server/bench-*.jsonl
+server/llm-results.json

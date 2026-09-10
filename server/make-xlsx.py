@@ -75,6 +75,19 @@ for g in groups:
     rr = s.max_row + 1
     s.append([g, f'=COUNTIF(\'케이스 결과\'!A2:A{last},A{rr})',
                  f'=COUNTIFS(\'케이스 결과\'!A2:A{last},A{rr},\'케이스 결과\'!I2:I{last},"실패")'])
+s.append([])
+s.append(['LLM(gpt-5.6-sol) 실측', ''])
+try:
+    import os as _os
+    if _os.path.exists('server/llm-results.json'):
+        _l = json.load(open('server/llm-results.json'))
+        _c = lambda v: len([x for x in _l if x['verdict'] == v])
+        s.append(['LLM 통과', _c('통과')])
+        s.append(['LLM 실패', _c('실패')])
+        s.append(['LLM 무응답', _c('무응답')])
+except Exception:
+    pass
+
 s.column_dimensions['A'].width = 18; s.column_dimensions['B'].width = 12; s.column_dimensions['C'].width = 10
 for row in s.iter_rows(min_row=1, max_row=s.max_row, max_col=3):
     for c in row:
@@ -84,6 +97,30 @@ for c in ('A1','B1'):
 for c in ('A8','B8','C8'):
     s[c].fill = hdr_fill; s[c].font = hdr_font
 s['B6'].number_format = '0.0%'
+
+# ---------- 2.5 LLM 결과 (있으면) ----------
+import os
+if os.path.exists('server/llm-results.json'):
+    lrows = json.load(open('server/llm-results.json'))
+    L = wb.create_sheet('LLM 결과')
+    L.append(cols)
+    for r in lrows:
+        L.append([
+            r['group'], r['text'], r['stops'],
+            '' if r['arriveBy'] is None else str(r['arriveBy']),
+            r['mode'] or '', r['order'], r['reject'], r['ambiguous'],
+            r['verdict'], r['fails'], r['note'],
+        ])
+    for i, w in enumerate(widths, 1):
+        L.column_dimensions[get_column_letter(i)].width = w
+    for row in L.iter_rows(min_row=2, max_row=L.max_row, max_col=len(cols)):
+        for c in row:
+            c.font = base; c.border = box; c.alignment = wrap
+    for row in L.iter_rows(min_row=2, max_row=L.max_row):
+        v = row[8].value
+        row[8].fill = green if v == '통과' else red if v in ('실패','무응답') else amber
+        row[8].font = Font(name=FONT, size=10, bold=True)
+    style_header(L, len(cols))
 
 # ---------- 3. 개선 이력 ----------
 h = wb.create_sheet('개선 이력')
@@ -103,6 +140,9 @@ hist = [
  (TODAY,'러너','합격률이 부풀려짐(117/122로 보임)','note만 있고 검증 조건 없는 케이스가 자동 통과','미검증을 따로 셈','실상은 검증 105 중 실패 6이었다'),
  (TODAY,'기대값','기대값을 목의 한계에 맞춰 정해놨다','"올리브용"을 "못 잡으면 되묻기"로 적었다. 구현의 한계를 제품 사양으로 굳힌 것','Codex 실측 후 제품 기준으로 상향 — 오타/줄임말/영문/다국어 13건','목은 이제 실패하지만 그게 정직하다. 목과 LLM의 격차가 숫자로 보인다'),
  (TODAY,'프롬프트','Codex가 "3시간 걸려도 괜찮아"를 reject','"길찾기와 무관하면 reject" 규칙을 과잉 적용. 이동 얘기인데 거절','reject를 날씨·뉴스·번역·시스템 캐기로 좁게 정의','뽑을 게 없으면 빈 결과, 거절은 무관할 때만'),
+ (TODAY,'프롬프트','endpoints를 4건 전부 놓침','스키마엔 있는데 프롬프트가 시키지 못했다. "회사 말고 집으로"가 dest=null','프롬프트에 예시 3개를 박아 넣음(destination/origin/되묻기)','재실행으로 확인 필요'),
+ (TODAY,'리스크','"구시까지 도착"이 한 번은 맞고 한 번은 틀림','LLM 비결정성. 36건 테스트에선 09:00, 147건에선 null','temperature=0으로 낮췄으나 근본 해결은 아님. 칩 UI로 사용자가 보고 고치게 하는 게 실질 방어','같은 말에 다른 결과는 신뢰를 한 번에 무너뜨린다'),
+ (TODAY,'실측','전체 147건 LLM 기준선 확보','목 128 통과 / LLM 133 통과. 무응답 0','run-llm.mjs로 40건씩 4배치, 총 101K 토큰','목과 LLM을 같은 채점 규칙으로 비교 가능해짐'),
  (TODAY,'실측','목이 못 하던 12건을 Codex가 전부 처리','오타·줄임말·영문·일본어·중국어·음성인식 오류까지 교정','서버 연결 전 codex exec로 36건 실측(25K 토큰)','LLM 연결의 값이 숫자로 확인됨. 목은 fallback 용도로만'),
 ]
 for r in hist: h.append(list(r))

@@ -44,3 +44,5 @@ yarn-error.*
 .env
 
 server/results.json
+
+server/bench-*.jsonl

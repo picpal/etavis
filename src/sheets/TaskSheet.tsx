@@ -1,6 +1,6 @@
 /** A9 — 경유지 할 일 체크리스트 시트 (체크는 재계산을 유발하지 않는다) */
 import React, { useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { LayoutAnimation, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
@@ -20,8 +20,11 @@ const ADD_ROW_H = 48;
 const LIST_CARD_PAD = 16;
 const CONGESTION_CARD_H = 109;
 const CONGESTION_H = CONGESTION_CARD_H + 14;
-/** 그랩바 + 헤더 + 도착 카드 + 목록 제목 + 하단 안내 */
+/** 실측 전 첫 프레임용 어림값 — 그랩바 + 헤더 + 도착 카드 + 하단 안내 */
 const SHEET_CHROME_H = 211;
+/** 그랩바 영역(Sheet가 그린다) + 콘텐츠 paddingTop */
+const GRABBAR_H = 29;
+const SCROLL_PAD_TOP = 14;
 
 function Checkbox({ done }: { done: boolean }) {
   if (done) {
@@ -76,8 +79,6 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   const [thanks, setThanks] = useState<CongestionKey | null>(null);
   const showCongestion = askCongestion || !!thanks;
   const thanksIn = useSharedValue(0);
-  const closeRef = React.useRef(onClose);
-  closeRef.current = onClose;
 
   const submitCongestion = (level: CongestionKey) => {
     if (!stop) return;
@@ -89,6 +90,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   // 시트를 다시 열면 깨끗한 상태로
   React.useEffect(() => {
     if (!stopId) setThanks(null);
+    else setMeasuredListH(0);
   }, [stopId]);
 
   React.useEffect(() => {
@@ -97,7 +99,12 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
       return;
     }
     thanksIn.value = withSpring(1, { damping: 13, stiffness: 210 });
-    const t = setTimeout(() => closeRef.current(), 1150);
+    /* 인사를 보여준 뒤 혼잡도 영역만 접는다. 시트까지 닫으면 아직 남은
+       할 일을 체크하러 다시 열어야 한다 — 제보는 할 일 도중에 스치는 동작이다 */
+    const t = setTimeout(() => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setThanks(null);
+    }, 1150);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thanks]);
@@ -111,12 +118,21 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
      목록에 확정 높이가 안 잡혀 maxHeight를 줘도 스크롤이 죽는다.
      그래서 필요한 높이를 미리 재서 시트에 넘기고, 목록은 flex로 남은 만큼 차지한다.
      화면을 넘으면 Sheet가 알아서 잘라주고, 그때부터 목록이 스크롤된다 */
-  const listH = stop
+  /* 높이를 상수로 어림하면 빗나가서 목록 아래에 빈 공간이 남거나 잘린다.
+     목록도 고정 영역도 그려진 값을 받아 쓰고, 첫 프레임에만 어림값을 쓴다 */
+  const [measuredListH, setMeasuredListH] = useState(0);
+  const [topH, setTopH] = useState(0);
+  const [bottomH, setBottomH] = useState(0);
+  const estimatedListH = stop
     ? stop.tasks.reduce((sum, t) => sum + TASK_ROW_H + (t.text.length > 18 ? TASK_WRAP_H : 0), 0) +
       ADD_ROW_H +
       LIST_CARD_PAD
     : 0;
-  const sheetHeight = SHEET_CHROME_H + listH + (showCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
+  const listH = measuredListH || estimatedListH;
+  const measured = topH > 0 && bottomH > 0;
+  const sheetHeight = measured
+    ? GRABBAR_H + topH + SCROLL_PAD_TOP + listH + bottomH
+    : SHEET_CHROME_H + listH + (showCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
 
   // 경유지에 도착(시트 열림)하면 출발 5분 전 알림을 자동 예약
   const stopName = stop?.name;
@@ -157,6 +173,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     <Sheet visible={!!stopId} onClose={onClose} height={sheetHeight}>
       {stop && (
         <View style={{ flex: 1, paddingTop: 8 }}>
+        <View onLayout={e => setTopH(e.nativeEvent.layout.height)}>
         <View style={{ paddingHorizontal: 20, gap: 14 }}>
           {/* 시트 헤더 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -213,6 +230,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
           <View style={{ paddingTop: 14 }}>
             <Hairline />
           </View>
+        </View>
 
           {/* 할 일이 여섯 개만 돼도 넘친다 — 목록만 스크롤시킨다 */}
           <ScrollView
@@ -220,6 +238,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={(_w, h) => setMeasuredListH(h)}
           >
           <Card style={{ padding: 8 }}>
             {stop.tasks.map((task, i) => {
@@ -336,7 +355,10 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
           </Card>
           </ScrollView>
 
-          <View style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}>
+          <View
+            onLayout={e => setBottomH(e.nativeEvent.layout.height)}
+            style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}
+          >
           {/* 출발 5분 전 알림은 도착하면 자동 예약 — 별도 토글 없음 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
             <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color.stroke }} />

@@ -10,7 +10,7 @@ import type { Candidate } from '../data/mockData';
 export const CANDIDATE_SORTS = ['추가시간', '주차', '거리'] as const;
 export type CandidateSort = 0 | 1 | 2;
 
-const parkingRank: Record<Candidate['parking'], number> = { 가능: 0, 어려움: 1, 없음: 2 };
+const parkingRank: Record<Candidate['parking'], number> = { 가능: 0, 모름: 1, 어려움: 2, 없음: 3 };
 
 const byAdded = (a: Candidate, b: Candidate) => a.addedMin - b.addedMin;
 const keyFor: Record<CandidateSort, (c: Candidate) => number> = {

@@ -129,7 +129,7 @@ export function alternativeToCandidate(alt: Alternative, slotQuery: string, arri
     detourKm: round1(alt.detourKm),
     arriveAt: toHHMM(arrivalMin),
     dwellMin,
-    parking: alt.candidate.parking ?? '가능',
+    parking: alt.candidate.parking ?? '모름',
     openState,
     openNote: openNoteOf(openState),
     disabled: openState === 'closed',
@@ -141,7 +141,7 @@ export function chosenToCandidate(v: Visit, slotQuery: string, arrivalMin: numbe
   const openState = openStateOf(v.candidate, arrivalMin);
   return {
     id: v.candidate.id, name: v.candidate.name, note: `${slotQuery} · 현재 경로`, addedMin: 0, detourKm: 0,
-    arriveAt: toHHMM(arrivalMin), dwellMin: v.dwellMin, parking: v.candidate.parking ?? '가능',
+    arriveAt: toHHMM(arrivalMin), dwellMin: v.dwellMin, parking: v.candidate.parking ?? '모름',
     openState, openNote: openNoteOf(openState), recommended: true, coord: v.candidate.coord,
   };
 }

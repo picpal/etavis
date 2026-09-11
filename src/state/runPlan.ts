@@ -7,6 +7,7 @@ import { initialRadiusM, maxRadiusM, searchAlong, type SearchFn } from '../lib/c
 import { plan } from '../lib/routePlan/plan';
 import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
+import { applyParkingPolicy } from '../lib/parkingPolicy';
 
 export type RunPlanDeps = {
   provider: RouteProvider;
@@ -68,7 +69,8 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           search,
         );
         return {
-          id: st.id, query: st.query, candidates: found.candidates.slice(0, 8), dwellMin: dwellFor(st.query),
+          // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
+          id: st.id, query: st.query, candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, 8), dwellMin: dwellFor(st.query),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: found.status,
         } satisfies Slot;
       })));

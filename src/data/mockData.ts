@@ -30,7 +30,8 @@ export type Candidate = {
   detourKm: number;          // 경로에서 벗어나는 거리(km). 라우팅 API 값이 들어올 자리
   arriveAt: string;
   dwellMin: number;
-  parking: '가능' | '어려움' | '없음';
+  /** '모름' = 검색 결과에 주차 정보가 없음(실제 검색은 아직 다 모름) */
+  parking: '가능' | '어려움' | '없음' | '모름';
   openState: Stop['openState'];
   openNote: string;
   reason?: string;

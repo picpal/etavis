@@ -6,13 +6,12 @@ import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
-import { effectiveVisits, josa, optionDiff, slotCandidates, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
-import { Card, haptic, PrimaryButton } from '../components/common';
-import { CheckMark, Chevron, Hairline } from '../components/primitives';
+import { effectiveVisits, josa, slotCandidates, toLegacyPlan } from '../state/planFlowBridge';
+import { haptic, PrimaryButton } from '../components/common';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
-import { StopEditSheet } from '../sheets/StopEditSheet';
+import { StopList } from '../components/StopList';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -95,7 +94,6 @@ export function OptionsScreen({ navigation }: Props) {
   const { state } = flow;
   const result = state.result;
   const [pickSlot, setPickSlot] = useState<string | null>(null);
-  const [editStops, setEditStops] = useState(false);
 
   const current = useMemo(
     () => (result ? effectiveVisits(result, state.slots, state.selectedOptionIdx, state.overrides) : null),
@@ -131,20 +129,6 @@ export function OptionsScreen({ navigation }: Props) {
   const stale = request ? flow.isStale(request) : false;
 
   // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
-  // 1안의 도착 시각 — 나머지 안은 이 값과의 차이만 말한다
-  const bestArrive = Math.round(req.departAtMin + effectiveVisits(result, state.slots, 0, state.overrides).timing.totalMin);
-  const relaxedSlack =
-    result.relaxed && req.arriveByMin != null
-      ? Math.round(req.arriveByMin - (req.departAtMin + result.relaxed.totalMin))
-      : null;
-
-  /** 완화안의 '계획에서 빼기' — 말한 대로 칩을 실제로 뺀다. 자동 재계산은 하지 않는다 */
-  const dropRelaxedSlot = () => {
-    haptic();
-    if (result.relaxed) removeChip(result.relaxed.droppedSlotId); // 슬롯 id = 칩 id
-    flow.reset();
-    navigation.navigate('Plan');
-  };
   /* 경유지 빼기 — 칩을 지우고 바로 다시 계산. 늦을 때 '무엇을 빼야 맞추나'가 이 화면의 질문이다 */
   const removeStop = (slotId: string) => {
     haptic();
@@ -201,103 +185,20 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           ))}
 
-        {/* 3. 경로 카드 — 같은 구조의 카드에 선택 표시. 숫자는 판정 카드·CTA와 같은 '도착 시각' */}
-        <Text style={[type.label, { color: color.muted }]}>직행 {Math.round(result.directMin)}분 기준 · 경로 {result.options.length}개</Text>
-        {result.options.map((o, i) => {
-          const selected = i === state.selectedOptionIdx;
-          // 선택된 안은 이미 위에서 계산해 둔 current를 그대로 쓴다 — 다시 계산하지 않는다
-          const eff = selected ? current : effectiveVisits(result, state.slots, i, state.overrides);
-          const pre = eff.timing.estimated || !flow.usingServer ? '약 ' : '';
-          const arrive = req.departAtMin + eff.timing.totalMin;
-          const deltaBest = Math.round(arrive) - bestArrive;
-          const diff = optionDiff(result, i);
-          const title =
-            diff.kind === 'best' ? '가장 빠름'
-            : diff.kind === 'swap'
-              ? diff.swaps.length === 1
-                ? `${diff.swaps[0].to}${josa(diff.swaps[0].to, '으로/로')} 바꾸면`
-                : `${diff.swaps[0].to} 외 ${diff.swaps.length - 1}곳으로 바꾸면`
-            : diff.kind === 'order' ? '순서를 바꾸면'
-            : `${i + 1}번째로 빠름`;
-          // 1안과 도착 시각이 같은 안은 숫자를 되풀이하지 않는다 — 차이가 없다는 게 정보다
-          const sameAsBest = i > 0 && deltaBest === 0;
-          const sub =
-            i === 0 ? `${Math.round(eff.timing.totalMin)}분 · 직행보다 +${Math.round(eff.timing.totalMin - result.directMin)}분`
-            : sameAsBest ? '같은 시각에 도착 · 매장만 달라요'
-            : `${Math.round(eff.timing.totalMin)}분 · 1안보다 ${deltaBest > 0 ? '+' : ''}${deltaBest}분`;
-          return (
-            <Pressable key={i} onPress={() => { if (!selected) { haptic(); flow.select(i); } }} accessibilityRole="radio" accessibilityState={{ selected }}>
-              <Card elevated={selected} style={{ padding: 18, gap: 14, borderWidth: 1.5, borderColor: selected ? color.primary : 'transparent' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                  <View style={{ flex: 1, gap: 6 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={[type.labelPlain, { color: color.muted }]}>{title}</Text>
-                      {i === 0 && (
-                        <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: color.primaryTint }}>
-                          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 11, lineHeight: 12, color: color.primary }}>추천</Text>
-                        </View>
-                      )}
-                    </View>
-                    {sameAsBest && !selected ? (
-                      <Text style={[type.body, { color: color.body }]}>{sub}</Text>
-                    ) : (
-                      <>
-                        <Text style={[type.statL, { color: color.ink }]}>{pre}{hhmm(arrive)} 도착</Text>
-                        <Text style={[type.caption, { color: color.muted }]}>{sub}</Text>
-                      </>
-                    )}
-                  </View>
-                  {/* 선택 표시 — 크기 변화가 아니라 체크로 말한다 */}
-                  {selected ? (
-                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center' }}>
-                      <CheckMark />
-                    </View>
-                  ) : (
-                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: color.stroke }} />
-                  )}
-                </View>
-                {selected && (
-                  <>
-                    <Hairline />
-                    <Text style={[type.body, { color: color.body }]}>
-                      {eff.visits.map((v, k) => `${v.candidate.name} ${hhmm(eff.timing.arrivals[k])}`).join(' → ')} → {req.destinationName} {hhmm(arrive)}
-                    </Text>
-                    <Pressable
-                      onPress={() => { haptic(); setEditStops(true); }}
-                      style={({ pressed }) => ({ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 14, borderRadius: 10, backgroundColor: color.primaryTint, opacity: pressed ? 0.7 : 1 })}
-                    >
-                      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 16, color: color.primary }}>경유지 수정</Text>
-                      <Chevron size={7} thickness={2} color={color.primary} dir="right" />
-                    </Pressable>
-                  </>
-                )}
-              </Card>
-            </Pressable>
-          );
-        })}
-
-        {/* 4. 조건 완화 — 늦을 때만, 3안과 분리 */}
-        {late && result.relaxed && (() => {
-          const q = slotQuery(result.relaxed.droppedSlotId);
-          const keeps = relaxedSlack! >= 0;
-          return (
-            <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 14 }}>
-              <View style={{ gap: 6 }}>
-                <Text style={[type.labelPlain, { color: color.muted }]}>{q}{josa(q, '을/를')} 빼면</Text>
-                <Text style={[type.statL, { color: color.ink }]}>{approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
-                <Text style={[type.caption, { color: keeps ? color.green : color.muted }]}>
-                  {Math.round(result.relaxed.totalMin)}분 · {keeps ? `마감까지 ${relaxedSlack}분 여유` : `그래도 마감보다 ${-relaxedSlack!}분 늦어요`}
-                </Text>
-              </View>
-              <Pressable
-                onPress={dropRelaxedSlot}
-                style={({ pressed }) => ({ minHeight: 44, borderRadius: 12, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
-              >
-                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.primary }}>{q} 빼고 다시 계산</Text>
-              </Pressable>
-            </View>
-          );
-        })()}
+        {/* 2. 경유지 — 이 화면의 본문. 빼기·교체 모두 여기서, 바뀌면 위 도착 시각이 다시 계산된다 */}
+        <StopList
+          result={result}
+          visits={current.visits}
+          arrivals={current.timing.arrivals}
+          slots={state.slots}
+          departAtMin={req.departAtMin}
+          arriveByMin={req.arriveByMin}
+          late={late}
+          approx={approx}
+          bestDropId={late && result.relaxed ? result.relaxed.droppedSlotId : null}
+          onPick={slotId => { setPickSlot(slotId); }}
+          onRemove={removeStop}
+        />
       </ScrollView>
 
       <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>
@@ -310,20 +211,6 @@ export function OptionsScreen({ navigation }: Props) {
       </View>
       <TabBar />
 
-      <StopEditSheet
-        visible={editStops}
-        onClose={() => setEditStops(false)}
-        result={result}
-        visits={current.visits}
-        arrivals={current.timing.arrivals}
-        slots={state.slots}
-        departAtMin={req.departAtMin}
-        arriveByMin={req.arriveByMin}
-        late={late}
-        approx={approx}
-        onPick={slotId => { setEditStops(false); setPickSlot(slotId); }}
-        onRemove={removeStop}
-      />
       <CandidateSheet
         visible={!!pickVisit}
         title={`${pickVisit?.candidate.name ?? ''} 교체`}

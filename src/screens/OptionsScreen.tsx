@@ -156,16 +156,12 @@ export function OptionsScreen({ navigation }: Props) {
         {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로 */}
         <View style={{ gap: 10, paddingHorizontal: 2, paddingTop: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            {slack == null ? (
-              <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
-            ) : late ? (
-              <Text style={[type.displayXL, { color: color.late }]}>{approx}{-slack}분 늦어요</Text>
-            ) : (
-              <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
-            )}
-            {/* 여유가 있을 때만 옆에 한마디. 추정/실측 표기는 뺐다 — '약'이 이미 말한다 */}
-            {slack != null && !late && (
-              <Text style={[type.caption, { color: color.green }]}>{slack}분 여유</Text>
+            {/* 답은 항상 도착 시각. 마감이 있으면 옆에 '여유'/'늦어요' 한마디 — 늦으면 시각도 붉게 */}
+            <Text style={[type.displayXL, { color: late ? color.late : color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
+            {slack != null && (
+              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: late ? color.late : color.green }}>
+                {late ? `${-slack}분 늦어요` : `${slack}분 여유`}
+              </Text>
             )}
           </View>
           <EtaBar

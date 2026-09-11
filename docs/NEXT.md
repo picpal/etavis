@@ -122,6 +122,8 @@ npx wrangler deploy
   원인: `tracker.tsx` 도착 반경 150m + Balanced 정확도(≈100m) + 샘플 1개로 즉시 판정 + 출발지 좌표가 목 값(여의나루역)이라
   진행 바가 1.5km/1.5km. 고칠 것: 반경 안 **연속 3샘플 + 속도 < 2m/s**, 대중교통 반경 80m, 반경 = max(80, accuracy),
   accuracy > 100m 샘플 무시. 출발지 좌표는 재설계의 `toLegacyPlan`이 실제 GPS를 넣으면 해결.
+  **진짜 원인(추가 확인)**: 영등포구청역에서 이탈 알림 → "계획 유지 · 경로로 복귀"를 누르자 도착 처리. `tracker.tsx`의
+  `keepPlan`·`dismissOffRoute`가 `setModeRaw('driving')`으로 **가상 주행**을 켠다. live였으면 live로 돌아가야 한다. 몇 줄 수정.
 
 ---
 

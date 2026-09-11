@@ -158,6 +158,13 @@ test('중복: 이미 출발을 낸 지점은 다시 내지 않는다', () => {
   assert.deepEqual(rs.map(kinds), [[], ['depart:olive'], []]);
 });
 
+test('중복: 선행 도착을 낸 뒤 같은 상태의 샘플이 더 와도 다시 내지 않는다', () => {
+  const ctx: ArrivalContext = { target: T, next: N, atStop: false, profile: car };
+  const at = north(O, 190);
+  const rs = run([fix(at), fix(at), fix(at), fix(at), fix(at)], ctx);
+  assert.deepEqual(rs.map(kinds), [[], [], ['skip:olive', 'arrive:hcard'], [], []]);
+});
+
 test('속도를 모르면(null) 멈춘 것으로 본다', () => {
   const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
   const rs = run([fix(O, null), fix(O, null), fix(O, null)], ctx);

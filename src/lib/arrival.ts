@@ -138,7 +138,7 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
   const stationary = speed == null || speed < 0 || speed < profile.stationaryMps;
 
   // 3. 다음 지점 선행 도착 — 두 반경이 겹치면 더 가까운 쪽이 이긴다
-  if (next && distToNextM != null && distToNextM < arriveR && distToNextM < distToTargetM && stationary) {
+  if (next && state.arrivedId !== next.id && distToNextM != null && distToNextM < arriveR && distToNextM < distToTargetM && stationary) {
     const streak = (state.streakId === next.id ? state.arriveStreak : 0) + 1;
     if (streak >= profile.arriveSamples) {
       return {

@@ -17,7 +17,6 @@ export const SLOT_STATUS_TEXT: Partial<Record<SlotStatus, string>> = {
   far: '멀리 있음',
   none: '못 찾음',
   closed: '마감',
-  late: '늦음',
   short: '일부만',
 };
 
@@ -25,7 +24,6 @@ export const SLOT_STATUS_HELP: Partial<Record<SlotStatus, string>> = {
   far: '경로 근처에 없어 멀리 있는 곳으로 잡았어요.',
   none: '경로 15km 안에서 못 찾았어요. 다른 말로 적어 보세요.',
   closed: '도착할 때쯤 문을 닫아요.',
-  late: '들르면 마감을 못 지켜요.',
   short: '말한 개수만큼 못 찾았어요.',
 };
 

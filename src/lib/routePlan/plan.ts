@@ -109,30 +109,6 @@ export async function plan(
   const options = chosen.map(toOption);
   const best = chosen[0];
 
-  // 7. 조건 완화안 — arriveBy 위반이면 가장 비싼 슬롯을 빼고 1회 실측
-  let relaxed: PlanResult['relaxed'];
-  const late = best != null && input.arriveByMin != null && best.arrivals[best.arrivals.length - 1] > input.arriveByMin;
-  if (late && best.visits.length > 0) {
-    const bySlot = new Map<string, Visit[]>();
-    for (const v of best.visits) bySlot.set(v.slotId, [...(bySlot.get(v.slotId) ?? []), v]);
-    let worst: { slotId: string; visits: Visit[]; totalMin: number } | null = null;
-    for (const slotId of bySlot.keys()) {
-      const rest = best.visits.filter(v => v.slotId !== slotId);
-      const est = scorePlan(rest, ctx);
-      if (!worst || est.totalMin < worst.totalMin) worst = { slotId, visits: rest, totalMin: est.totalMin };
-    }
-    if (worst) {
-      try {
-        const route = await call(worst.visits);
-        learnLegs(legs, [ORIGIN_ID, ...worst.visits.map(v => v.candidate.id), DEST_ID], route, input.departAtMin, worst.visits.map(v => v.dwellMin), input.mode);
-        relaxed = { ...toOption(scorePlan(worst.visits, ctx)), droppedSlotId: worst.slotId };
-      } catch {
-        // 완화안 실측 실패 — 추정치로라도 낸다. estimated 표시는 UI 몫
-        relaxed = { ...toOption(scorePlan(worst.visits, ctx)), droppedSlotId: worst.slotId };
-      }
-    }
-  }
-
   // 대안 — 1안에서 슬롯 하나만 바꿔 채점
   const alternatives: Alternative[] = [];
   if (best) {
@@ -162,7 +138,6 @@ export async function plan(
     if (best && ofSlot.length && allClosedAtArrival({ ...best, visits: ofSlot.map(x => x.v), arrivals: ofSlot.map(x => best.arrivals[x.i]) })) {
       slotStatus[slot.id] = 'closed'; continue;
     }
-    if (relaxed && relaxed.droppedSlotId === slot.id) { slotStatus[slot.id] = 'late'; continue; }
     slotStatus[slot.id] = 'ok';
   }
 
@@ -175,11 +150,11 @@ export async function plan(
     return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0, legsKm: s.legsKm };
   };
 
-  // leg 표 — 옵션·완화안에 등장한 후보 전부 × 양끝
+  // leg 표 — 옵션에 등장한 후보 전부 × 양끝
   const nodeIds = new Set<string>();
   const nodeCoord = new Map<string, LatLng>([[ORIGIN_ID, input.origin], [DEST_ID, input.destination]]);
   const nodeCp = new Map<string, CorridorPoint>([[ORIGIN_ID, originPoint()], [DEST_ID, destinationPoint(L)]]);
-  for (const o of [...chosen, ...(relaxed ? [relaxed] : [])]) {
+  for (const o of chosen) {
     for (const v of o.visits) {
       nodeIds.add(v.candidate.id);
       nodeCoord.set(v.candidate.id, v.candidate.coord);
@@ -198,5 +173,5 @@ export async function plan(
     }
   }
 
-  return { directMin, directKm, options, relaxed, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount };
+  return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount };
 }

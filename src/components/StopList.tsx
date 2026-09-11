@@ -73,7 +73,7 @@ export function StopList({
                       </View>
                       <View style={{ flex: 1, gap: 3 }}>
                         <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
-                        <Text style={[type.caption, { color: st === 'late' ? color.late : statusText ? color.amberDeep : color.muted }]}>
+                        <Text style={[type.caption, { color: statusText ? color.amberDeep : color.muted }]}>
                           {approx}{hhmm(arrivals[k])} 도착{statusText ? ` · ${statusText}` : ''}
                         </Text>
                         {withoutArrive != null && withoutSlack != null && (

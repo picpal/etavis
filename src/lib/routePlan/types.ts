@@ -61,7 +61,7 @@ export interface RouteProvider {
 /** 계획 속 한 방문 */
 export type Visit = { slotId: string; candidate: PlaceCandidate; dwellMin: number };
 
-export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'late' | 'short';
+export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short';
 
 export type PlanOption = {
   visits: Visit[];
@@ -97,8 +97,6 @@ export type PlanResult = {
   directMin: number;
   directKm: number;
   options: PlanOption[];
-  /** arriveBy 위반 시 가장 비싼 슬롯을 뺀 안 */
-  relaxed?: PlanOption & { droppedSlotId: string };
   alternatives: Alternative[];
   slotStatus: Record<string, SlotStatus>;
   apiCalls: number;

@@ -60,16 +60,13 @@ test('장벽(강) — 추정이 틀리면 2라운드가 돈다', async () => {
   assert.notEqual(r.options[0].visits[0].candidate.id, 'across');
 });
 
-test('arriveBy 위반 — late 상태와 조건 완화안', async () => {
+test('arriveBy 위반 — 늦음은 slackMin으로만 드러난다 (완화안·late 상태는 뺐다: 무엇을 뺄지는 사용자가 정한다)', async () => {
   const p = mockRouteProvider({ minPerKm: 2, circuity: 1 });
   // 직행 ≈ 20분. 480 출발, 505 마감. far는 dwell 10 + 우회로 늦는다
   const r = await plan(base([slot('a', [far], { dwellMin: 10 })], { arriveByMin: 505 }), p);
-  assert.equal(r.slotStatus.a, 'late');
-  assert.ok(r.relaxed);
-  assert.equal(r.relaxed!.droppedSlotId, 'a');
-  assert.equal(r.relaxed!.visits.length, 0);
+  assert.equal(r.slotStatus.a, 'ok');
   assert.ok(r.options[0].slackMin! < 0);
-  assert.equal(r.measuredCount, 3); // 직행 + far 시드 + 완화안(빈 방문)
+  assert.equal(r.measuredCount, 2); // 직행 + far 시드. 완화안 실측은 없다
 });
 
 test('전부 마감 — closed 상태, 계획은 그래도 나온다', async () => {

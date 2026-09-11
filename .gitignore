@@ -51,3 +51,7 @@ server/llm-results.json
 # 로컬 도구 상태
 .context/
 .claude/launch.json
+
+# 디렉터리든 심링크든 — 워크트리 에이전트가 심링크를 커밋한 사고(2026-09-11)
+node_modules
+.superpowers/

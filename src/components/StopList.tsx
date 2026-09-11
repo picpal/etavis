@@ -75,8 +75,10 @@ export function StopList({
                         <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
                         {/* 도착 시각 배지 — 이름 다음에 바로 읽히게 이름 아래 줄, 초록 */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.greenBg }}>
-                            <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 15, color: color.green }}>{approx}{hhmm(arrivals[k])} 도착</Text>
+                          {/* '도착'이 먼저 읽히고 시각이 굵게 — 숫자만 보이면 무슨 시각인지 모른다 */}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.greenBg }}>
+                            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 14, color: color.green, opacity: 0.85 }}>도착</Text>
+                            <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 14, lineHeight: 16, color: color.green }}>{approx}{hhmm(arrivals[k])}</Text>
                           </View>
                           {statusText && <Text style={[type.caption, { color: color.amberDeep }]}>{statusText}</Text>}
                         </View>

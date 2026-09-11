@@ -251,26 +251,31 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                   <ReanimatedSwipeable
                     enabled={!isEditing}
                     friction={2}
-                    rightThreshold={36}
+                    rightThreshold={32}
                     overshootRight={false}
                     renderRightActions={() => (
-                      <Pressable
-                        onPress={() => {
-                          haptic();
-                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                          removeTask(stop.id, task.id);
-                        }}
-                        accessibilityLabel="할 일 삭제"
-                        style={({ pressed }) => ({
-                          width: 64,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: color.dangerBg,
-                          opacity: pressed ? 0.7 : 1,
-                        })}
-                      >
-                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.danger }}>✕</Text>
-                      </Pressable>
+                      /* iOS 인셋 그룹 리스트의 스와이프 버튼처럼 — 행 높이에 붙이지 않고 가운데 둥근 사각 하나 */
+                      <View style={{ justifyContent: 'center', paddingLeft: 8, paddingRight: 8 }}>
+                        <Pressable
+                          onPress={() => {
+                            haptic();
+                            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                            removeTask(stop.id, task.id);
+                          }}
+                          accessibilityLabel="할 일 삭제"
+                          style={({ pressed }) => ({
+                            width: 40,
+                            height: 40,
+                            borderRadius: 11,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: color.danger,
+                            opacity: pressed ? 0.7 : 1,
+                          })}
+                        >
+                          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 17, lineHeight: 20, color: '#FFFFFF' }}>✕</Text>
+                        </Pressable>
+                      </View>
                     )}
                   >
                   <View

@@ -4,14 +4,17 @@ import React, { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
-import { arriveByText, toHHMM, usePlan } from '../state/plan';
+import { toHHMM, usePlan } from '../state/plan';
 import { extractIntent } from '../lib/intent';
-import { Bubble, haptic, MicroLabelRow, PrimaryButton } from '../components/common';
+import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { DottedLineH } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
+import { usePlanFlow } from '../state/planFlowProvider';
+import { SLOT_STATUS_HELP, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
+import type { SlotStatus } from '../lib/routePlan/types';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
@@ -147,19 +150,18 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, setArriveBy, applyIntent, removeChip } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip } = usePlan();
+  const flow = usePlanFlow();
   const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
   const [dismissedAt, setDismissedAt] = useState(-1);
   const promptVisible = state.chat.length > dismissedAt;
+  // 탭한 정거장 칩 — 액션 시트(빼기/그대로 두기)를 띄운다
+  const [chipMenu, setChipMenu] = useState<string | null>(null);
 
-  /*
-    경로를 찾기 전에 '애초에 가능한 시간인가'부터 답한다.
-    들를 곳 없이 직행으로만 가도 마감을 넘긴다면, 어떤 경로를 찾아도 소용없다.
-    이 앱이 하는 일이 시간 타당성 판단이니 그 답이 제일 먼저 나와야 한다.
-  */
-  const [impossible, setImpossible] = useState<{ arriveMin: number; overMin: number } | null>(null);
+  // 슬롯 id는 칩 id와 같다(runPlan이 그렇게 낸다) — 마지막 실측 결과의 판정을 칩에 바로 되돌린다
+  const statusOf = (chipId: string): SlotStatus | undefined => flow.state.result?.slotStatus[chipId];
 
   /* 채팅 → 의도 추출. 지금은 로컬 목이고, 서버가 생기면 이 호출만 바뀐다.
      추출 결과는 아래 칩으로 그대로 드러난다 — 잘못 잡힌 걸 사용자가 봐야 한다 */
@@ -168,19 +170,11 @@ export function PlanScreen({ navigation }: Props) {
     pushChat(text);
     const intent = extractIntent(text, { currentStops: state.stops.map(s => s.name) });
     applyIntent(intent);
+    flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
     setReply(intent.reject?.say ?? intent.ambiguous[0]?.question ?? null);
   };
 
   const startSearch = () => {
-    if (state.arriveByMin != null) {
-      const now = new Date();
-      const nowMin = now.getHours() * 60 + now.getMinutes();
-      const arriveMin = nowMin + ds.directMin;
-      if (arriveMin > state.arriveByMin) {
-        setImpossible({ arriveMin, overMin: arriveMin - state.arriveByMin });
-        return;
-      }
-    }
     navigation.navigate('Calculating');
   };
 
@@ -229,7 +223,12 @@ export function PlanScreen({ navigation }: Props) {
                   key={chip.id}
                   onPress={() => {
                     haptic();
-                    removeChip(chip.id);
+                    if (chip.kind === 'stop') {
+                      setChipMenu(chip.id);
+                    } else {
+                      removeChip(chip.id);
+                      flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
+                    }
                   }}
                   style={({ pressed }) => ({
                     flexDirection: 'row',
@@ -251,6 +250,9 @@ export function PlanScreen({ navigation }: Props) {
                     }}
                   >
                     {chip.label}
+                    {chip.kind === 'stop' && statusOf(chip.id) && statusOf(chip.id) !== 'ok'
+                      ? ` · ${SLOT_STATUS_TEXT[statusOf(chip.id)!]}`
+                      : ''}
                   </Text>
                   <Text
                     style={{
@@ -279,55 +281,33 @@ export function PlanScreen({ navigation }: Props) {
       </KeyboardAvoidingView>
       <TabBar />
 
-      {/* 직행으로도 마감을 못 맞추는 경우 — 경로를 찾기 전에 먼저 말한다 */}
-      <Sheet visible={!!impossible} onClose={() => setImpossible(null)}>
-        {impossible && (
-          <View style={{ paddingTop: 8, paddingHorizontal: 20, paddingBottom: 24, gap: 14 }}>
-            <View style={{ gap: 6 }}>
-              <Text style={[type.titleL, { color: color.ink }]}>지금 출발해도 늦어요</Text>
-              <Text style={[type.body, { color: color.muted }]}>
-                들르는 곳 없이 곧장 가도 {arriveByText(impossible.arriveMin).replace('까지', '')} 도착이라,
-                목표보다 {impossible.overMin}분 넘겨요. 경유지를 넣으면 더 늦어집니다.
-              </Text>
-            </View>
-
-            <MicroLabelRow
-              items={[
-                { label: '직행', value: `${ds.directMin}분` },
-                { label: '도착 예정', value: toHHMM(impossible.arriveMin).padStart(5, '0') },
-                { label: '초과', value: `+${impossible.overMin}분`, tint: color.amberDeep },
-              ]}
-            />
-
-            <PrimaryButton
-              label="도착 시각 다시 정하기"
-              height={54}
-              borderRadius={16}
-              onPress={() => {
-                setImpossible(null);
-                setArriveBy(null);
-                navigation.goBack();
-              }}
-            />
-            <Pressable
-              onPress={() => {
-                haptic();
-                setImpossible(null);
-                navigation.navigate('Calculating');
-              }}
-              style={({ pressed }) => ({
-                minHeight: 54,
-                borderRadius: 16,
-                backgroundColor: color.track,
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: pressed ? 0.8 : 1,
-              })}
-            >
-              <Text style={[type.btn, { color: color.body }]}>그래도 경로 찾기</Text>
-            </Pressable>
-          </View>
-        )}
+      {/* 정거장 칩 액션 시트 — 뺄지 그대로 둘지. 판정(마감 초과 등)은 A5가 실측으로 한다 */}
+      <Sheet visible={!!chipMenu} onClose={() => setChipMenu(null)}>
+        <View style={{ padding: 20, gap: 10 }}>
+          <Text style={[type.titleL, { color: color.ink }]}>{state.chips.find(c => c.id === chipMenu)?.label}</Text>
+          {chipMenu && statusOf(chipMenu) && statusOf(chipMenu) !== 'ok' && (
+            <Text style={[type.body, { color: color.muted }]}>{SLOT_STATUS_HELP[statusOf(chipMenu)!]}</Text>
+          )}
+          <PrimaryButton
+            label="이 경유지 빼기"
+            height={52}
+            borderRadius={16}
+            onPress={() => {
+              if (chipMenu) removeChip(chipMenu);
+              flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
+              setChipMenu(null);
+            }}
+          />
+          <Pressable
+            onPress={() => {
+              haptic();
+              setChipMenu(null);
+            }}
+            style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.track, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Text style={[type.btn, { color: color.body }]}>그대로 둘게요</Text>
+          </Pressable>
+        </View>
       </Sheet>
     </View>
   );

@@ -28,6 +28,8 @@ export type Scored = {
   unknownLegs: number;
   uncertaintyMin: number;
   legsMin: number[];
+  /** 방문별 도착 leg의 km. legsMin·arrivals와 같은 길이·순서 */
+  legsKm: number[];
 };
 
 export function estimateLegKm(from: LatLng, to: LatLng, cFrom: CorridorPoint, cTo: CorridorPoint): number {
@@ -45,27 +47,32 @@ export function scorePlan(visits: Visit[], ctx: ScoreContext): Scored {
   let uncertaintyMin = 0;
   const arrivals: number[] = [];
   const legsMin: number[] = [];
+  const legsKm: number[] = [];
 
   for (let i = 0; i < ids.length - 1; i++) {
     const hit = ctx.legs.lookup(ids[i], ids[i + 1], ctx.mode, clock);
     let legMin: number;
+    let legKm: number;
     if (hit) {
       legMin = hit.durationMin;
+      legKm = hit.distanceKm;
       distanceKm += hit.distanceKm;
       uncertaintyMin += hit.uncertaintyMin;
     } else {
       const km = estimateLegKm(coords[i], coords[i + 1], cps[i], cps[i + 1]);
       legMin = km * ctx.rhoMinPerKm;
+      legKm = km;
       distanceKm += km;
       unknownLegs++;
     }
     legsMin.push(legMin);
+    legsKm.push(legKm);
     clock += legMin;
     arrivals.push(clock);
     if (i < visits.length) clock += visits[i].dwellMin;
   }
 
-  return { visits, totalMin: clock - ctx.departAtMin, distanceKm, arrivals, unknownLegs, uncertaintyMin, legsMin };
+  return { visits, totalMin: clock - ctx.departAtMin, distanceKm, arrivals, unknownLegs, uncertaintyMin, legsMin, legsKm };
 }
 
 export function isOpenAt(c: PlaceCandidate, minuteOfDay: number): boolean {

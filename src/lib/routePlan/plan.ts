@@ -172,7 +172,7 @@ export async function plan(
     for (const v of visits) if (!corridor.has(v.candidate.id)) localCps.set(v.candidate.id, projectOnCorridor(poly, v.candidate.coord));
     const rescoreCtx: ScoreContext = { ...ctx, corridorOf: id => corridor.get(id) ?? localCps.get(id)! };
     const s = scorePlan(visits, rescoreCtx);
-    return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0 };
+    return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0, legsKm: s.legsKm };
   };
 
   // leg 표 — 옵션·완화안에 등장한 후보 전부 × 양끝

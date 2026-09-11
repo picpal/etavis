@@ -67,3 +67,47 @@ test('toLegacyPlan — stops·legs·candidates·options가 기존 형식으로',
   assert.equal(p.dataset.options[0].stopNames[0], '집');
   assert.equal(p.selectedOptionId, p.dataset.options[0].id);
 });
+
+test('toLegacyPlan — 2안을 고르면 후보에 중복이 없고 recommended는 2안의 후보', async () => {
+  const s0 = await ready();
+  assert.ok(s0.result!.options.length >= 2, '픽스처가 2안 이상을 내야 이 테스트가 뜻이 있다');
+  const s: PlanFlowState = { ...s0, selectedOptionIdx: 1 };
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  const option1 = s.result!.options[1];
+  for (const slot of slots) {
+    const list = p.dataset.candidates[slot.id];
+    const ids = list.map(x => x.id);
+    assert.equal(new Set(ids).size, ids.length, `slot ${slot.id}: 후보 id 중복`);
+    assert.equal(ids.length, slot.candidates.length, `slot ${slot.id}: 후보 개수는 슬롯 전체 후보 수와 같아야 한다`);
+    const recommended = list.filter(x => x.recommended);
+    assert.equal(recommended.length, 1, `slot ${slot.id}: recommended는 정확히 하나`);
+    const expectedId = option1.visits.find(v => v.slotId === slot.id)!.candidate.id;
+    assert.equal(recommended[0].id, expectedId, `slot ${slot.id}: recommended는 2안이 고른 후보여야 한다`);
+  }
+});
+
+test('toLegacyPlan — 옵션 밖 후보로 오버라이드해도 legs가 빠지지 않는다', async () => {
+  const extraSlots: Slot[] = slots.map(s =>
+    s.id === 's-1' ? { ...s, candidates: [...s.candidates, c('oy4', '올리브영 D', at(37.51, 127.04))] } : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: extraSlots, order: 'auto' }, mockRouteProvider());
+  assert.ok(!result.options.some(o => o.visits.some(v => v.candidate.id === 'oy4')), 'oy4는 어떤 옵션에도 뽑히지 않아야 이 테스트가 뜻이 있다');
+
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: extraSlots });
+  s = planFlowReducer(s, { type: 'RESULT', result });
+  s = planFlowReducer(s, { type: 'SET_OVERRIDE', optionIdx: 0, slotId: 's-1', candidateId: 'oy4' });
+
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  const ids = p.stops.map(st => st.baseId);
+  assert.equal(ids.length, 2);
+  const expectedKeys = [
+    `origin>${ids[0]}`, `${ids[0]}>${ids[1]}`, `${ids[1]}>${ids[0]}`,
+    `${ids[0]}>dest`, `${ids[1]}>dest`, `origin>${ids[1]}`,
+  ];
+  for (const key of expectedKeys) assert.ok(p.dataset.legs![key], `leg 누락: ${key}`);
+
+  const { timing } = effectiveVisits(result, 0, { 0: { 's-1': 'oy4' } });
+  const toHHMM = (min: number) => `${Math.floor(min / 60) % 24}:${String(Math.round(min) % 60).padStart(2, '0')}`;
+  assert.equal(p.stops[0].arriveAt, toHHMM(timing.arrivals[0]));
+});

@@ -84,7 +84,14 @@ export type Alternative = {
   estimated: boolean;
 };
 
-export type Rescored = { totalMin: number; arrivals: number[]; distanceKm: number; estimated: boolean };
+export type Rescored = {
+  totalMin: number;
+  arrivals: number[];
+  distanceKm: number;
+  estimated: boolean;
+  /** 방문별 도착 leg의 km. arrivals와 같은 길이·순서(마지막은 목적지 도착 leg) */
+  legsKm: number[];
+};
 
 export type PlanResult = {
   directMin: number;

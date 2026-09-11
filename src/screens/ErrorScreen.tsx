@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
-import { usePlan } from '../state/plan';
+import { usePlanFlow } from '../state/planFlowProvider';
 import { Card, haptic } from '../components/common';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -16,15 +16,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Error'>;
 const INFO_BLUE = '#123F9E';
 
 export function ErrorScreen({ navigation }: Props) {
-  const { state, destinationDisplay, originDisplay, departAtLabel } = usePlan();
+  const flow = usePlanFlow();
   const [mapAppOpen, setMapAppOpen] = useState(false);
-  const ds = state.dataset;
 
-  const planRows = [
-    { key: 'origin', name: originDisplay, time: departAtLabel, node: 'origin' as const },
-    ...state.stops.map(s => ({ key: s.id, name: s.name, time: s.arriveAt, node: 'stop' as const })),
-    { key: 'dest', name: destinationDisplay, time: state.destArriveAt, node: 'dest' as const },
-  ];
+  // 실측 전에 실패했으니 확정된 계획이 없다 — 보여줄 건 실패한 요청이 뭘 찾으려 했는가뿐
+  const planRows = flow.state.request
+    ? flow.state.request.stops.map(s => ({ key: s.id, name: s.query }))
+    : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
@@ -38,24 +36,6 @@ export function ErrorScreen({ navigation }: Props) {
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 20, gap: 16 }}
       >
-        <View
-          style={{
-            alignSelf: 'flex-end',
-            maxWidth: 250,
-            backgroundColor: color.primary,
-            borderTopLeftRadius: 20,
-            borderTopRightRadius: 20,
-            borderBottomRightRadius: 8,
-            borderBottomLeftRadius: 20,
-            paddingVertical: 14,
-            paddingHorizontal: 16,
-          }}
-        >
-          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 16, lineHeight: 23, color: '#fff' }}>
-            사람 적은 카페로 바꿔줘
-          </Text>
-        </View>
-
         {/* 오류 카드 */}
         <View style={{ backgroundColor: color.amberBg, borderRadius: 20, padding: 20, gap: 16, ...shadow.amberCard }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -74,12 +54,15 @@ export function ErrorScreen({ navigation }: Props) {
             <Text style={[type.title, { color: color.amberDeep }]}>연결이 불안정해요</Text>
           </View>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 21.7, color: color.amberDeep }}>
-            이동시간을 다시 계산하지 못했어요. 아래 계획은 마지막으로 계산된 상태 그대로예요.
+            {flow.state.error?.kind === 'timeout'
+              ? '12초 안에 계산이 끝나지 않았어요.'
+              : '이동시간을 계산하지 못했어요.'}
           </Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Pressable
               onPress={() => {
                 haptic();
+                flow.reset();
                 navigation.replace('Calculating');
               }}
               style={({ pressed }) => ({
@@ -93,13 +76,13 @@ export function ErrorScreen({ navigation }: Props) {
               })}
             >
               <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 16, color: '#fff' }}>
-                다시 시도
+                다시 계산
               </Text>
             </Pressable>
             <Pressable
               onPress={() => {
                 haptic();
-                navigation.replace('Timeline');
+                navigation.navigate('Plan');
               }}
               style={({ pressed }) => ({
                 minHeight: 52,
@@ -112,7 +95,7 @@ export function ErrorScreen({ navigation }: Props) {
               })}
             >
               <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 16, color: color.amberDeep }}>
-                나중에
+                조건 바꾸기
               </Text>
             </Pressable>
           </View>
@@ -121,27 +104,22 @@ export function ErrorScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        {/* 유지된 계획 */}
-        <Text style={[type.label, { color: color.muted }]}>유지된 계획</Text>
-        <Card style={{ padding: 18, gap: 14 }}>
-          {planRows.map(row => (
-            <View key={row.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              {row.node === 'origin' ? (
-                <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: color.primary }} />
-              ) : row.node === 'stop' ? (
-                <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.primary, marginLeft: 1 }} />
-              ) : (
-                <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: color.ink }} />
-              )}
-              <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 18, color: color.ink }}>
-                {row.name}
-              </Text>
-              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
-                {row.time}
-              </Text>
-            </View>
-          ))}
-        </Card>
+        {/* 찾으려던 것 — 확정된 계획이 아니라 실패한 요청이 뭘 찾고 있었는가다 */}
+        {planRows.length > 0 && (
+          <>
+            <Text style={[type.label, { color: color.muted }]}>찾고 있던 곳</Text>
+            <Card style={{ padding: 18, gap: 14 }}>
+              {planRows.map(row => (
+                <View key={row.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.primary, marginLeft: 1 }} />
+                  <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 18, color: color.ink }}>
+                    {row.name}
+                  </Text>
+                </View>
+              ))}
+            </Card>
+          </>
+        )}
 
         {/* 오프라인 안내 */}
         <View

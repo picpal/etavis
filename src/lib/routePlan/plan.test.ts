@@ -69,6 +69,7 @@ test('arriveBy 위반 — late 상태와 조건 완화안', async () => {
   assert.equal(r.relaxed!.droppedSlotId, 'a');
   assert.equal(r.relaxed!.visits.length, 0);
   assert.ok(r.options[0].slackMin! < 0);
+  assert.equal(r.measuredCount, 3); // 직행 + far 시드 + 완화안(빈 방문)
 });
 
 test('전부 마감 — closed 상태, 계획은 그래도 나온다', async () => {
@@ -98,6 +99,7 @@ test('슬롯이 하나도 없으면 직행만', async () => {
   assert.equal(r.options.length, 1);
   assert.equal(r.options[0].visits.length, 0);
   assert.ok(Math.abs(r.options[0].deltaMin) < 1e-9);
+  assert.equal(r.measuredCount, 1); // 직행 1회뿐
 });
 
 test('시드 하나가 실패해도 나머지로 계획한다', async () => {

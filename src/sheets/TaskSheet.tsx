@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { LayoutAnimation, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { color, type } from '../theme/tokens';
 import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic } from '../components/common';
@@ -246,6 +247,32 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
               return (
                 <React.Fragment key={task.id}>
                   {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
+                  {/* 왼쪽으로 밀면 오른쪽에 ✕ 박스 — 빈 내용으로 확정하는 것 말고는 지울 길이 없었다 */}
+                  <ReanimatedSwipeable
+                    enabled={!isEditing}
+                    friction={2}
+                    rightThreshold={36}
+                    overshootRight={false}
+                    renderRightActions={() => (
+                      <Pressable
+                        onPress={() => {
+                          haptic();
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          removeTask(stop.id, task.id);
+                        }}
+                        accessibilityLabel="할 일 삭제"
+                        style={({ pressed }) => ({
+                          width: 64,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: color.dangerBg,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
+                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.danger }}>✕</Text>
+                      </Pressable>
+                    )}
+                  >
                   <View
                     style={{
                       flexDirection: 'row',
@@ -253,6 +280,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                       gap: 14,
                       paddingVertical: 14,
                       paddingHorizontal: 12,
+                      backgroundColor: color.surface,
                     }}
                   >
                     {/* 체크박스는 완료 토글, 텍스트는 탭해서 수정 */}
@@ -320,6 +348,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                       </Pressable>
                     )}
                   </View>
+                  </ReanimatedSwipeable>
                 </React.Fragment>
               );
             })}

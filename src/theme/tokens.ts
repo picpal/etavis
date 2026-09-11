@@ -16,6 +16,9 @@ export const color = {
   amberDeep: '#7A4707',
   amberBg: '#FDF3E4',
   green: '#157A54',
+  /** 삭제·되돌릴 수 없는 동작 — 스와이프 삭제 박스 */
+  danger: '#B3261E',
+  dangerBg: '#FBE9E7',
   hairline: 'rgba(16,32,58,0.07)',
   stroke: '#C6D2E6',
   track: '#E5EBF4',

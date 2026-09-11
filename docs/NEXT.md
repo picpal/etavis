@@ -141,6 +141,9 @@ npx wrangler deploy
   머물면 타임라인이 과거 기준), **runId 세대 가드**(계산 중 뒤로 가서 칩을 고치면 좀비 RESULT가 들어올 수 있음,
   타임아웃 뒤 in-flight 호출도 계속 돔), 죽은 표면 정리(`legTable`, `applyOption`·`selectOption`·`setOptionStore`·
   `stopsForOption`), `applyChat`이 인식 실패 메시지에도 `reset`, `arriveByLabel`이 자정 넘김('내일')을 잃음.
+- **할일 스와이프 삭제(2026-09-11)** — `TaskSheet.tsx` 행을 왼쪽으로 밀면 ✕ 박스(`ReanimatedSwipeable`). 시뮬레이터 확인.
+  **눈에 띈 것**: 새 계획 흐름으로 만든 경유지는 할 일이 비어 있어 A6의 "할 일 N/M" 칩이 안 뜨고, 그래서 할일 시트로 들어갈
+  입구가 없다(딥링크 `etavia://timeline?sheet=task`로만 열림). 경유지 카드에 "할 일 추가" 입구를 두는 게 맞다.
 - **폰 설치** — 마지막 기기 빌드 이후 커밋이 여럿 쌓였다. 무료 팀이라 7일 만료
 - **추천 옵션 3개가 고정 목 데이터** — 칩과 따로 논다. 실제 검색·라우팅으로 옵션을 만들 때 함께 정리
 - **후보 시트 정렬 탭** — 2026-09-11 수정. 마감·선택불가 후보는 목록에서 뺐고, '영업 상태' 탭을 '주차'로 바꿨다. 거리 정렬은 `note` 문자열 파싱 대신 `Candidate.detourKm` 숫자를 쓴다(라우팅 API 값이 들어올 자리). 로직은 `src/lib/candidateRank.ts`, 테스트는 `npm test`

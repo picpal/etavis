@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { color } from './src/theme/tokens';
 import { PlanProvider, usePlan } from './src/state/plan';
+import { PlanFlowProvider } from './src/state/planFlowProvider';
 import { ACTION_OPEN_LEG, ACTION_OPEN_TASKS } from './src/notifications';
 import { TrackerProvider } from './src/state/tracker';
 import './src/notifications';
@@ -111,6 +112,7 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PlanProvider>
+          <PlanFlowProvider>
           <TrackerProvider>
           <NotificationBridge />
           <NavigationContainer ref={navigationRef} theme={theme} linking={linking}>
@@ -129,6 +131,7 @@ export default function App() {
             </Stack.Navigator>
           </NavigationContainer>
           </TrackerProvider>
+          </PlanFlowProvider>
         </PlanProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

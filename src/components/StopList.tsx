@@ -71,11 +71,15 @@ export function StopList({
                       <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}>
                         <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>{k + 1}</Text>
                       </View>
-                      <View style={{ flex: 1, gap: 3 }}>
+                      <View style={{ flex: 1, gap: 5 }}>
                         <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
-                        <Text style={[type.caption, { color: statusText ? color.amberDeep : color.muted }]}>
-                          {approx}{hhmm(arrivals[k])} 도착{statusText ? ` · ${statusText}` : ''}
-                        </Text>
+                        {/* 도착 시각 배지 — 이름 다음에 바로 읽히게 이름 아래 줄, 초록 */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={{ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.greenBg }}>
+                            <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 15, color: color.green }}>{approx}{hhmm(arrivals[k])} 도착</Text>
+                          </View>
+                          {statusText && <Text style={[type.caption, { color: color.amberDeep }]}>{statusText}</Text>}
+                        </View>
                         {withoutArrive != null && withoutSlack != null && (
                           <Text style={[type.caption, { color: withoutSlack >= 0 ? color.green : color.muted }]}>
                             빼면 {approx}{hhmm(withoutArrive)} 도착 · {withoutSlack >= 0 ? `${withoutSlack}분 여유` : `그래도 ${-withoutSlack}분 늦음`}

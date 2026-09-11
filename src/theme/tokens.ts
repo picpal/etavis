@@ -16,6 +16,8 @@ export const color = {
   amberDeep: '#7A4707',
   amberBg: '#FDF3E4',
   green: '#157A54',
+  /** 도착 시각 배지 바탕 */
+  greenBg: '#E3F3EC',
   /** 삭제·되돌릴 수 없는 동작 — iOS 시스템 레드 */
   danger: '#FF3B30',
   /** 마감을 넘김 — 글자·눈금용 붉은색과 막대 채움용 파스텔 */

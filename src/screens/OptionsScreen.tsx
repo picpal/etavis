@@ -30,6 +30,21 @@ export function OptionsScreen({ navigation }: Props) {
     () => (result ? effectiveVisits(result, state.selectedOptionIdx, state.overrides) : null),
     [result, state.selectedOptionIdx, state.overrides],
   );
+
+  const slotQuery = (id: string) => state.slots.find(s => s.id === id)?.query ?? '';
+  const pickIdx = current ? current.visits.findIndex(v => v.slotId === pickSlot) : -1;
+  const pickVisit = current && pickIdx >= 0 ? current.visits[pickIdx] : null;
+  const pickArrive = current && pickIdx >= 0 ? current.timing.arrivals[pickIdx] : 0;
+  // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
+  const sheetCands = useMemo(
+    () =>
+      pickVisit && result
+        ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
+           ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
+        : [],
+    [pickVisit, pickArrive, result, state.slots],
+  );
+
   if (!result || !current || !state.request) {
     return (
       <View style={{ flex: 1, backgroundColor: color.bg }}>
@@ -47,20 +62,6 @@ export function OptionsScreen({ navigation }: Props) {
   const late = slack != null && slack < 0;
   const approx = current.timing.estimated || !flow.usingServer ? '약 ' : '';
   const stale = request ? flow.isStale(request) : false;
-
-  const slotQuery = (id: string) => state.slots.find(s => s.id === id)?.query ?? '';
-  const pickIdx = current.visits.findIndex(v => v.slotId === pickSlot);
-  const pickVisit = pickIdx >= 0 ? current.visits[pickIdx] : null;
-  const pickArrive = pickIdx >= 0 ? current.timing.arrivals[pickIdx] : 0;
-  // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
-  const sheetCands = useMemo(
-    () =>
-      pickVisit
-        ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
-           ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
-        : [],
-    [pickVisit, pickArrive, result, state.slots],
-  );
 
   const confirm = () => {
     applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));

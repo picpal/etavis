@@ -1,7 +1,7 @@
 /** A4 — 후보 비교 시트 (height 730, 정렬 세그먼트는 candidateRank.ts 가 정한다)
  *  A6 타임라인의 `매장 교체`와 A5 추천 경로의 매장 선택 칩이 공용으로 쓴다.
  *  데이터는 전부 props로 받는다 — usePlan()에 의존하지 않는다. */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
@@ -56,8 +56,14 @@ export function CandidateSheet({
   const insets = useSafeAreaInsets();
   const [sortIdx, setSortIdx] = useState<CandidateSort>(0);
 
+  // 닫힘 애니메이션 동안 내용을 유지 — visible이 꺼지면 호출부의 candidates가 []로 무너져도
+  // Sheet는 CLOSE_MS(220ms) 동안 마운트를 유지하므로, 마지막으로 보여준 내용을 그대로 붙잡아 둔다
+  const lastRef = useRef({ title, candidates, currentId });
+  if (visible) lastRef.current = { title, candidates, currentId };
+  const shown = visible ? { title, candidates, currentId } : lastRef.current;
+
   // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다. 마감·선택불가는 여기서 걸러진다
-  const sorted = useMemo(() => rankCandidates(candidates, sortIdx), [candidates, sortIdx]);
+  const sorted = useMemo(() => rankCandidates(shown.candidates, sortIdx), [shown.candidates, sortIdx]);
   const recommended = sorted.find(c => c.recommended) ?? sorted[0];
 
   /**
@@ -81,7 +87,7 @@ export function CandidateSheet({
   /** 확정 — 경로에 반영하고 시트를 닫는다 */
   const pick = (cand: Candidate) => {
     haptic();
-    if (cand.id !== currentId) onPick(cand.id);
+    if (cand.id !== shown.currentId) onPick(cand.id);
     onClose();
   };
 
@@ -94,7 +100,7 @@ export function CandidateSheet({
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ gap: 4 }}>
                 <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
-                  {title}
+                  {shown.title}
                 </Text>
                 <Text style={[type.titleL, { color: color.ink }]}>후보 {sorted.length}곳</Text>
               </View>
@@ -119,7 +125,7 @@ export function CandidateSheet({
           >
             {/* 후보 목록 — 순서는 정렬 기준만 따르고, 탭하면 그 자리에서 펼쳐진다 */}
             {sorted.map(cand => {
-              const isCurrent = cand.id === currentId;
+              const isCurrent = cand.id === shown.currentId;
               const isOpen = cand.id === expanded.id;
 
               if (isOpen) {

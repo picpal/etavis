@@ -6,7 +6,7 @@ import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
-import { alternativeToCandidate, chosenToCandidate, effectiveVisits, optionTitle, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
+import { effectiveVisits, optionTitle, slotCandidates, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
 import { Card, haptic, PrimaryButton } from '../components/common';
 import { Chevron, DottedLineH, Hairline } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
@@ -27,22 +27,18 @@ export function OptionsScreen({ navigation }: Props) {
   const [pickSlot, setPickSlot] = useState<string | null>(null);
 
   const current = useMemo(
-    () => (result ? effectiveVisits(result, state.selectedOptionIdx, state.overrides) : null),
-    [result, state.selectedOptionIdx, state.overrides],
+    () => (result ? effectiveVisits(result, state.slots, state.selectedOptionIdx, state.overrides) : null),
+    [result, state.slots, state.selectedOptionIdx, state.overrides],
   );
 
   const slotQuery = (id: string) => state.slots.find(s => s.id === id)?.query ?? '';
   const pickIdx = current ? current.visits.findIndex(v => v.slotId === pickSlot) : -1;
   const pickVisit = current && pickIdx >= 0 ? current.visits[pickIdx] : null;
-  const pickArrive = current && pickIdx >= 0 ? current.timing.arrivals[pickIdx] : 0;
+  // 지금 고른 안 기준으로 낸다 — result.alternatives는 1안 기준이라 2·3안에서 중복·누락이 생긴다.
   // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
   const sheetCands = useMemo(
-    () =>
-      pickVisit && result
-        ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
-           ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
-        : [],
-    [pickVisit, pickArrive, result, state.slots],
+    () => (result && current && pickIdx >= 0 ? slotCandidates(result, state.slots, current.visits, pickIdx, current.timing) : []),
+    [result, current, pickIdx, state.slots],
   );
 
   if (!result || !current || !state.request) {
@@ -106,7 +102,7 @@ export function OptionsScreen({ navigation }: Props) {
         {/* 2. 경유지 행 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {current.visits.map(v => {
-            const alts = result.alternatives.filter(a => a.slotId === v.slotId).length;
+            const alts = (state.slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
             const st = result.slotStatus[v.slotId];
             const suffix = st && st !== 'ok' ? ` · ${SLOT_STATUS_TEXT[st]}` : '';
             return (
@@ -124,7 +120,7 @@ export function OptionsScreen({ navigation }: Props) {
         {result.options.map((o, i) => {
           const selected = i === state.selectedOptionIdx;
           // 선택된 안은 이미 위에서 계산해 둔 current를 그대로 쓴다 — 다시 계산하지 않는다
-          const eff = selected ? current : effectiveVisits(result, i, state.overrides);
+          const eff = selected ? current : effectiveVisits(result, state.slots, i, state.overrides);
           const names = [req.originName, ...eff.visits.map(v => v.candidate.name), req.destinationName];
           const pre = eff.timing.estimated ? '약 ' : '';
           return (

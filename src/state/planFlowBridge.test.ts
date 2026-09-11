@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider';
 import { plan } from '../lib/routePlan/plan';
 import type { PlaceCandidate, Slot } from '../lib/routePlan/types';
-import { effectiveVisits, optionTitle, toLegacyPlan } from './planFlowBridge';
+import { effectiveVisits, optionTitle, slotCandidates, toLegacyPlan } from './planFlowBridge';
 import { initialPlanFlow, planFlowReducer, type PlanFlowState, type PlanRequest } from './planFlow';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -27,10 +27,10 @@ async function ready(): Promise<PlanFlowState> {
 
 test('effectiveVisits — 오버라이드 없으면 옵션 그대로, 있으면 rescore', async () => {
   const s = await ready();
-  const plain = effectiveVisits(s.result!, 0, {});
+  const plain = effectiveVisits(s.result!, slots, 0, {});
   assert.equal(plain.timing.estimated, false);
   assert.equal(plain.timing.totalMin, s.result!.options[0].totalMin);
-  const swapped = effectiveVisits(s.result!, 0, { 0: { 's-1': 'oy2' } });
+  const swapped = effectiveVisits(s.result!, slots, 0, { 0: { 's-1': 'oy2' } });
   assert.equal(swapped.visits.find(v => v.slotId === 's-1')!.candidate.id, 'oy2');
   assert.ok(swapped.timing.totalMin !== plain.timing.totalMin);
 });
@@ -107,7 +107,44 @@ test('toLegacyPlan — 옵션 밖 후보로 오버라이드해도 legs가 빠지
   ];
   for (const key of expectedKeys) assert.ok(p.dataset.legs![key], `leg 누락: ${key}`);
 
-  const { timing } = effectiveVisits(result, 0, { 0: { 's-1': 'oy4' } });
-  const toHHMM = (min: number) => `${Math.floor(min / 60) % 24}:${String(Math.round(min) % 60).padStart(2, '0')}`;
+  const { timing } = effectiveVisits(result, extraSlots, 0, { 0: { 's-1': 'oy4' } });
+  const toHHMM = (min: number) => {
+    const m = Math.round(min);
+    return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  };
   assert.equal(p.stops[0].arriveAt, toHHMM(timing.arrivals[0]));
+});
+
+test('slotCandidates — 2안에서도 중복 없이 슬롯 후보 전부, recommended는 2안의 픽', async () => {
+  const s0 = await ready();
+  assert.ok(s0.result!.options.length >= 2, '픽스처가 2안 이상을 내야 이 테스트가 뜻이 있다');
+  const result = s0.result!;
+  const { visits, timing } = effectiveVisits(result, slots, 1, {});
+  visits.forEach((v, i) => {
+    const slot = slots.find(x => x.id === v.slotId)!;
+    const list = slotCandidates(result, slots, visits, i, timing);
+    const ids = list.map(x => x.id);
+    assert.equal(new Set(ids).size, ids.length, `slot ${slot.id}: 후보 id 중복`);
+    assert.deepEqual([...ids].sort(), slot.candidates.map(c2 => c2.id).sort(), `slot ${slot.id}: 슬롯 후보 전부가 나와야 한다`);
+    const rec = list.filter(x => x.recommended);
+    assert.equal(rec.length, 1, `slot ${slot.id}: recommended는 정확히 하나`);
+    assert.equal(rec[0].id, v.candidate.id, `slot ${slot.id}: recommended는 2안이 고른 후보`);
+  });
+});
+
+test('effectiveVisits — 2안에서 1안의 후보로 오버라이드해도 실제로 바뀐다', async () => {
+  const s0 = await ready();
+  const result = s0.result!;
+  assert.ok(result.options.length >= 2);
+  const base = effectiveVisits(result, slots, 1, {});
+  // 1안과 2안이 다르게 고른 슬롯을 찾아, 2안 위에서 1안의 후보로 되돌린다
+  const diff = base.visits.find(v => {
+    const o0 = result.options[0].visits.find(x => x.slotId === v.slotId);
+    return !!o0 && o0.candidate.id !== v.candidate.id;
+  });
+  assert.ok(diff, '1안과 2안이 다른 매장을 고른 슬롯이 있어야 이 테스트가 뜻이 있다');
+  const target = result.options[0].visits.find(x => x.slotId === diff!.slotId)!.candidate.id;
+  const after = effectiveVisits(result, slots, 1, { 1: { [diff!.slotId]: target } });
+  assert.equal(after.visits.find(v => v.slotId === diff!.slotId)!.candidate.id, target, '오버라이드가 먹지 않았다');
+  assert.notEqual(after.visits.find(v => v.slotId === diff!.slotId)!.candidate.id, diff!.candidate.id);
 });

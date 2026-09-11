@@ -1,13 +1,14 @@
 /**
  * planFlow ↔ 기존 스토어 사이의 변환. 전부 순수 함수.
  *   effectiveVisits  — 안(案)에 매장 오버라이드를 적용하고 시간을 다시 낸다
+ *   slotCandidates   — 슬롯 하나의 교체 후보 목록. 지금 고른 안 기준으로 매번 다시 낸다
  *   optionTitle      — 카드 제목은 규칙이 아니라 "무엇이 다른가"
  *   toLegacyPlan     — 확정 순간 StopState[] + key:'live' Dataset. A6 이후는 이걸로 그대로 돈다
  * SLOT_STATUS_TEXT/HELP — 슬롯 status 표시 문구. 화면 여러 곳(추천 카드·교체 시트)이 같이 쓴다
  */
 import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
 import { isOpenAt } from '../lib/routePlan/score';
-import type { Alternative, PlanOption, PlanResult, Rescored, SlotStatus, Visit } from '../lib/routePlan/types';
+import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, Visit } from '../lib/routePlan/types';
 import type { PlanFlowState } from './planFlow';
 import type { ApplyLivePayload, StopState } from './plan';
 
@@ -27,11 +28,20 @@ export const SLOT_STATUS_HELP: Partial<Record<SlotStatus, string>> = {
   short: '말한 개수만큼 못 찾았어요.',
 };
 
-const toHHMM = (min: number) => `${Math.floor(min / 60) % 24}:${String(Math.round(min) % 60).padStart(2, '0')}`;
+// 반올림을 먼저 한다 — 시는 내림, 분은 반올림하면 599.7이 "9:00"(10:00이어야 한다)이 된다
+const toHHMM = (min: number) => {
+  const m = Math.round(min);
+  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/**
+ * 오버라이드 id는 slots에서 푼다. result.alternatives는 옵션 0 기준이라
+ * 2·3안에서 고른 후보가 거기 없으면 교체가 그냥 먹히지 않았다.
+ */
 export function effectiveVisits(
   result: PlanResult,
+  slots: Slot[],
   optionIdx: number,
   overrides: Record<number, Record<string, string>>,
 ): { visits: Visit[]; timing: Rescored; option: PlanOption } {
@@ -39,9 +49,9 @@ export function effectiveVisits(
   const ov = overrides[optionIdx] ?? {};
   const visits = option.visits.map(v => {
     const candId = ov[v.slotId];
-    if (!candId) return v;
-    const alt = result.alternatives.find(a => a.slotId === v.slotId && a.candidate.id === candId);
-    return alt ? { ...v, candidate: alt.candidate } : v;
+    if (!candId || candId === v.candidate.id) return v;
+    const cand = slots.find(s => s.id === v.slotId)?.candidates.find(c => c.id === candId);
+    return cand ? { ...v, candidate: cand } : v;
   });
   // result.rescore가 유일한 시간 산출원 — 실측 leg가 있으면 실측, 없으면 추정(estimated로 드러난다)
   return { visits, timing: result.rescore(visits), option };
@@ -97,10 +107,47 @@ export function chosenToCandidate(v: Visit, slotQuery: string, arrivalMin: numbe
   };
 }
 
+/**
+ * visits[idx] 슬롯의 교체 후보 목록 — 지금 고른 안(visits/timing) 기준.
+ * 현재 매장이 맨 앞(recommended), 나머지는 그 자리에 끼워 넣고 rescore해 추가시간을 낸다.
+ * result.alternatives를 쓰면 안 된다 — 그건 옵션 0 기준이라
+ * 2·3안에서는 같은 매장이 두 번 뜨거나 진짜 대안이 빠진다.
+ */
+export function slotCandidates(
+  result: PlanResult,
+  slots: Slot[],
+  visits: Visit[],
+  idx: number,
+  timing: Rescored,
+): Candidate[] {
+  const v = visits[idx];
+  if (!v) return [];
+  const slot = slots.find(s => s.id === v.slotId);
+  const query = slot?.query ?? '';
+  const arrive = timing.arrivals[idx];
+  const seen = new Set<string>([v.candidate.id]);
+  const list: Candidate[] = [chosenToCandidate(v, query, arrive)];
+  for (const cand of slot?.candidates ?? []) {
+    if (seen.has(cand.id)) continue;
+    seen.add(cand.id);
+    const swapped = visits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
+    const swappedTiming = result.rescore(swapped);
+    const alt: Alternative = {
+      slotId: v.slotId,
+      candidate: cand,
+      addedMin: swappedTiming.totalMin - timing.totalMin,
+      detourKm: Math.max(0, swappedTiming.distanceKm - timing.distanceKm),
+      estimated: swappedTiming.estimated,
+    };
+    list.push(alternativeToCandidate(alt, query, arrive + alt.addedMin, v.dwellMin));
+  }
+  return list;
+}
+
 export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departMin: number }): ApplyLivePayload {
   const { result, request, slots } = flow;
   if (!result || !request) throw new Error('toLegacyPlan: 결과가 없다');
-  const { visits, timing } = effectiveVisits(result, flow.selectedOptionIdx, flow.overrides);
+  const { visits, timing } = effectiveVisits(result, slots, flow.selectedOptionIdx, flow.overrides);
   const queryOf = (slotId: string) => slots.find(s => s.id === slotId)?.query ?? '';
 
   // stops — 방문 순서대로. leg는 timing(effectiveVisits의 rescore)의 도착시각·legsKm에서 그대로
@@ -136,29 +183,10 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
   }
   legs['origin>dest'] = { min: Math.round(result.directMin), km: round1(result.directKm) };
 
-  // candidates — 슬롯마다 현재 선택 + 그 슬롯의 나머지 후보 전부(flow.slots가 출처, 중복 없이).
-  // result.alternatives는 옵션 0 기준이라 다른 안을 고르면 중복·누락이 생긴다 — 여기서 직접 재계산한다
+  // candidates — A5 교체 시트와 같은 함수로 낸다. 화면과 확정본이 다른 목록을 보면 안 된다
   const candidates: Dataset['candidates'] = {};
   visits.forEach((v, i) => {
-    const arrive = timing.arrivals[i];
-    const slotCandidates = slots.find(s => s.id === v.slotId)?.candidates ?? [];
-    const seen = new Set<string>([v.candidate.id]);
-    const list: Candidate[] = [chosenToCandidate(v, queryOf(v.slotId), arrive)];
-    for (const cand of slotCandidates) {
-      if (seen.has(cand.id)) continue;
-      seen.add(cand.id);
-      const swapped = visits.map((vv, j) => (j === i ? { ...vv, candidate: cand } : vv));
-      const swappedTiming = result.rescore(swapped);
-      const alt: Alternative = {
-        slotId: v.slotId,
-        candidate: cand,
-        addedMin: swappedTiming.totalMin - timing.totalMin,
-        detourKm: Math.max(0, swappedTiming.distanceKm - timing.distanceKm),
-        estimated: swappedTiming.estimated,
-      };
-      list.push(alternativeToCandidate(alt, queryOf(v.slotId), arrive + alt.addedMin, v.dwellMin));
-    }
-    candidates[v.slotId] = list;
+    candidates[v.slotId] = slotCandidates(result, slots, visits, i, timing);
   });
 
   const options: RouteOption[] = result.options.map((o, i) => ({

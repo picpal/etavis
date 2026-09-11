@@ -138,7 +138,7 @@ export function CandidateSheet({
                           <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.ink }}>
                             {cand.name}
                           </Text>
-                          {cand.recommended && <RecommendBadge />}
+                          {cand.recommended && !isCurrent && <RecommendBadge />}
                           {isCurrent && <CurrentBadge />}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
@@ -207,7 +207,7 @@ export function CandidateSheet({
                       <View style={{ flex: 1, gap: 5 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={[type.item, { color: color.ink }]}>{cand.name}</Text>
-                          {cand.recommended && <RecommendBadge />}
+                          {cand.recommended && !isCurrent && <RecommendBadge />}
                           {isCurrent && <CurrentBadge />}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>

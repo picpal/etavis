@@ -18,6 +18,9 @@ export const color = {
   green: '#157A54',
   /** 삭제·되돌릴 수 없는 동작 — iOS 시스템 레드 */
   danger: '#FF3B30',
+  /** 마감을 넘김 — 글자·눈금용 붉은색과 막대 채움용 파스텔 */
+  late: '#D0453F',
+  lateSoft: '#F4A6A1',
   hairline: 'rgba(16,32,58,0.07)',
   stroke: '#C6D2E6',
   track: '#E5EBF4',

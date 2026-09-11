@@ -26,7 +26,8 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
   departMin: number; directMin: number; totalMin: number; arriveByMin: number | null; estimated: boolean;
 }) {
   const deadline = arriveByMin == null ? null : arriveByMin - departMin;
-  const span = Math.max(totalMin, deadline ?? 0) * 1.08;
+  // 막대 끝이 곧 도착(또는 더 늦은 마감). 여백을 두면 도착점이 어디인지 흐려진다
+  const span = Math.max(totalMin, deadline ?? 0, 1);
   const pct = (m: number) => `${Math.max(0, Math.min(100, (m / span) * 100))}%` as const;
   const late = deadline != null && totalMin > deadline;
   const pre = estimated ? '약 ' : '';
@@ -36,16 +37,16 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
     <View style={{ gap: 6 }}>
       <View style={{ height: 22, justifyContent: 'center' }}>
         <View style={{ height: 8, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
-          {/* 들르기 포함 전체. 늦으면 마감을 넘긴 구간만 amber — 어디서부터 늦는지 보이게 */}
+          {/* 들르기 포함 전체. 늦으면 마감을 넘긴 구간만 파스텔 레드 — 어디서부터 늦는지 보이게 */}
           <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(totalMin), backgroundColor: color.primary, borderRadius: 4 }} />
           {late && (
-            <View style={{ position: 'absolute', left: pct(Math.max(0, deadline!)), top: 0, bottom: 0, width: pct(totalMin - Math.max(0, deadline!)), backgroundColor: color.amber, borderTopRightRadius: 4, borderBottomRightRadius: 4 }} />
+            <View style={{ position: 'absolute', left: pct(Math.max(0, deadline!)), top: 0, bottom: 0, width: pct(totalMin - Math.max(0, deadline!)), backgroundColor: color.lateSoft, borderTopRightRadius: 4, borderBottomRightRadius: 4 }} />
           )}
           {/* 직행만큼은 옅게 — 그 위로 튀어나온 부분이 '들러서 더 걸리는' 시간 */}
           <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(directMin), backgroundColor: color.stroke, borderRadius: 4 }} />
         </View>
         {deadline != null && (
-          <View style={{ position: 'absolute', left: pct(deadline), top: 0, bottom: 0, width: 2, marginLeft: -1, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />
+          <View style={{ position: 'absolute', left: pct(deadline), top: 0, bottom: 0, width: 2, marginLeft: -1, borderRadius: 1, backgroundColor: late ? color.late : color.green }} />
         )}
       </View>
       <View style={{ height: 14 }}>
@@ -56,7 +57,7 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
         {/* 마감 라벨은 눈금 바로 아래. 가장자리에 붙어 출발·도착 라벨과 겹칠 때는 아래 범례 줄로 내린다 */}
         {deadline != null && !deadlineAtEdge && (
           <View style={{ position: 'absolute', top: 0, left: pct(deadline), width: 120, marginLeft: -60, alignItems: 'center' }}>
-            <Text style={[type.micro, { color: late ? color.amberDeep : color.green, backgroundColor: color.bg, paddingHorizontal: 4 }]}>마감 {hhmm(arriveByMin!)}</Text>
+            <Text style={[type.micro, { color: late ? color.late : color.green, backgroundColor: color.bg, paddingHorizontal: 4 }]}>마감 {hhmm(arriveByMin!)}</Text>
           </View>
         )}
       </View>
@@ -71,14 +72,14 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
         </View>
         {late && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.amber }} />
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.lateSoft }} />
             <Text style={[type.micro, { color: color.muted }]}>초과 {Math.round(totalMin - Math.max(0, deadline!))}분</Text>
           </View>
         )}
         {deadline != null && deadlineAtEdge && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 2, height: 10, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />
-            <Text style={[type.micro, { color: late ? color.amberDeep : color.green }]}>마감 {hhmm(arriveByMin!)}{deadline <= 0 ? ' 지남' : ''}</Text>
+            <View style={{ width: 2, height: 10, borderRadius: 1, backgroundColor: late ? color.late : color.green }} />
+            <Text style={[type.micro, { color: late ? color.late : color.green }]}>마감 {hhmm(arriveByMin!)}{deadline <= 0 ? ' 지남' : ''}</Text>
           </View>
         )}
       </View>
@@ -165,7 +166,7 @@ export function OptionsScreen({ navigation }: Props) {
             {slack == null ? (
               <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
             ) : late ? (
-              <Text style={[type.displayXL, { color: color.amberDeep }]}>{approx}{-slack}분 늦어요</Text>
+              <Text style={[type.displayXL, { color: color.late }]}>{approx}{-slack}분 늦어요</Text>
             ) : (
               <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
             )}
@@ -207,7 +208,7 @@ export function OptionsScreen({ navigation }: Props) {
             return (
               <Pressable key={v.slotId} disabled={alts === 0} onPress={() => { haptic(); setPickSlot(v.slotId); }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: color.surface, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 14, opacity: pressed ? 0.7 : 1 })}>
-                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: st && st !== 'ok' ? color.amberDeep : color.body }}>{v.candidate.name}{suffix}</Text>
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: st === 'late' ? color.late : st && st !== 'ok' ? color.amberDeep : color.body }}>{v.candidate.name}{suffix}</Text>
                 {alts > 0 && <Chevron size={9} thickness={2} color={color.muted} dir="down" />}
               </Pressable>
             );

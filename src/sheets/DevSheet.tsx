@@ -1,6 +1,6 @@
 /** 개발 메뉴 — 목 데이터셋 전환 + 계산 실패 토글 + 위치 추적 + 추적 로그 내보내기 (A1 타이틀 길게 눌러 진입) */
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { datasets } from '../data/mockData';
@@ -45,6 +45,8 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
 
   return (
     <Sheet visible={visible} onClose={onClose}>
+      {/* 시트는 내부 스크롤을 자식에게 맡긴다 — 메뉴 전체(추적 로그 포함)가 화면 아래로 잘리지 않도록 여기서 스크롤 처리 */}
+      <ScrollView showsVerticalScrollIndicator={false}>
       <View style={{ paddingTop: 8, paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20), gap: 14 }}>
         <View style={{ gap: 4 }}>
           <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
@@ -269,6 +271,7 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
           경로 변형이 UI에서 어떻게 보이는지 확인하는 용도예요
         </Text>
       </View>
+      </ScrollView>
     </Sheet>
   );
 }

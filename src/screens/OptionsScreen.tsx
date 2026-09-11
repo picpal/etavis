@@ -1,6 +1,7 @@
 /** A5 — 추천. 답(제시간 도착 여부)이 맨 위, 3안은 그 아래. "최적"이 아니라 "검증한 안 중 최선" */
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
@@ -143,6 +144,13 @@ export function OptionsScreen({ navigation }: Props) {
     flow.reset();
     navigation.navigate('Plan');
   };
+  /* 경유지 빼기 — 칩을 지우고 바로 다시 계산. 늦을 때 '무엇을 빼야 맞추나'가 이 화면의 질문이다 */
+  const removeStop = (slotId: string) => {
+    haptic();
+    removeChip(slotId);
+    flow.reset();
+    navigation.replace('Calculating');
+  };
 
   const confirm = () => {
     applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));
@@ -181,11 +189,6 @@ export function OptionsScreen({ navigation }: Props) {
             arriveByMin={req.arriveByMin}
             estimated={current.timing.estimated || !flow.usingServer}
           />
-          {late && result.relaxed && (
-            <Text style={[type.caption, { color: color.body }]}>
-              {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `그래도 ${-relaxedSlack!}분 늦음`}
-            </Text>
-          )}
         </View>
 
         {/* 못 찾아 빠진 슬롯 — 경유지 행에는 나오지 않으니 여기서 말해 준다 */}
@@ -197,23 +200,71 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           ))}
 
-        {/* 2. 경유지 행 — 라벨을 달아 '무엇의 칩인지' 말하고, 교체 가능하면 disclosure를 보인다 */}
+        {/* 2. 경유지 — iOS 인셋 그룹 리스트. 행: 순번 · 이름 · 도착 시각(늦으면 '빼면' 시각) · 후보 셰브론.
+            빼기는 왼쪽 스와이프, 늦을 때는 왼쪽 ⊖까지 보여 '무엇을 빼야 맞추나'에 바로 답하게 */}
         <View style={{ gap: 8 }}>
-        <Text style={[type.label, { color: color.muted }]}>경유지</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {current.visits.map(v => {
-            const alts = (state.slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
-            const st = result.slotStatus[v.slotId];
-            const suffix = st && st !== 'ok' ? ` · ${SLOT_STATUS_TEXT[st]}` : '';
-            return (
-              <Pressable key={v.slotId} disabled={alts === 0} onPress={() => { haptic(); setPickSlot(v.slotId); }}
-                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: color.surface, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 14, opacity: pressed ? 0.7 : 1 })}>
-                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: st === 'late' ? color.late : st && st !== 'ok' ? color.amberDeep : color.body }}>{v.candidate.name}{suffix}</Text>
-                {alts > 0 && <Chevron size={9} thickness={2} color={color.muted} dir="down" />}
-              </Pressable>
-            );
-          })}
-        </View>
+          <Text style={[type.label, { color: color.muted }]}>경유지 {current.visits.length}곳{late ? ' · 빼면 맞출 수 있는지 확인' : ''}</Text>
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            {current.visits.map((v, k) => {
+              const alts = (state.slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
+              const st = result.slotStatus[v.slotId];
+              const statusText = st && st !== 'ok' ? SLOT_STATUS_TEXT[st] : null;
+              const arrive = current.timing.arrivals[k];
+              // 늦을 때만: 이 경유지를 빼면 언제 도착하나 (rescore는 부분 집합에도 동작)
+              const without = late ? result.rescore(current.visits.filter((_, j) => j !== k)) : null;
+              const withoutArrive = without ? req.departAtMin + without.totalMin : null;
+              const withoutSlack = withoutArrive != null && req.arriveByMin != null ? Math.round(req.arriveByMin - withoutArrive) : null;
+              return (
+                <React.Fragment key={v.slotId}>
+                  {k > 0 && <Hairline style={{ marginLeft: 16 }} />}
+                  <ReanimatedSwipeable
+                    friction={2}
+                    rightThreshold={32}
+                    overshootRight={false}
+                    renderRightActions={() => (
+                      <View style={{ justifyContent: 'center', paddingHorizontal: 8 }}>
+                        <Pressable
+                          onPress={() => removeStop(v.slotId)}
+                          accessibilityLabel={`${v.candidate.name} 빼기`}
+                          style={({ pressed }) => ({ minWidth: 56, height: 40, paddingHorizontal: 12, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, opacity: pressed ? 0.7 : 1 })}
+                        >
+                          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 16, color: '#FFFFFF' }}>빼기</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  >
+                    <Pressable
+                      disabled={alts === 0}
+                      onPress={() => { haptic(); setPickSlot(v.slotId); }}
+                      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: pressed ? color.bg : color.surface })}
+                    >
+                      {late && (
+                        <Pressable onPress={() => removeStop(v.slotId)} hitSlop={8} accessibilityLabel={`${v.candidate.name} 빼기`}
+                          style={({ pressed }) => ({ width: 22, height: 22, borderRadius: 11, backgroundColor: color.danger, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.6 : 1 })}>
+                          <View style={{ width: 10, height: 2, borderRadius: 1, backgroundColor: '#FFFFFF' }} />
+                        </Pressable>
+                      )}
+                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>{k + 1}</Text>
+                      </View>
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
+                        <Text style={[type.caption, { color: st === 'late' ? color.late : statusText ? color.amberDeep : color.muted }]}>
+                          {approx}{hhmm(arrive)} 도착{statusText ? ` · ${statusText}` : ''}
+                        </Text>
+                        {withoutArrive != null && withoutSlack != null && (
+                          <Text style={[type.caption, { color: withoutSlack >= 0 ? color.green : color.muted }]}>
+                            빼면 {approx}{hhmm(withoutArrive)} 도착 · {withoutSlack >= 0 ? `${withoutSlack}분 여유` : `그래도 ${-withoutSlack}분 늦음`}
+                          </Text>
+                        )}
+                      </View>
+                      {alts > 0 && <Chevron size={9} thickness={2} color={color.stroke} dir="right" />}
+                    </Pressable>
+                  </ReanimatedSwipeable>
+                </React.Fragment>
+              );
+            })}
+          </Card>
         </View>
 
         {/* 3. 경로 카드 — 같은 구조의 카드에 선택 표시. 숫자는 판정 카드·CTA와 같은 '도착 시각' */}
@@ -245,7 +296,14 @@ export function OptionsScreen({ navigation }: Props) {
               <Card elevated={selected} style={{ padding: 18, gap: 14, borderWidth: 1.5, borderColor: selected ? color.primary : 'transparent' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
                   <View style={{ flex: 1, gap: 6 }}>
-                    <Text style={[type.labelPlain, { color: color.muted }]}>{title}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[type.labelPlain, { color: color.muted }]}>{title}</Text>
+                      {i === 0 && (
+                        <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: color.primaryTint }}>
+                          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 11, lineHeight: 12, color: color.primary }}>추천</Text>
+                        </View>
+                      )}
+                    </View>
                     {sameAsBest && !selected ? (
                       <Text style={[type.body, { color: color.body }]}>{sub}</Text>
                     ) : (

@@ -34,8 +34,10 @@ function Tag({ label, tint, bg }: { label: string; tint: string; bg: string }) {
 const CurrentBadge = () => <Tag label="현재 경로" tint={color.primary} bg={color.primaryTint} />;
 const RecommendBadge = () => <Tag label="추천" tint="#fff" bg={color.primary} />;
 
+/** 부호는 하나만 — 빼는 후보(음수)는 '+-1분'이 아니라 '−1분' */
+const signedMin = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(Math.round(n))}분`;
 /** 후보 note에 '추정'이 섞여 있으면 추가시간이 실측이 아니라는 뜻 — 앞에 '약 '을 붙인다 */
-const addedLabel = (cand: Candidate) => `${cand.note.includes('추정') ? '약 ' : ''}+${cand.addedMin}분`;
+const addedLabel = (cand: Candidate) => `${cand.note.includes('추정') ? '약 ' : ''}${signedMin(cand.addedMin)}`;
 
 export function CandidateSheet({
   visible,

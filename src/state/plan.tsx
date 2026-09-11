@@ -149,7 +149,8 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
     const prevKey = i === 0 ? 'origin' : stops[i - 1].baseId;
     const base = legBetween(prevKey, s.baseId, ds);
     const legMin = base.min + s.replaceDeltaMin;
-    const legKm = round1(base.km * (legMin / base.min));
+    // base.min이 0이면 비율을 낼 수 없다 — 나눠 버리면 legKm이 NaN이 되어 화면에 "NaNkm"이 뜬다
+    const legKm = round1(base.min > 0 ? base.km * (legMin / base.min) : base.km);
     clock += legMin;
     const arriveAt = toHHMM(clock);
     clock += s.dwellMin;

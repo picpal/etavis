@@ -21,7 +21,7 @@ const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 export function OptionsScreen({ navigation }: Props) {
   const flow = usePlanFlow();
   const request = usePlanRequest();
-  const { applyLive } = usePlan();
+  const { applyLive, removeChip } = usePlan();
   const { state } = flow;
   const result = state.result;
   const [pickSlot, setPickSlot] = useState<string | null>(null);
@@ -59,6 +59,20 @@ export function OptionsScreen({ navigation }: Props) {
   const approx = current.timing.estimated || !flow.usingServer ? '약 ' : '';
   const stale = request ? flow.isStale(request) : false;
 
+  // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
+  const relaxedSlack =
+    result.relaxed && req.arriveByMin != null
+      ? Math.round(req.arriveByMin - (req.departAtMin + result.relaxed.totalMin))
+      : null;
+
+  /** 완화안의 '계획에서 빼기' — 말한 대로 칩을 실제로 뺀다. 자동 재계산은 하지 않는다 */
+  const dropRelaxedSlot = () => {
+    haptic();
+    if (result.relaxed) removeChip(result.relaxed.droppedSlotId); // 슬롯 id = 칩 id
+    flow.reset();
+    navigation.navigate('Plan');
+  };
+
   const confirm = () => {
     applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));
     navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Today' }] });
@@ -88,9 +102,9 @@ export function OptionsScreen({ navigation }: Props) {
             {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${slack}분 여유`}
           </Text>
           {late && result.relaxed && (
-            <Pressable onPress={() => { haptic(); /* 완화안 선택 = 그 슬롯을 빼고 재계산 */ flow.reset(); navigation.navigate('Plan'); }}>
+            <Pressable onPress={dropRelaxedSlot}>
               <Text style={[type.body, { color: color.primary }]}>
-                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {Math.round(req.arriveByMin! - (req.departAtMin + result.relaxed.totalMin))}분 여유 → 계획에서 빼기
+                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `${-relaxedSlack!}분 늦음`} → 계획에서 빼기
               </Text>
             </Pressable>
           )}
@@ -98,6 +112,15 @@ export function OptionsScreen({ navigation }: Props) {
             {flow.usingServer ? `검증한 안 중 최선 · 실측 ${result.measuredCount}회` : '서버 없이 추정한 값이에요'}
           </Text>
         </Card>
+
+        {/* 못 찾아 빠진 슬롯 — 경유지 행에는 나오지 않으니 여기서 말해 준다 */}
+        {state.slots
+          .filter(s => result.slotStatus[s.id] === 'none')
+          .map(s => (
+            <Text key={s.id} style={[type.caption, { color: color.muted }]}>
+              {s.query}은(는) 경로 근처에서 못 찾아 뺐어요
+            </Text>
+          ))}
 
         {/* 2. 경유지 행 */}
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -122,7 +145,7 @@ export function OptionsScreen({ navigation }: Props) {
           // 선택된 안은 이미 위에서 계산해 둔 current를 그대로 쓴다 — 다시 계산하지 않는다
           const eff = selected ? current : effectiveVisits(result, state.slots, i, state.overrides);
           const names = [req.originName, ...eff.visits.map(v => v.candidate.name), req.destinationName];
-          const pre = eff.timing.estimated ? '약 ' : '';
+          const pre = eff.timing.estimated || !flow.usingServer ? '약 ' : '';
           return (
             <Pressable key={i} onPress={() => { if (!selected) { haptic(); flow.select(i); } }}>
               <Card elevated={selected} style={{ padding: selected ? 20 : 18, gap: selected ? 16 : 12 }}>

@@ -26,11 +26,7 @@ export function ErrorScreen({ navigation }: Props) {
 
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
-      <NavHeader
-        title="계획 수정"
-        onBack={() => navigation.goBack()}
-        right={{ label: '요약', tint: color.primary }}
-      />
+      <NavHeader title="계획 수정" onBack={() => navigation.goBack()} />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -99,9 +95,6 @@ export function ErrorScreen({ navigation }: Props) {
               </Text>
             </Pressable>
           </View>
-          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.amber }}>
-            3번 재시도 · 19:44 기준
-          </Text>
         </View>
 
         {/* 찾으려던 것 — 확정된 계획이 아니라 실패한 요청이 뭘 찾고 있었는가다 */}

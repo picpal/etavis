@@ -5,25 +5,26 @@
  *   live   — expo-location 실제 GPS (기본)
  *   sim    — 개발 메뉴의 가상 주행 (driving / deviate / stuck)
  *
+ * 도착·출발은 src/lib/arrival.ts의 stepArrival이 판정한다 —
+ *   live: 반경 안 연속 3샘플 + 정지, accuracy > 100m 무시, 출발 반경 = min(250, 다음 지점 거리/2)
+ *   sim : 1샘플 (틱당 700m라 연속 샘플이 불가능)
+ * 여기서는 이벤트를 dispatch·알림·로그로 옮기기만 한다.
+ *
  * 판정 규칙 (3중 조건)
  *   수직거리 > 임계  AND  연속 3샘플  AND  거리 증가 추세
  *   → '경로 확인 중'(내비 API 재요청에 해당) → 우회 / 이탈 확정
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as Location from 'expo-location';
-import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation } from '../lib/backgroundLocation';
+import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation, toFix } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
 import { formatEta } from '../lib/geo';
 import { notifyArrival, notifyDestinationArrival, notifyNextLeg } from '../notifications';
-import {
-  buildPolyline,
-  crossTrack,
-  haversineM,
-  offsetPerpendicular,
-  pointAtProgress,
-  polylineLengthM,
-} from '../lib/geo';
+import { buildPolyline, crossTrack, offsetPerpendicular, pointAtProgress, polylineLengthM } from '../lib/geo';
 import { toMin, usePlan } from './plan';
+import { initialArrivalState, profileFor, stepArrival, type ArrivalState, type Fix, type Point } from '../lib/arrival';
+import { logTrack } from '../lib/trackLog';
+import { usePlanFlow } from './planFlowProvider';
 
 /** 위치 공급원 — live는 실제 GPS, 나머지는 개발용 시뮬레이션 */
 export type SimMode = 'off' | 'live' | 'driving' | 'deviate' | 'stuck';
@@ -37,14 +38,6 @@ const TICK_MS = 1500; // 목: 1틱 = 실제 30초 상당
 const DRIVE_M_PER_TICK = 700;
 const DEVIATE_M_PER_TICK = 140;
 
-/**
- * 도착·출발 지오펜스 — 네이버 길찾기처럼 버튼 없이 자동 전환한다.
- * 들어올 때와 나갈 때 반경을 다르게 둬서(히스테리시스) 경계에서 깜빡이지 않게 한다.
- * 목에서는 1틱이 700m를 이동하므로 실제(100~150m)보다 큰 반경을 쓴다.
- */
-// 실제 GPS는 현실적인 반경을, 시뮬레이션은 1틱 700m 이동을 감안해 크게 잡는다
-const ARRIVE_RADIUS_M = { live: 150, sim: 400 };
-const DEPART_RADIUS_M = { live: 250, sim: 600 };
 /** 도착 후 이 틱 수만큼 머문 뒤 다시 움직인다 (체류 시뮬레이션) */
 const DWELL_HOLD_TICKS = 4;
 
@@ -90,6 +83,7 @@ const TrackerContext = createContext<TrackerApi | null>(null);
 
 export function TrackerProvider({ children }: { children: React.ReactNode }) {
   const { state, destinationDisplay, arriveAtStop, departStop, arriveAtDestination } = usePlan();
+  const { usingServer } = usePlanFlow();
 
   // 인터벌 안에서 최신 계획 상태·액션을 읽기 위한 ref (인터벌 재생성을 피한다)
   const planRef = useRef({
@@ -171,6 +165,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   destCoordRef.current = destCoord;
 
   const setMode = (next: SimMode) => {
+    logTrack({ k: 'mode', from: mode, to: next, via: 'setMode' });
+    arrivalRef.current = initialArrivalState;
     setModeRaw(next);
     if (next === 'off') {
       setTracker(t => ({ ...t, mode: next, status: 'idle', position: null, crossTrackM: 0, offRouteStopId: null }));
@@ -193,51 +189,82 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
    * 위치 한 건을 받아 도착·출발·이탈을 판정한다.
    * 시뮬레이션 틱과 실제 GPS 콜백이 이 함수를 공유한다.
    */
-  const detectRef = useRef<(position: LatLng, simStuck?: boolean) => void>(() => {});
-  detectRef.current = (position: LatLng, simStuck = false) => {
-    const sim = isSimMode(mode);
-    const arriveR = sim ? ARRIVE_RADIUS_M.sim : ARRIVE_RADIUS_M.live;
-    const departR = sim ? DEPART_RADIUS_M.sim : DEPART_RADIUS_M.live;
+  const arrivalRef = useRef<ArrivalState>(initialArrivalState);
 
-    // 도착·출발 지오펜스 — 버튼 없이 자동 전환
-    const { stops, passedCount, atStop } = planRef.current;
-    const target = stops[passedCount];
-    if (target) {
-      const distToStop = haversineM(position, shift(target.coord));
-      if (!atStop && distToStop < arriveR) {
-        actionsRef.current.arriveAtStop();
-        // 전환 순간에만 알린다 — 상시 갱신은 알림으로 흉내내면 계속 울려서 방해가 된다
-        if (notifiedRef.current.arrived !== target.id) {
-          notifiedRef.current.arrived = target.id;
-          void notifyArrival(target.id, target.name, target.tasks.length);
-        }
-      } else if (atStop && distToStop > departR) {
-        actionsRef.current.departStop();
-        if (notifiedRef.current.departed !== target.id) {
-          notifiedRef.current.departed = target.id;
-          const next = stops[passedCount + 1];
-          void notifyNextLeg(
-            next?.name ?? destinationDisplay,
-            formatEta(next?.arriveAt ?? planRef.current.destArriveAt),
-            planRef.current.mode === 'transit',
-          );
-        }
-      }
-    } else if (!planRef.current.arrivedAtDest) {
-      /* 경유지를 다 지났으면 남은 건 최종 목적지뿐이다.
-         여기가 비어 있어서 '회사 도착'이 영영 잡히지 않았다 */
-      const distToDest = haversineM(position, shift(destCoordRef.current));
-      if (distToDest < arriveR) {
+  const detectRef = useRef<(fix: Fix, src: 'fg' | 'bg' | 'sim', simStuck?: boolean) => void>(() => {});
+  detectRef.current = (fix: Fix, src, simStuck = false) => {
+    const position: LatLng = { latitude: fix.latitude, longitude: fix.longitude };
+    logTrack({ k: 'fix', lat: fix.latitude, lng: fix.longitude, acc: fix.accuracyM ?? null, spd: fix.speedMps ?? null, src });
+
+    // 도착·출발 — 순수 판정에 넘기고 이벤트만 옮긴다
+    const { stops, passedCount, atStop, arrivedAtDest } = planRef.current;
+    const destPoint: Point = { id: 'D', coord: shift(destCoordRef.current) };
+    const targetStop = stops[passedCount];
+    const target: Point | null = targetStop
+      ? { id: targetStop.id, coord: shift(targetStop.coord) }
+      : arrivedAtDest
+        ? null
+        : destPoint;
+    const nextStop = stops[passedCount + 1];
+    const next: Point | null = !targetStop ? null : nextStop ? { id: nextStop.id, coord: shift(nextStop.coord) } : destPoint;
+    const step = stepArrival(arrivalRef.current, fix, {
+      target,
+      next,
+      atStop,
+      profile: profileFor(isSimMode(mode), planRef.current.mode),
+    });
+    arrivalRef.current = step.state;
+    if (step.ignored == null && target) {
+      logTrack({
+        k: 'geofence',
+        target: target.id,
+        next: next?.id ?? null,
+        dTarget: step.distToTargetM,
+        dNext: step.distToNextM,
+        arriveR: step.arriveR,
+        departR: step.departR,
+        ignored: null,
+        events: step.events.map(e => `${e.kind}:${e.id}`),
+        atStop,
+      });
+    }
+    for (const ev of step.events) {
+      if (ev.kind === 'arrive' && ev.id === 'D') {
         actionsRef.current.arriveAtDestination();
         if (!notifiedRef.current.dest) {
           notifiedRef.current.dest = true;
           const p = planRef.current;
+          logTrack({ k: 'notify', kind: 'dest', id: 'D' });
           void notifyDestinationArrival(
             destinationDisplay,
             p.arriveByMin == null || toMin(p.destArriveAt) <= p.arriveByMin,
             formatEta(p.destArriveAt),
           );
         }
+      } else if (ev.kind === 'arrive') {
+        const stop = stops.find(s => s.id === ev.id);
+        actionsRef.current.arriveAtStop();
+        if (stop && notifiedRef.current.arrived !== stop.id) {
+          notifiedRef.current.arrived = stop.id;
+          logTrack({ k: 'notify', kind: 'arrival', id: stop.id });
+          void notifyArrival(stop.id, stop.name, stop.tasks.length);
+        }
+      } else if (ev.kind === 'depart') {
+        actionsRef.current.departStop();
+        if (notifiedRef.current.departed !== ev.id) {
+          notifiedRef.current.departed = ev.id;
+          const idx = stops.findIndex(s => s.id === ev.id);
+          const after = stops[idx + 1];
+          logTrack({ k: 'notify', kind: 'nextLeg', id: after?.id ?? 'D' });
+          void notifyNextLeg(
+            after?.name ?? destinationDisplay,
+            formatEta(after?.arriveAt ?? planRef.current.destArriveAt),
+            planRef.current.mode === 'transit',
+          );
+        }
+      } else {
+        // skip — 도착을 못 본 채 지나간 경유지. 알림 없이 다음으로 넘긴다
+        actionsRef.current.departStop();
       }
     }
 
@@ -332,7 +359,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           ? offsetPerpendicular(polyline, base.index, base.point, deviationRef.current + jitter)
           : base.point;
 
-      detectRef.current(position, mode === 'stuck');
+      detectRef.current({ ...position, accuracyM: null, speedMps: null }, 'sim', mode === 'stuck');
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [mode, polyline, routeLengthM, state.stops]);
@@ -342,8 +369,19 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!state.planConfirmed || autoStartedRef.current) return;
     autoStartedRef.current = true;
+    logTrack({
+      k: 'plan',
+      origin: { lat: originCoord.latitude, lng: originCoord.longitude },
+      dest: { lat: destCoord.latitude, lng: destCoord.longitude },
+      stops: state.stops.map(s => ({ id: s.id, name: s.name, lat: s.coord.latitude, lng: s.coord.longitude })),
+      mode: state.mode,
+      source: usingServer ? 'server' : 'mock',
+    });
+    logTrack({ k: 'mode', from: mode, to: 'live', via: 'auto' });
+    arrivalRef.current = initialArrivalState;
     setModeRaw('live');
     setTracker(t => ({ ...t, mode: 'live' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.planConfirmed]);
 
   // 실제 GPS — 위치 권한을 받아 이동을 구독한다
@@ -357,7 +395,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       도착·출발 감지가 정작 필요한 순간은 지도 앱이 앞에 있고 화면이 잠긴 운전 중이다.
       둘 다 같은 판정 함수로 흘려보내므로 중복 호출은 문제가 되지 않는다.
     */
-    const unsubBackground = subscribeBackgroundLocation(p => detectRef.current(p));
+    const unsubBackground = subscribeBackgroundLocation(f => detectRef.current(f, 'bg'));
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -375,7 +413,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
       try {
         const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         if (!cancelled) {
-          detectRef.current({ latitude: first.coords.latitude, longitude: first.coords.longitude });
+          detectRef.current(toFix(first), 'fg');
         }
       } catch {}
       if (cancelled) return;
@@ -386,7 +424,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           timeInterval: 5000,
         },
         loc => {
-          detectRef.current({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+          detectRef.current(toFix(loc), 'fg');
         },
       );
     })();
@@ -403,18 +441,28 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     if (mode === 'off') void stopBackgroundLocation();
   }, [mode]);
 
+  // status가 바뀔 때만 한 줄 — setTracker 갱신 함수 안에서 로그하면 StrictMode에서 두 번 찍힌다
+  const prevStatusRef = useRef(tracker.status);
+  useEffect(() => {
+    if (prevStatusRef.current === tracker.status) return;
+    logTrack({ k: 'track', from: prevStatusRef.current, to: tracker.status, crossTrack: tracker.crossTrackM, progress: tracker.progressM });
+    prevStatusRef.current = tracker.status;
+  }, [tracker.status, tracker.crossTrackM, tracker.progressM]);
+
   const api = useMemo<TrackerApi>(
     () => ({
       ...tracker,
       polyline,
       setMode,
       keepPlan: () => {
-        // 경로로 복귀 — 이탈 상태 해제
+        // 경로로 복귀 — 이탈 상태만 풀고 위치 공급원은 그대로 둔다 (live면 live)
+        const next: SimMode = mode === 'deviate' ? 'driving' : mode;
+        logTrack({ k: 'mode', from: mode, to: next, via: 'keepPlan' });
         deviationRef.current = 0;
         consecutiveRef.current = 0;
         confirmRef.current = 0;
-        setModeRaw('driving');
-        setTracker(t => ({ ...t, mode: 'driving', status: 'moving', etaDeltaMin: 0, offRouteStopId: null }));
+        if (next !== mode) setModeRaw(next);
+        setTracker(t => ({ ...t, mode: next, status: 'moving', etaDeltaMin: 0, offRouteStopId: null }));
       },
       anchored: offset != null,
       anchorToMyLocation: async () => {
@@ -431,6 +479,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         });
         consecutiveRef.current = 0;
         confirmRef.current = 0;
+        logTrack({ k: 'mode', from: mode, to: 'live', via: 'anchor' });
+        arrivalRef.current = initialArrivalState;
         setModeRaw('live');
         setTracker(t => ({
           ...t,
@@ -444,15 +494,17 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         }));
       },
       dismissOffRoute: () => {
+        const next: SimMode = mode === 'deviate' ? 'driving' : mode;
+        logTrack({ k: 'mode', from: mode, to: next, via: 'dismissOffRoute' });
         deviationRef.current = 0;
         consecutiveRef.current = 0;
         confirmRef.current = 0;
-        setModeRaw('driving');
-        setTracker(t => ({ ...t, mode: 'driving', status: 'moving', offRouteStopId: null }));
+        if (next !== mode) setModeRaw(next);
+        setTracker(t => ({ ...t, mode: next, status: 'moving', offRouteStopId: null }));
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tracker, polyline, destinationDisplay, offset, state.dataset],
+    [tracker, polyline, destinationDisplay, offset, state.dataset, mode],
   );
 
   return <TrackerContext.Provider value={api}>{children}</TrackerContext.Provider>;

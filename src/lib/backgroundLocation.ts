@@ -10,15 +10,15 @@
  */
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
-import { LatLng } from '../data/mockData';
+import type { Fix } from './arrival';
 
 export const LOCATION_TASK = 'etavia-location-updates';
 
-type Listener = (position: LatLng) => void;
+type Listener = (fix: Fix) => void;
 const listeners = new Set<Listener>();
 
 /** 가장 최근에 받은 위치 — 구독 전에 도착한 것도 놓치지 않게 남겨둔다 */
-let lastPosition: LatLng | null = null;
+let lastPosition: Fix | null = null;
 export const getLastBackgroundPosition = () => lastPosition;
 
 export function subscribeBackgroundLocation(listener: Listener) {
@@ -34,7 +34,7 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
   const locations = (data as { locations?: Location.LocationObject[] } | undefined)?.locations;
   const last = locations?.[locations.length - 1];
   if (!last) return;
-  lastPosition = { latitude: last.coords.latitude, longitude: last.coords.longitude };
+  lastPosition = toFix(last);
   listeners.forEach(l => l(lastPosition!));
 });
 
@@ -77,4 +77,15 @@ export async function stopBackgroundLocation() {
   } catch {
     // 등록된 적 없으면 무시
   }
+}
+
+/** expo-location 객체를 판정 입력으로. iOS는 속도를 모르면 -1을 준다 */
+export function toFix(loc: Location.LocationObject): Fix {
+  const { latitude, longitude, accuracy, speed } = loc.coords;
+  return {
+    latitude,
+    longitude,
+    accuracyM: accuracy ?? null,
+    speedMps: speed == null || speed < 0 ? null : speed,
+  };
 }

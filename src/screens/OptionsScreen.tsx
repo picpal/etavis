@@ -163,9 +163,10 @@ export function OptionsScreen({ navigation }: Props) {
             ) : (
               <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
             )}
-            <Text style={[type.caption, { color: slack != null && !late ? color.green : color.muted }]}>
-              {slack != null && !late ? `${slack}분 여유` : flow.usingServer ? `실측 ${result.measuredCount}회` : '서버 없이 추정'}
-            </Text>
+            {/* 여유가 있을 때만 옆에 한마디. 추정/실측 표기는 뺐다 — '약'이 이미 말한다 */}
+            {slack != null && !late && (
+              <Text style={[type.caption, { color: color.green }]}>{slack}분 여유</Text>
+            )}
           </View>
           <EtaBar
             departMin={req.departAtMin}

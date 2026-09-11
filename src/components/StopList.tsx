@@ -34,7 +34,7 @@ export function StopList({
 }) {
   return (
     <View style={{ gap: 8 }}>
-      <Text style={[type.label, { color: color.muted }]}>경유지 {visits.length}곳 · 왼쪽으로 밀면 빼기 · 탭하면 다른 매장</Text>
+      <Text style={[type.label, { color: color.muted }]}>경유지 {visits.length}곳</Text>
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             {visits.map((v, k) => {
               const alts = (slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;

@@ -1,6 +1,6 @@
-/** 개발 메뉴 — 목 데이터셋 전환 + 계산 실패 토글 (A1 타이틀 길게 눌러 진입) */
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+/** 개발 메뉴 — 목 데이터셋 전환 + 계산 실패 토글 + 위치 추적 + 추적 로그 내보내기 (A1 타이틀 길게 눌러 진입) */
+import React, { useEffect, useState } from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { datasets } from '../data/mockData';
@@ -10,6 +10,7 @@ import { formatDistanceM } from '../lib/geo';
 import { Card, haptic, SmallChip } from '../components/common';
 import { CheckMark } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
+import { clearTrackLogs, exportTrackLogs, listTrackLogs } from '../lib/trackLog';
 
 const SIM_MODES = [
   { key: 'off', label: '중지' },
@@ -33,6 +34,14 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
   const insets = useSafeAreaInsets();
   const { state, setDataset, setFailNext, setDevAnyCongestion } = usePlan();
   const tracker = useTracker();
+  const [logs, setLogs] = useState<{ name: string; bytes: number }[]>([]);
+  const refreshLogs = () => {
+    void listTrackLogs().then(setLogs);
+  };
+  useEffect(() => {
+    if (visible) refreshLogs();
+  }, [visible]);
+  const totalKb = Math.round(logs.reduce((a, l) => a + l.bytes, 0) / 1024);
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -199,6 +208,61 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
                 ? '경로 폴리라인 대비 수직거리로 도착·출발·이탈을 판정해요'
                 : `${tracker.mode === 'live' ? '실제 GPS' : '시뮬레이션'} · 상태 ${STATUS_LABEL[tracker.status]} · 경로에서 ${formatDistanceM(tracker.crossTrackM)}`}
           </Text>
+        </Card>
+
+        <Text style={[type.label, { color: color.muted }]}>추적 로그</Text>
+        <Card style={{ padding: 14, gap: 10 }}>
+          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
+            {logs.length === 0 ? '기록된 로그가 없어요' : `${logs.length}일치 · ${totalKb}KB · 7일 보관 · 로컬에만 남아요`}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Pressable
+              disabled={logs.length === 0}
+              onPress={async () => {
+                haptic();
+                const r = await exportTrackLogs();
+                if (r === 'unavailable') Alert.alert('공유할 수 없어요', '이 기기에서는 공유 시트를 열 수 없어요');
+              }}
+              style={({ pressed }) => ({
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 12,
+                backgroundColor: color.primaryTint,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: logs.length === 0 ? 0.4 : pressed ? 0.7 : 1,
+              })}
+            >
+              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.primary }}>내보내기</Text>
+            </Pressable>
+            <Pressable
+              disabled={logs.length === 0}
+              onPress={() => {
+                haptic();
+                Alert.alert('추적 로그 지우기', '7일치 기록을 모두 지워요', [
+                  { text: '취소', style: 'cancel' },
+                  {
+                    text: '지우기',
+                    style: 'destructive',
+                    onPress: () => {
+                      void clearTrackLogs().then(refreshLogs);
+                    },
+                  },
+                ]);
+              }}
+              style={({ pressed }) => ({
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 12,
+                backgroundColor: color.bg,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: logs.length === 0 ? 0.4 : pressed ? 0.7 : 1,
+              })}
+            >
+              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.body }}>지우기</Text>
+            </Pressable>
+          </View>
         </Card>
 
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>

@@ -1,5 +1,5 @@
 /** A6 — 타임라인 (드래그 재정렬·스와이프 삭제·시트 진입점) */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -41,6 +41,16 @@ export function TimelineScreen({ navigation, route }: Props) {
   const currentCand = candidateStop
     ? (state.dataset.candidates[candidateStop.baseId] ?? []).find(c => c.id === candidateCurrentId)
     : undefined;
+  // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
+  const candidateSheetCands = useMemo(
+    () =>
+      (candidateStop ? state.dataset.candidates[candidateStop.baseId] ?? [] : []).map(c => ({
+        ...c,
+        // 목 데이터의 아침 시각 대신 지금 경로의 도착시각 + 후보 간 차이
+        arriveAt: candidateStop ? toHHMM(toMin(candidateStop.arriveAt) + (c.addedMin - (currentCand?.addedMin ?? 0))) : c.arriveAt,
+      })),
+    [candidateStop, state.dataset, candidateCurrentId],
+  );
 
   // 최초 진입 가이드 — 앱 실행당 한 번만 (목: 영구 저장은 생략)
   const listRef = React.useRef<View>(null);
@@ -342,11 +352,7 @@ export function TimelineScreen({ navigation, route }: Props) {
       <CandidateSheet
         visible={!!candidateStop}
         title={`${candidateStop?.name ?? ''} 교체`}
-        candidates={(candidateStop ? state.dataset.candidates[candidateStop.baseId] ?? [] : []).map(c => ({
-          ...c,
-          // 목 데이터의 아침 시각 대신 지금 경로의 도착시각 + 후보 간 차이
-          arriveAt: candidateStop ? toHHMM(toMin(candidateStop.arriveAt) + (c.addedMin - (currentCand?.addedMin ?? 0))) : c.arriveAt,
-        }))}
+        candidates={candidateSheetCands}
         currentId={candidateCurrentId}
         onPick={candId => candidateStop && replaceStop(candidateStop.id, candId)}
         onClose={() => setCandidateStopId(null)}

@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
 
-const hhmm = (min: number) => toHHMM(min).padStart(5, '0');
+const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 
 export function OptionsScreen({ navigation }: Props) {
   const flow = usePlanFlow();
@@ -42,7 +42,8 @@ export function OptionsScreen({ navigation }: Props) {
 
   const req = state.request;
   const arriveMin = req.departAtMin + current.timing.totalMin;
-  const slack = req.arriveByMin == null ? null : req.arriveByMin - arriveMin;
+  // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
+  const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
   const late = slack != null && slack < 0;
   const approx = current.timing.estimated || !flow.usingServer ? '약 ' : '';
   const stale = request ? flow.isStale(request) : false;
@@ -51,10 +52,15 @@ export function OptionsScreen({ navigation }: Props) {
   const pickIdx = current.visits.findIndex(v => v.slotId === pickSlot);
   const pickVisit = pickIdx >= 0 ? current.visits[pickIdx] : null;
   const pickArrive = pickIdx >= 0 ? current.timing.arrivals[pickIdx] : 0;
-  const sheetCands = pickVisit
-    ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
-       ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
-    : [];
+  // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
+  const sheetCands = useMemo(
+    () =>
+      pickVisit
+        ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
+           ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
+        : [],
+    [pickVisit, pickArrive, result, state.slots],
+  );
 
   const confirm = () => {
     applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));
@@ -77,17 +83,17 @@ export function OptionsScreen({ navigation }: Props) {
           {slack == null ? (
             <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
           ) : late ? (
-            <Text style={[type.displayXL, { color: color.amberDeep }]}>지금 출발해도 {approx}{Math.round(-slack)}분 늦어요</Text>
+            <Text style={[type.displayXL, { color: color.amberDeep }]}>지금 출발해도 {approx}{-slack}분 늦어요</Text>
           ) : (
             <Text style={[type.displayXL, { color: color.ink }]}>들렀다 가도 {approx}{hhmm(arriveMin)} 도착</Text>
           )}
           <Text style={[type.body, { color: slack != null && !late ? color.green : color.muted }]}>
-            {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${Math.round(slack)}분 여유`}
+            {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${slack}분 여유`}
           </Text>
           {late && result.relaxed && (
             <Pressable onPress={() => { haptic(); /* 완화안 선택 = 그 슬롯을 빼고 재계산 */ flow.reset(); navigation.navigate('Plan'); }}>
               <Text style={[type.body, { color: color.primary }]}>
-                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {Math.round(req.arriveByMin! - (req.departAtMin + result.relaxed.totalMin))}분 여유 → 계획에서 빼기
+                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {Math.round(req.arriveByMin! - (req.departAtMin + result.relaxed.totalMin))}분 여유 → 계획에서 빼기
               </Text>
             </Pressable>
           )}
@@ -116,7 +122,8 @@ export function OptionsScreen({ navigation }: Props) {
         <Text style={[type.label, { color: color.muted }]}>직행 {Math.round(result.directMin)}분 기준 · {result.options.length}개 안</Text>
         {result.options.map((o, i) => {
           const selected = i === state.selectedOptionIdx;
-          const eff = effectiveVisits(result, i, state.overrides);
+          // 선택된 안은 이미 위에서 계산해 둔 current를 그대로 쓴다 — 다시 계산하지 않는다
+          const eff = selected ? current : effectiveVisits(result, i, state.overrides);
           const names = [req.originName, ...eff.visits.map(v => v.candidate.name), req.destinationName];
           const pre = eff.timing.estimated ? '약 ' : '';
           return (
@@ -159,14 +166,14 @@ export function OptionsScreen({ navigation }: Props) {
         {late && result.relaxed && (
           <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 8 }}>
             <Text style={[type.labelPlain, { color: color.muted }]}>조건 완화 · {slotQuery(result.relaxed.droppedSlotId)} 제외</Text>
-            <Text style={[type.statL, { color: color.ink }]}>{Math.round(result.relaxed.totalMin)}분 · {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
+            <Text style={[type.statL, { color: color.ink }]}>{approx}{Math.round(result.relaxed.totalMin)}분 · {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
             <Text style={[type.caption, { color: color.muted }]}>필수 경유지가 아니면 이 안이 마감을 지켜요. 계획 화면에서 칩을 빼면 이 안으로 다시 계산해요.</Text>
           </View>
         )}
       </ScrollView>
 
       <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>
-        <PrimaryButton label={`${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
+        <PrimaryButton label={`${approx}${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
         <Pressable onPress={() => { haptic(); navigation.navigate('Plan'); }} hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
             확정 전이라 언제든 대화로 바꿀 수 있어요 · <Text style={{ fontFamily: 'Pretendard-SemiBold', color: color.primary }}>대화로 바꾸기</Text>

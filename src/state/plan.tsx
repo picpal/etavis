@@ -38,6 +38,14 @@ export type StopState = Stop & {
   selectedCandidateId?: string;
 };
 
+/** 확정 경계 — planFlow가 만든 계획을 기존 스토어 형식으로. 만드는 쪽은 planFlowBridge.ts */
+export type ApplyLivePayload = {
+  stops: StopState[];
+  dataset: Dataset;
+  departMin: number;
+  selectedOptionId: string;
+};
+
 export type PlanState = {
   dataset: Dataset;
   mode: 'car' | 'walk' | 'transit';
@@ -340,6 +348,7 @@ type Action =
   | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null }
   | { type: 'SWAP_ENDPOINTS'; myLocation: LatLng | null }
   | { type: 'APPLY_OPTION'; id: string }
+  | { type: 'APPLY_LIVE'; payload: ApplyLivePayload }
   | { type: 'SELECT_OPTION'; id: string }
   | { type: 'SET_OPTION_STORE'; optionId: string; baseId: string; candidateId: string }
   | { type: 'REORDER_LOCAL'; stops: StopState[] }
@@ -401,6 +410,20 @@ function reducer(state: PlanState, action: Action): PlanState {
           ...state.optionOverrides,
           [action.optionId]: { ...cur, [action.baseId]: action.candidateId },
         },
+      };
+    }
+    case 'APPLY_LIVE': {
+      const { stops, dataset, departMin, selectedOptionId } = action.payload;
+      return {
+        ...state,
+        dataset,
+        options: dataset.options,
+        selectedOptionId,
+        optionOverrides: {},
+        stopCount: null,
+        planConfirmed: true,
+        departMin,
+        ...computeChain(stops, dataset, departMin),
       };
     }
     case 'APPLY_OPTION': {
@@ -607,6 +630,8 @@ type PlanApi = {
   arriveByOptions: number[];
   selectOption: (id: string) => void;
   applyOption: (id: string) => void;
+  /** 확정 경계 — planFlowBridge.toLegacyPlan()이 만든 결과를 기존 스토어에 적용한다 */
+  applyLive: (payload: ApplyLivePayload) => void;
   setOptionStore: (optionId: string, baseId: string, candidateId: string) => void;
   reorderStops: (stops: StopState[]) => void;
   removeStop: (stopId: string) => void;
@@ -676,6 +701,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       })(),
       selectOption: id => dispatch({ type: 'SELECT_OPTION', id }),
       applyOption: id => dispatch({ type: 'APPLY_OPTION', id }),
+      applyLive: payload => dispatch({ type: 'APPLY_LIVE', payload }),
       setOptionStore: (optionId, baseId, candidateId) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'SET_OPTION_STORE', optionId, baseId, candidateId });

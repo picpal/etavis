@@ -91,28 +91,30 @@ export function OptionsScreen({ navigation }: Props) {
           </Pressable>
         )}
 
-        {/* 1. 판정 카드 — 답 먼저 */}
-        <Card elevated style={{ padding: 20, gap: 8 }}>
+        {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 한 줄 + 보조 한 줄: 아래 1안 카드와 숫자를 되풀이하지 않고 자리만 차지하지 않게 */}
+        <View style={{ gap: 6, paddingHorizontal: 2, paddingTop: 2 }}>
           {slack == null ? (
             <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
           ) : late ? (
-            <Text style={[type.displayXL, { color: color.amberDeep }]}>지금 출발해도 {approx}{-slack}분 늦어요</Text>
+            <Text style={[type.displayXL, { color: color.amberDeep }]}>{approx}{-slack}분 늦어요</Text>
           ) : (
-            <Text style={[type.displayXL, { color: color.ink }]}>들렀다 가도 {approx}{hhmm(arriveMin)} 도착</Text>
+            <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
           )}
-          <Text style={[type.body, { color: slack != null && !late ? color.green : color.muted }]}>
-            {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${slack}분 여유`}
+          <Text style={[type.caption, { color: slack != null && !late ? color.green : color.muted }]}>
+            {slack == null
+              ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분`
+              : late
+                ? `마감 ${hhmm(req.arriveByMin!)} · ${approx}${hhmm(arriveMin)} 도착`
+                : `마감 ${hhmm(req.arriveByMin!)}까지 ${slack}분 여유`}
+            {' · '}
+            {flow.usingServer ? `실측 ${result.measuredCount}회` : '서버 없이 추정'}
           </Text>
           {late && result.relaxed && (
-            /* 답 옆에는 사실만 — 행동 버튼은 아래 조건 완화 카드 한 곳에 둔다 */
-            <Text style={[type.body, { color: color.body }]}>
+            <Text style={[type.caption, { color: color.body }]}>
               {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `그래도 ${-relaxedSlack!}분 늦음`}
             </Text>
           )}
-          <Text style={[type.caption, { color: color.muted }]}>
-            {flow.usingServer ? `검증한 안 중 최선 · 실측 ${result.measuredCount}회` : '서버 없이 추정한 값이에요'}
-          </Text>
-        </Card>
+        </View>
 
         {/* 못 찾아 빠진 슬롯 — 경유지 행에는 나오지 않으니 여기서 말해 준다 */}
         {state.slots

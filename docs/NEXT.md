@@ -42,12 +42,15 @@ node server/bench-models.mjs <model>                          # 모델 벤치마
 
 ## 다음 작업
 
-**2026-09-11 저녁 시작점 — 추적기 묶음(§5 참고).** main `dee7c43`. 순서: ① `tracker.tsx` `keepPlan`·`dismissOffRoute`가
-이탈 전 모드로 복귀(live면 live) ② 출발 반경 = min(250m, 다음 지점 거리/2) ③ 다음 지점 도착 반경 안이면 이전 경유지 출발 암묵
-처리(순서 강제 해제) ④ 도착 확정 = 반경 안 연속 3샘플 + 속도 < 2m/s, 대중교통 80m, 반경 = max(80, accuracy), accuracy > 100m 무시
-⑤ 실기기 추적 로그(`src/lib/trackLog.ts`, 개발 메뉴 내보내기). 순수 판정 로직은 `src/lib/`로 빼서 `npm test`로 시험한다.
-작업 방식: 스펙 짧게 → 계획 → 서브에이전트(워크트리, **node_modules 스테이징 금지**) → 리뷰.
-
+**2026-09-11 추적기 묶음 완료** — 브랜치 `tracker-arrival`(스펙 `docs/superpowers/specs/2026-09-11-tracker-arrival-design.md`,
+계획 `docs/superpowers/plans/2026-09-11-tracker-arrival.md`). 도착·출발 판정은 `src/lib/arrival.ts`(순수, 18 테스트)로 빠졌고
+`tracker.tsx`는 이벤트를 dispatch·알림·로그로 옮기기만 한다. `keepPlan`·`dismissOffRoute`는 모드를 유지한다(sim deviate만 driving).
+추적 로그는 `src/lib/trackLog.ts`(문서폴더 `tracklog/track-YYYYMMDD.jsonl`, 7일·2MB) + 개발 메뉴 카드(내보내기·지우기) +
+`node scripts/tracklog-timeline.mjs <jsonl>`. 시뮬레이터(새 빌드)로 정상 주행 자동 전환·이탈·로그 생성·공유 시트까지 확인했다.
+**실기기에서 확인할 것**: live GPS로 3샘플 도착·200m 간격 출발, 이탈 뒤 "계획 유지"가 live 유지, 배경 태스크 경로에서 로그가 남는지.
+**expo-file-system·expo-sharing이 추가돼 다음 기기 빌드 전 `pod install` 필요**(시뮬레이터용은 이미 함).
+남긴 것(최종 리뷰 minor): `plan` 로그 스냅샷이 anchor 오프셋 전 좌표(anchor 이벤트에 좌표를 싣는 게 맞음) · 내보내기가 7일치를 문자열 하나로 합침 ·
+내보내기 결과 'empty' 무반응 · 타임라인 스크립트가 `events` 없는 row에서 죽음 · 버스 정체 중 오도착 가능성(로그로 빈도 보고 "체류 N초" 검토).
 
 ### 1. 모델 — gpt-5.6-sol로 결정됨
 
@@ -137,23 +140,14 @@ npx wrangler deploy
 - **후보 시트 정렬 탭** — 2026-09-11 수정. 마감·선택불가 후보는 목록에서 뺐고, '영업 상태' 탭을 '주차'로 바꿨다. 거리 정렬은 `note` 문자열 파싱 대신 `Candidate.detourKm` 숫자를 쓴다(라우팅 API 값이 들어올 자리). 로직은 `src/lib/candidateRank.ts`, 테스트는 `npm test`
 - **GitHub 이슈 #1** — Live Activity(네이티브 위젯). 보류
 - **README** — 배경 위치·알림·출발지 스왑·타당성 사전 체크가 반영 안 됨
-- **도착 판정이 너무 느슨하다(2026-09-11 실기기)** — 대중교통으로 국회의사당역을 지나치기만 했는데 올리브영 "체류 중"이 떴다.
-  원인: `tracker.tsx` 도착 반경 150m + Balanced 정확도(≈100m) + 샘플 1개로 즉시 판정 + 출발지 좌표가 목 값(여의나루역)이라
-  진행 바가 1.5km/1.5km. 고칠 것: 반경 안 **연속 3샘플 + 속도 < 2m/s**, 대중교통 반경 80m, 반경 = max(80, accuracy),
-  accuracy > 100m 샘플 무시. 출발지 좌표는 재설계의 `toLegacyPlan`이 실제 GPS를 넣으면 해결.
-  **진짜 원인(추가 확인)**: 영등포구청역에서 이탈 알림 → "계획 유지 · 경로로 복귀"를 누르자 도착 처리. `tracker.tsx`의
-  `keepPlan`·`dismissOffRoute`가 `setModeRaw('driving')`으로 **가상 주행**을 켠다. live였으면 live로 돌아가야 한다. 몇 줄 수정.
-  **목적지 도착도 못 잡음(같은 날 추가)**: 올리브영→현대카드가 200m인데 경유지 출발 반경이 250m라 출발이 영영 안 잡히고,
-  목적지 지오펜스는 경유지를 다 지난 뒤에만 검사해서 아예 돌지 않는다. 고칠 것: 출발 반경 = min(250, 다음 지점 거리/2);
-  다음 지점 도착 반경 안이면 이전 경유지 출발을 암묵 처리; 도착 확정은 연속 3샘플+정지. 추적기 묶음으로 한 작업.
+- **도착 판정·목적지 미인식·keepPlan 가상 주행(2026-09-11 실기기)** — 추적기 묶음으로 수정함(위 "다음 작업" 참고). 원인은
+  반경 150m+1샘플 즉시 판정, 출발 반경 250m > 다음 지점 거리 200m, 목적지 지오펜스가 경유지를 다 지난 뒤에만 검사, `keepPlan`이
+  `setModeRaw('driving')`으로 가상 주행을 켬. 지금은 3샘플+정지, 출발 반경 = min(250, 거리/2), 다음 지점 한 곳 선행 도착, 모드 유지.
 - **진행중 탭의 구간 시간·거리가 목 표 값** — "이동 18분 · 6.3km"는 `plan.tsx`의 `LEGS`/`dataset.legs`에서 경유지 id로 찾은 값이라
   목적지를 바꿔도 안 변한다(없으면 10분·5km 기본값). 재설계의 `toLegacyPlan`이 실측 leg를 `Dataset.legs`에 넣으면 확정 시점 값은 맞아진다.
   주행 중 갱신(구간 출발 때 그 구간만 재실측)은 별도 작업.
-- **실기기 추적 로그(2026-09-11 사용자 제안)** — 문서 폴더에 `track-YYYYMMDD.jsonl`(일별, 7일 보관, 2MB 상한).
-  기록: `fix`(GPS lat·lng·accuracy·speed, fg/bg) · `track`(status 전이·crossTrack·progress) · `geofence`(거리·반경·모드) ·
-  `mode`(setMode/keepPlan/dismissOffRoute) · `plan`(확정 스냅샷, 출처 실측/목) · `notify`(보낸 알림·누른 액션).
-  개발 메뉴에 "내보내기"(expo-sharing 공유 시트)·"지우기". 로컬 전용. 분석 스크립트로 타임라인 펼치기.
-  `keepPlan` 가상 주행 버그 수정과 묶어 다음 실기기 빌드 전에.
+- **실기기 추적 로그(2026-09-11)** — 구현됨. 개발 메뉴 → 추적 로그 → 내보내기(공유 시트, `track-export.jsonl`) →
+  `node scripts/tracklog-timeline.mjs track-export.jsonl`. 알림을 누른 액션은 아직 기록 안 함(응답 리스너 없음).
 
 ---
 

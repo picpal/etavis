@@ -49,7 +49,9 @@ export type ArrivalProfile = {
 | arriveSamples | 3 | 3 | 1 |
 | departSamples | 2 | 2 | 1 |
 | maxAccuracyM | 100 | 100 | null |
-| stationaryMps | 2 | 2 | ∞ (검사 안 함) |
+| stationaryMps | 2 | 1 | ∞ (검사 안 함) |
+
+walk/transit이 1인 이유: 보행 속도가 1.2~1.5m/s라 2로 두면 가게 앞을 지나가는 것도 '멈춤'이 된다. car는 주차장에서 기어가는 속도를 허용한다.
 
 sim이 1샘플인 이유: 틱당 700m를 움직이므로 반경 안에 두 번 들어오지 않는다. 시뮬레이션의 목적은 UI 변형 확인이지 판정 검증이 아니다.
 
@@ -118,7 +120,7 @@ streak는 지점 id가 바뀌면 0부터 다시 센다(`streakId`). 무시된 �
 
 - 지나치기: 80m 반경 안에 1샘플(속도 8m/s) → 이벤트 없음. 3샘플 다 안에 있어도 속도 8이면 없음.
 - 도착: 반경 안 연속 3샘플, 속도 0.5 → 3번째에서 `arrive`. 중간에 반경 밖 1샘플이 끼면 다시 0부터.
-- 정확도: accuracy 180 샘플은 `ignored: 'accuracy'`, streak 유지. accuracy 120은 반경을 120으로 넓혀 판정.
+- 정확도: accuracy 180 샘플은 `ignored: 'accuracy'`, streak 유지. accuracy 95(walk 반경 80)는 반경을 95로 넓혀 판정.
 - 출발 200m 문제: target·next가 200m 떨어져 있으면 departR = 100. 130m 지점 2샘플 → `depart`.
 - 선행 도착: atStop에서 next 반경 안 3샘플 → `[depart(target), arrive(next)]`. atStop 아니면 `[skip, arrive]`.
 - 목적지: stops 끝나 target=목적지, next=null → 반경 안 3샘플로 `arrive(dest)`.

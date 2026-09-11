@@ -67,7 +67,7 @@ type EnrichResponse = {
   budget: { googleUsed: number; googleLeft: number }; // 이달 사용/잔여. 화면엔 안 보이고 개발 메뉴에만
 };
 type PlaceSignals = {
-  blog?: { count90d: number; latestDaysAgo: number | null; weighted: number }; // weighted = Σ exp(-age/45)
+  blog?: { count90d: number; latestDaysAgo: number | null; weighted: number }; // 카카오 블로그. weighted = Σ exp(-age/45)
   google?: { rating: number; ratingCount: number; hours?: { openMin: number; closeMin: number } | null; matchedName: string };
   fetchedAt: string; // ISO
 };
@@ -75,14 +75,31 @@ type PlaceSignals = {
 
 부분 실패는 실패가 아니다. 블로그만 오고 구글이 없어도 200이다.
 
-### 2.1 네이버 블로그
+### 2.1 카카오(다음) 블로그 검색
 
-- `GET https://openapi.naver.com/v1/search/blog.json?query=<이름 동네>&display=100&sort=date`
-- 헤더 `X-Naver-Client-Id/Secret` — `npx wrangler secret put NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`.
-- 질의어: `${동네} ${이름}`. 동네 = 주소의 세 번째 토큰(읍·면·동). "서울 마포구 서교동 395-17" → "서교동". 없으면 두 번째 토큰(구). 이름에서 "○○점"은 떼지 않는다 — 지점명이 블로그에 그대로 쓰인다.
-- `postdate`(YYYYMMDD)로 90일 안 글만 센다. `weighted = Σ exp(-ageDays / 45)`. 100개를 다 90일 안이면 상한 100.
-- 하루 25,000회 무료. 계획당 ≤150회. 여유 있음.
+네이버 검색 API는 쓰지 않는다. 이유는 §2.1.1.
+
+- `GET https://dapi.kakao.com/v2/search/blog?query=<이름 동네>&sort=recency&size=50`
+- 헤더 `Authorization: KakaoAK <KAKAO_REST_KEY>` — 앱의 `kakaoRestKey`와 같은 키다. 카카오 개발자센터 내 앱에서 **다음 검색**을 켜야 한다. 서버 시크릿으로 따로 넣는다(앱 번들의 키를 서버가 재사용하지 않는다).
+- 질의어: `${동네} ${이름}`. 동네 = 카카오 로컬 주소의 세 번째 토큰(읍·면·동). "서울 마포구 서교동 395-17" → "서교동". 없으면 두 번째 토큰(구). 이름에서 "○○점"은 떼지 않는다.
+- 응답 `documents[]`의 `datetime`(ISO 8601)으로 90일 안 글만 센다. `weighted = Σ exp(-ageDays / 45)`, 상한 50.
+- `meta.total_count`는 **전 기간** 합계라 쓰지 않는다. 최근성이 목적이므로 `sort=recency` + `datetime` 필터가 기준이다.
 - 캐시 KV `blog:<kakaoId>` **24시간**.
+
+**커버리지 한계를 설계에 반영한다.** 다음 색인은 티스토리·다음 계열이 중심이고 `blog.naver.com` 커버리지가 얕다. 한국 지역업체 언급은 네이버 블로그에 몰려 있으므로 이 신호는 **과소집계**된다. 따라서
+
+- buzz 가중치를 0.25 → **0.2** 로 낮춘다(§3).
+- `weighted`가 0인 후보가 슬롯의 **80% 이상**이면 그 슬롯은 buzz 축을 통째로 버린다. 색인 공백을 "인기 없음"으로 오해하지 않기 위해서다. 이 판정은 `trendScore.ts`가 하고 테스트로 고정한다.
+
+#### 2.1.1 네이버를 쓰지 않는 이유 (2026-09-11 조사)
+
+1. **신규 발급 불가.** 검색 API가 네이버 클라우드 **NAVER API HUB**로 이관됐고, developers.naver.com 신규 신청은 **2026-07-30** 마감이다. 그래서 등록 화면 "사용 API"에 검색이 없다. 기존 사용자는 2027-06-30까지 유예.
+2. **약관이 이 용도와 충돌한다.** 2026-09-07 시행 개정 검색 API 특약은 결과를 "독립적으로, 가공 없이 노출"하도록 하고 순위 변조와 AI 활용을 금지한다고 보도됐다. 우리가 하려는 건 **언급 수를 집계해 순위에 반영**하는 것이라 정면으로 걸린다.
+3. 다만 **약관 원문은 확인하지 못했다**(언론 보도 기준). HUB 경로 자체는 기술적으로 열려 있다 — `naverapihub.apigw.ntruss.com/search/v1/blog`, 네이버 클라우드 계정, 월 775,000회, 현재 한시 무료, 유료 전환 예고. 응답에 `total`과 `postdate`가 있어 집계에는 더 좋다.
+
+> 네이버 HUB 전환은 **약관 원문을 직접 읽고 판단한 뒤** 결정한다. §10에 남긴다. 그전까지 구현은 카카오만 쓴다.
+
+**구글 Custom Search는 설계에 넣지 않는다.** 신규 고객 접수가 중단됐고 2027-01-01 종료 예정이다.
 
 ### 2.2 구글 Places (New)
 
@@ -135,7 +152,8 @@ export function scoreTrend(inputs: TrendInput[]): TrendScored[]; // score 내림
 - `fit = 1 − clamp(addedMin / maxAdded, 0, 1)`, `maxAdded = max(입력의 addedMin, 10)`. 전부 +3분이면 전부 0.7이고 차이는 다른 축이 만든다.
 - `quality = (rating / 5) × min(1, log10(1 + ratingCount) / log10(201))`. 리뷰 200개에서 포화. 리뷰 3개 5.0 = 0.60, 리뷰 300개 4.4 = 0.88.
 - `buzz = min(1, weighted / 20)`. 최근 글 20건 상당이면 1.
-- 가중치 `fit 0.4 · quality 0.35 · buzz 0.25`. 없는 축은 빼고 남은 가중치를 합이 1이 되게 다시 나눈다. 셋 다 없으면 `fit`만.
+- 가중치 `fit 0.45 · quality 0.35 · buzz 0.2`. 없는 축은 빼고 남은 가중치를 합이 1이 되게 다시 나눈다. 셋 다 없으면 `fit`만.
+- 슬롯 후보의 80% 이상이 `weighted === 0`이면 그 슬롯에서 buzz 축을 버린다(§2.1 색인 공백).
 - **1차 점수**(구글 조회 대상 고르기): `fit 0.6 · buzz 0.4`. 서버가 아니라 앱이 계산해 `/enrich`를 두 번 부르지 않도록, 서버가 블로그를 먼저 다 받은 뒤 같은 식으로 상위 10개를 골라 구글을 부른다. 식은 `trendScore.ts`를 서버가 import한다(`server/src`는 `../../src/lib`를 이미 참조하는 패턴이 있는지 확인, 없으면 복사하고 파일 머리에 원본 경로를 적는다).
 - `reasons`: 있는 것만, 이 순서. `구글 4.5 (320)` · `최근 블로그 12건` · `+4분`. 카드 부제에 " · "로 잇는다.
 - **요즘 인기** 배지: `buzz ≥ 0.6` 이고 순위 3위 안.
@@ -201,22 +219,22 @@ export function scoreTrend(inputs: TrendInput[]): TrendScored[]; // score 내림
 
 > **유료 전환("업그레이드") 직후 반드시 할 것.** 콘솔 → Google Maps Platform → 할당량 → API를 Places API (New)로 선택 → 이름 필터 `SearchTextRequest per day` → 행 선택 → 할당량 수정 → **40**. 현재 기본값은 75,000/일이다. 이걸 걸기 전에는 앱 쪽 월 900회 카운터(§2.2)가 유일한 방어선이다.
 
-### 네이버
+### 카카오
 
-- 개발자센터에서 애플리케이션 등록, 검색 API → 블로그 사용. 하루 25,000회 무료.
+- 카카오 개발자센터 → 내 애플리케이션 → **다음 검색** 활성화. 로컬 검색과 같은 REST 키를 쓴다.
+- 쿼터 수치는 공개되어 있지 않다. 무료이고 일·월 한도가 있다. 429가 잦으면 카카오 DevTalk에 문의한다.
 
 ### Workers
 
 ```
 npx wrangler secret put GOOGLE_PLACES_KEY
-npx wrangler secret put NAVER_CLIENT_ID
-npx wrangler secret put NAVER_CLIENT_SECRET
+npx wrangler secret put KAKAO_REST_KEY
 npx wrangler kv namespace create CACHE   # RATE와 별개
 ```
 
 ### 호출 수
 
-계획 하나(업종 슬롯 3개, 후보 30개씩, 캐시 없음): 카카오 15회(변화 없음) · 네이버 90회 · 구글 30회 · `/enrich` 3회. 같은 동네를 다시 계획하면 구글은 0회.
+계획 하나(업종 슬롯 3개, 후보 30개씩, 캐시 없음): 카카오 로컬 15회(변화 없음) · 카카오 블로그 90회 · 구글 30회 · `/enrich` 3회. 같은 동네를 다시 계획하면 구글은 0회.
 
 개발 중에는 구글 무료분(월 1,000회)이 30번 남짓의 새 지역 계획으로 소진된다. 캐시 14일이 이걸 막는 유일한 장치이므로 KV 없이는 돌리지 않는다.
 
@@ -226,3 +244,4 @@ npx wrangler kv namespace create CACHE   # RATE와 별개
 - 체험단 필터: 블로그 제목·요약의 "체험단·협찬·제공받아" 글 제외.
 - A2 되묻기: 업종 슬롯이고 후보 ≥ 15면 "정해둔 곳 있어요?" 한 번.
 - 네이버 플레이스 평점: 공식 API 없음. 상황 바뀌면 구글 대신.
+- **NAVER API HUB 블로그 검색 전환**: 네이버 블로그 커버리지를 얻으면 buzz 축의 정확도가 크게 오른다. 착수 조건은 (1) 개정 검색 API 특약 원문을 직접 읽고 집계·순위 반영이 허용되는지 확인, (2) 유료 전환 단가 공지 확인. 둘 다 통과하면 `blog` 신호의 공급자만 갈아끼우면 된다(§3 점수는 그대로).

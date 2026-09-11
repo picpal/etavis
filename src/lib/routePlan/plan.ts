@@ -23,14 +23,18 @@ export async function plan(
 ): Promise<PlanResult> {
   const R = opts.R ?? DEFAULT_R;
   let apiCalls = 0;
+  let measuredCount = 0; // 성공한 라우팅 호출 수(직행 포함) — call() 성공 시마다 +1
   const call = async (visits: Visit[]) => {
     apiCalls++;
     const points = [input.origin, ...visits.map(v => v.candidate.coord), input.destination];
-    return provider.route(points, input.departAtMin, input.mode);
+    const result = await provider.route(points, input.departAtMin, input.mode);
+    measuredCount++;
+    return result;
   };
 
-  // 0. 직행 — 파이프라인이 이미 실측했으면 재사용
+  // 0. 직행 — 파이프라인이 이미 실측했으면 재사용. 재사용도 성공한 실측이니 센다
   const direct = opts.direct ?? (await call([]));
+  if (opts.direct) measuredCount++;
   const directMin = direct.durationMin;
   const directKm = direct.distanceKm;
   const legs = new LegStore();
@@ -194,5 +198,5 @@ export async function plan(
     }
   }
 
-  return { directMin, directKm, options, relaxed, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount: measured.length + 1 };
+  return { directMin, directKm, options, relaxed, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount };
 }

@@ -31,12 +31,17 @@ export function CalculatingScreen({ navigation }: Props) {
   const { state, start } = usePlanFlow();
   const request = usePlanRequest();
   const enteredAt = useRef(Date.now());
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (request) start(request);
-    // 진입 시 한 번. 칩이 바뀌면 A2가 RESET하고 여기로 다시 온다
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // request가 생기는 순간 한 번. GPS가 늦게 잡혀도(첫 렌더는 null) 이후 non-null로
+    // 바뀌면 그때 시작하고, 한 번 시작했으면 다시 부르지 않는다.
+    // 칩이 바뀌면 A2가 RESET하고 여기로 다시 온다
+    if (request && !startedRef.current) {
+      startedRef.current = true;
+      start(request);
+    }
+  }, [request, start]);
 
   useEffect(() => {
     if (state.phase !== 'ready' && state.phase !== 'failed') return;

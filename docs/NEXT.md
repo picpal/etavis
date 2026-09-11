@@ -124,6 +124,9 @@ npx wrangler deploy
   accuracy > 100m 샘플 무시. 출발지 좌표는 재설계의 `toLegacyPlan`이 실제 GPS를 넣으면 해결.
   **진짜 원인(추가 확인)**: 영등포구청역에서 이탈 알림 → "계획 유지 · 경로로 복귀"를 누르자 도착 처리. `tracker.tsx`의
   `keepPlan`·`dismissOffRoute`가 `setModeRaw('driving')`으로 **가상 주행**을 켠다. live였으면 live로 돌아가야 한다. 몇 줄 수정.
+- **진행중 탭의 구간 시간·거리가 목 표 값** — "이동 18분 · 6.3km"는 `plan.tsx`의 `LEGS`/`dataset.legs`에서 경유지 id로 찾은 값이라
+  목적지를 바꿔도 안 변한다(없으면 10분·5km 기본값). 재설계의 `toLegacyPlan`이 실측 leg를 `Dataset.legs`에 넣으면 확정 시점 값은 맞아진다.
+  주행 중 갱신(구간 출발 때 그 구간만 재실측)은 별도 작업.
 
 ---
 

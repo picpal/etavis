@@ -36,8 +36,11 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
     <View style={{ gap: 6 }}>
       <View style={{ height: 22, justifyContent: 'center' }}>
         <View style={{ height: 8, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
-          {/* 들르기 포함 전체 — 늦으면 amber */}
-          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(totalMin), backgroundColor: late ? color.amber : color.primary, borderRadius: 4 }} />
+          {/* 들르기 포함 전체. 늦으면 마감을 넘긴 구간만 amber — 어디서부터 늦는지 보이게 */}
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(totalMin), backgroundColor: color.primary, borderRadius: 4 }} />
+          {late && (
+            <View style={{ position: 'absolute', left: pct(Math.max(0, deadline!)), top: 0, bottom: 0, width: pct(totalMin - Math.max(0, deadline!)), backgroundColor: color.amber, borderTopRightRadius: 4, borderBottomRightRadius: 4 }} />
+          )}
           {/* 직행만큼은 옅게 — 그 위로 튀어나온 부분이 '들러서 더 걸리는' 시간 */}
           <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(directMin), backgroundColor: color.stroke, borderRadius: 4 }} />
         </View>
@@ -63,9 +66,15 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
           <Text style={[type.micro, { color: color.muted }]}>직행 {Math.round(directMin)}분</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: late ? color.amber : color.primary }} />
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.primary }} />
           <Text style={[type.micro, { color: color.muted }]}>들르기 +{Math.round(totalMin - directMin)}분</Text>
         </View>
+        {late && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.amber }} />
+            <Text style={[type.micro, { color: color.muted }]}>초과 {Math.round(totalMin - Math.max(0, deadline!))}분</Text>
+          </View>
+        )}
         {deadline != null && deadlineAtEdge && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <View style={{ width: 2, height: 10, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />

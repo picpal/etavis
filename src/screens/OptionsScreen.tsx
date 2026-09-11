@@ -104,11 +104,10 @@ export function OptionsScreen({ navigation }: Props) {
             {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${slack}분 여유`}
           </Text>
           {late && result.relaxed && (
-            <Pressable onPress={dropRelaxedSlot}>
-              <Text style={[type.body, { color: color.primary }]}>
-                {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `${-relaxedSlack!}분 늦음`} → 계획에서 빼기
-              </Text>
-            </Pressable>
+            /* 답 옆에는 사실만 — 행동 버튼은 아래 조건 완화 카드 한 곳에 둔다 */
+            <Text style={[type.body, { color: color.body }]}>
+              {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `그래도 ${-relaxedSlack!}분 늦음`}
+            </Text>
           )}
           <Text style={[type.caption, { color: color.muted }]}>
             {flow.usingServer ? `검증한 안 중 최선 · 실측 ${result.measuredCount}회` : '서버 없이 추정한 값이에요'}
@@ -205,13 +204,27 @@ export function OptionsScreen({ navigation }: Props) {
         })}
 
         {/* 4. 조건 완화 — 늦을 때만, 3안과 분리 */}
-        {late && result.relaxed && (
-          <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 8 }}>
-            <Text style={[type.labelPlain, { color: color.muted }]}>{slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면</Text>
-            <Text style={[type.statL, { color: color.ink }]}>{approx}{Math.round(result.relaxed.totalMin)}분 · {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
-            <Text style={[type.caption, { color: color.muted }]}>필수 경유지가 아니면 이 안이 마감을 지켜요. 계획 화면에서 칩을 빼면 이 안으로 다시 계산해요.</Text>
-          </View>
-        )}
+        {late && result.relaxed && (() => {
+          const q = slotQuery(result.relaxed.droppedSlotId);
+          const keeps = relaxedSlack! >= 0;
+          return (
+            <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 14 }}>
+              <View style={{ gap: 6 }}>
+                <Text style={[type.labelPlain, { color: color.muted }]}>{q}{josa(q, '을/를')} 빼면</Text>
+                <Text style={[type.statL, { color: color.ink }]}>{approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
+                <Text style={[type.caption, { color: keeps ? color.green : color.muted }]}>
+                  {Math.round(result.relaxed.totalMin)}분 · {keeps ? `마감까지 ${relaxedSlack}분 여유` : `그래도 마감보다 ${-relaxedSlack!}분 늦어요`}
+                </Text>
+              </View>
+              <Pressable
+                onPress={dropRelaxedSlot}
+                style={({ pressed }) => ({ minHeight: 44, borderRadius: 12, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1 })}
+              >
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.primary }}>{q} 빼고 다시 계산</Text>
+              </Pressable>
+            </View>
+          );
+        })()}
       </ScrollView>
 
       <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>

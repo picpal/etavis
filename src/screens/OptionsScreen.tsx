@@ -6,9 +6,9 @@ import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
-import { effectiveVisits, optionTitle, slotCandidates, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
+import { effectiveVisits, josa, optionDiff, slotCandidates, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
 import { Card, haptic, PrimaryButton } from '../components/common';
-import { Chevron, DottedLineH, Hairline } from '../components/primitives';
+import { CheckMark, Chevron, Hairline } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
@@ -60,6 +60,8 @@ export function OptionsScreen({ navigation }: Props) {
   const stale = request ? flow.isStale(request) : false;
 
   // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
+  // 1안의 도착 시각 — 나머지 안은 이 값과의 차이만 말한다
+  const bestArrive = Math.round(req.departAtMin + effectiveVisits(result, state.slots, 0, state.overrides).timing.totalMin);
   const relaxedSlack =
     result.relaxed && req.arriveByMin != null
       ? Math.round(req.arriveByMin - (req.departAtMin + result.relaxed.totalMin))
@@ -104,7 +106,7 @@ export function OptionsScreen({ navigation }: Props) {
           {late && result.relaxed && (
             <Pressable onPress={dropRelaxedSlot}>
               <Text style={[type.body, { color: color.primary }]}>
-                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `${-relaxedSlack!}분 늦음`} → 계획에서 빼기
+                {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `${-relaxedSlack!}분 늦음`} → 계획에서 빼기
               </Text>
             </Pressable>
           )}
@@ -118,11 +120,13 @@ export function OptionsScreen({ navigation }: Props) {
           .filter(s => result.slotStatus[s.id] === 'none')
           .map(s => (
             <Text key={s.id} style={[type.caption, { color: color.muted }]}>
-              {s.query}은(는) 경로 근처에서 못 찾아 뺐어요
+              {s.query}{josa(s.query, '이/가') === '이' ? '은' : '는'} 경로 근처에서 못 찾아 뺐어요
             </Text>
           ))}
 
-        {/* 2. 경유지 행 */}
+        {/* 2. 경유지 행 — 라벨을 달아 '무엇의 칩인지' 말하고, 교체 가능하면 disclosure를 보인다 */}
+        <View style={{ gap: 8 }}>
+        <Text style={[type.label, { color: color.muted }]}>경유지</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {current.visits.map(v => {
             const alts = (state.slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
@@ -132,48 +136,66 @@ export function OptionsScreen({ navigation }: Props) {
               <Pressable key={v.slotId} disabled={alts === 0} onPress={() => { haptic(); setPickSlot(v.slotId); }}
                 style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: color.surface, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 14, opacity: pressed ? 0.7 : 1 })}>
                 <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: st && st !== 'ok' ? color.amberDeep : color.body }}>{v.candidate.name}{suffix}</Text>
-                {alts > 0 && <Chevron size={7} thickness={2} color={color.muted} dir="down" />}
+                {alts > 0 && <Chevron size={9} thickness={2} color={color.muted} dir="down" />}
               </Pressable>
             );
           })}
         </View>
+        </View>
 
-        {/* 3. 3안 */}
-        <Text style={[type.label, { color: color.muted }]}>직행 {Math.round(result.directMin)}분 기준 · {result.options.length}개 안</Text>
+        {/* 3. 경로 카드 — 같은 구조의 카드에 선택 표시. 숫자는 판정 카드·CTA와 같은 '도착 시각' */}
+        <Text style={[type.label, { color: color.muted }]}>직행 {Math.round(result.directMin)}분 기준 · 경로 {result.options.length}개</Text>
         {result.options.map((o, i) => {
           const selected = i === state.selectedOptionIdx;
           // 선택된 안은 이미 위에서 계산해 둔 current를 그대로 쓴다 — 다시 계산하지 않는다
           const eff = selected ? current : effectiveVisits(result, state.slots, i, state.overrides);
-          const names = [req.originName, ...eff.visits.map(v => v.candidate.name), req.destinationName];
           const pre = eff.timing.estimated || !flow.usingServer ? '약 ' : '';
+          const arrive = req.departAtMin + eff.timing.totalMin;
+          const deltaBest = Math.round(arrive) - bestArrive;
+          const diff = optionDiff(result, i);
+          const title =
+            diff.kind === 'best' ? '가장 빠름'
+            : diff.kind === 'swap'
+              ? diff.swaps.length === 1
+                ? `${diff.swaps[0].to}${josa(diff.swaps[0].to, '으로/로')} 바꾸면`
+                : `${diff.swaps[0].to} 외 ${diff.swaps.length - 1}곳으로 바꾸면`
+            : diff.kind === 'order' ? '순서를 바꾸면'
+            : `${i + 1}번째로 빠름`;
+          // 1안과 도착 시각이 같은 안은 숫자를 되풀이하지 않는다 — 차이가 없다는 게 정보다
+          const sameAsBest = i > 0 && deltaBest === 0;
+          const sub =
+            i === 0 ? `${Math.round(eff.timing.totalMin)}분 · 직행보다 +${Math.round(eff.timing.totalMin - result.directMin)}분`
+            : sameAsBest ? '같은 시각에 도착 · 매장만 달라요'
+            : `${Math.round(eff.timing.totalMin)}분 · 1안보다 ${deltaBest > 0 ? '+' : ''}${deltaBest}분`;
           return (
-            <Pressable key={i} onPress={() => { if (!selected) { haptic(); flow.select(i); } }}>
-              <Card elevated={selected} style={{ padding: selected ? 20 : 18, gap: selected ? 16 : 12 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
-                  <View style={{ flex: 1, gap: 5 }}>
-                    <Text style={[type.labelPlain, { color: color.muted }]}>{optionTitle(result, i)}</Text>
-                    <Text style={[selected ? type.displayXL : type.statL, { color: color.ink }]}>{pre}{Math.round(eff.timing.totalMin)}분</Text>
+            <Pressable key={i} onPress={() => { if (!selected) { haptic(); flow.select(i); } }} accessibilityRole="radio" accessibilityState={{ selected }}>
+              <Card elevated={selected} style={{ padding: 18, gap: 14, borderWidth: 1.5, borderColor: selected ? color.primary : 'transparent' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <Text style={[type.labelPlain, { color: color.muted }]}>{title}</Text>
+                    {sameAsBest && !selected ? (
+                      <Text style={[type.body, { color: color.body }]}>{sub}</Text>
+                    ) : (
+                      <>
+                        <Text style={[type.statL, { color: color.ink }]}>{pre}{hhmm(arrive)} 도착</Text>
+                        <Text style={[type.caption, { color: color.muted }]}>{sub}</Text>
+                      </>
+                    )}
                   </View>
-                  <Text style={[selected ? type.stat : type.statS, { color: color.amber }]}>+{Math.round(eff.timing.totalMin - result.directMin)}분</Text>
+                  {/* 선택 표시 — 크기 변화가 아니라 체크로 말한다 */}
+                  {selected ? (
+                    <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: color.primary, alignItems: 'center', justifyContent: 'center' }}>
+                      <CheckMark />
+                    </View>
+                  ) : (
+                    <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: color.stroke }} />
+                  )}
                 </View>
                 {selected && (
                   <>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {names.map((_, k) => (
-                        <React.Fragment key={k}>
-                          {k > 0 && <DottedLineH />}
-                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: k === names.length - 1 ? color.green : color.primary }} />
-                        </React.Fragment>
-                      ))}
-                    </View>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6 }}>
-                      {names.map((n, k) => (
-                        <Text key={k} numberOfLines={1} style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 16, color: color.muted, textAlign: k === 0 ? 'left' : k === names.length - 1 ? 'right' : 'center' }}>{n}</Text>
-                      ))}
-                    </View>
                     <Hairline />
                     <Text style={[type.body, { color: color.body }]}>
-                      {eff.visits.map((v, k) => `${v.candidate.name} ${hhmm(eff.timing.arrivals[k])}`).join(' → ')} → {hhmm(req.departAtMin + eff.timing.totalMin)}
+                      {eff.visits.map((v, k) => `${v.candidate.name} ${hhmm(eff.timing.arrivals[k])}`).join(' → ')} → {req.destinationName} {hhmm(arrive)}
                     </Text>
                   </>
                 )}
@@ -185,7 +207,7 @@ export function OptionsScreen({ navigation }: Props) {
         {/* 4. 조건 완화 — 늦을 때만, 3안과 분리 */}
         {late && result.relaxed && (
           <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 8 }}>
-            <Text style={[type.labelPlain, { color: color.muted }]}>조건 완화 · {slotQuery(result.relaxed.droppedSlotId)} 제외</Text>
+            <Text style={[type.labelPlain, { color: color.muted }]}>{slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면</Text>
             <Text style={[type.statL, { color: color.ink }]}>{approx}{Math.round(result.relaxed.totalMin)}분 · {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
             <Text style={[type.caption, { color: color.muted }]}>필수 경유지가 아니면 이 안이 마감을 지켜요. 계획 화면에서 칩을 빼면 이 안으로 다시 계산해요.</Text>
           </View>

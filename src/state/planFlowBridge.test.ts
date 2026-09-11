@@ -148,3 +148,31 @@ test('effectiveVisits — 2안에서 1안의 후보로 오버라이드해도 실
   assert.equal(after.visits.find(v => v.slotId === diff!.slotId)!.candidate.id, target, '오버라이드가 먹지 않았다');
   assert.notEqual(after.visits.find(v => v.slotId === diff!.slotId)!.candidate.id, diff!.candidate.id);
 });
+
+import { josa, optionDiff } from './planFlowBridge';
+
+test('josa — 받침에 따라 을/를·으로/로·이/가, ㄹ받침은 로, 한글 아니면 받침 없음 취급', () => {
+  assert.equal(josa('올리브영', '을/를'), '을');
+  assert.equal(josa('빵집', '을/를'), '을');
+  assert.equal(josa('회사', '을/를'), '를');
+  assert.equal(josa('올리브영 여의도IFC점', '으로/로'), '으로');
+  assert.equal(josa('서울', '으로/로'), '로');
+  assert.equal(josa('회사', '으로/로'), '로');
+  assert.equal(josa('GS25', '으로/로'), '로');
+  assert.equal(josa('빵집', '이/가'), '이');
+  assert.equal(josa('회사', '이/가'), '가');
+});
+
+test('optionDiff — 1안은 best, 후보 다르면 swap(from·to)', async () => {
+  const s = await ready();
+  assert.deepEqual(optionDiff(s.result!, 0), { kind: 'best' });
+  for (let i = 1; i < s.result!.options.length; i++) {
+    const d = optionDiff(s.result!, i);
+    if (d.kind === 'swap') {
+      assert.ok(d.swaps.length >= 1);
+      for (const sw of d.swaps) assert.ok(sw.from && sw.to && sw.from !== sw.to);
+    } else {
+      assert.ok(d.kind === 'order' || d.kind === 'rank');
+    }
+  }
+});

@@ -71,6 +71,45 @@ export function optionTitle(result: PlanResult, idx: number): string {
   return `${idx + 1}번째로 빠름`;
 }
 
+/** 1안과 무엇이 다른가 — 카드 제목은 차이만 말한다 */
+export type OptionDiff =
+  | { kind: 'best' }
+  /** 바뀐 매장 전부. 제목은 첫 곳 + '외 N곳' */
+  | { kind: 'swap'; swaps: { from: string; to: string }[] }
+  | { kind: 'order' }
+  | { kind: 'rank' };
+
+export function optionDiff(result: PlanResult, idx: number): OptionDiff {
+  if (idx === 0) return { kind: 'best' };
+  const best = result.options[0];
+  const me = result.options[idx];
+  if (!me) return { kind: 'rank' };
+  const swaps: { from: string; to: string }[] = [];
+  for (const v of me.visits) {
+    const b = best.visits.find(x => x.slotId === v.slotId);
+    if (b && b.candidate.id !== v.candidate.id) swaps.push({ from: b.candidate.name, to: v.candidate.name });
+  }
+  if (swaps.length > 0) return { kind: 'swap', swaps };
+  const order = (o: PlanOption) => o.visits.map(v => v.slotId).join('>');
+  if (order(me) !== order(best)) return { kind: 'order' };
+  return { kind: 'rank' };
+}
+
+/**
+ * 한글 조사 — 받침에 따라 을/를, 으로/로. 마지막 글자가 한글이 아니면(숫자·영문) 받침 없는 쪽.
+ * "올리브영을(를)" 같은 괄호 표기는 애플 한국어 UI에 없다.
+ */
+export function josa(word: string, pair: '을/를' | '으로/로' | '이/가'): string {
+  const ch = word.charCodeAt(word.length - 1) - 0xac00;
+  const hangul = ch >= 0 && ch < 11172;
+  const jong = hangul ? ch % 28 : 0;
+  const has = jong !== 0;
+  if (pair === '을/를') return has ? '을' : '를';
+  if (pair === '이/가') return has ? '이' : '가';
+  // 으로/로 — ㄹ받침은 '로'
+  return has && jong !== 8 ? '으로' : '로';
+}
+
 function openStateOf(c: { hours?: { openMin: number; closeMin: number } }, arrivalMin: number): Stop['openState'] {
   if (!c.hours) return 'open';
   if (!isOpenAt(c as never, arrivalMin)) return 'closed';

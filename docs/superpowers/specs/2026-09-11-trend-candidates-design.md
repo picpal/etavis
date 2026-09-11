@@ -186,12 +186,39 @@ export function scoreTrend(inputs: TrendInput[]): TrendScored[]; // score 내림
 
 ## 9. 운영 요건
 
-- Google Cloud: Places API (New) 활성화, 결제 등록, **할당량 → Places API → Requests per day = 40** 설정, 예산 알림 10달러. 키는 HTTP 리퍼러 제한 대신 **IP 제한 없이 서버 secret**으로만 쓴다(Workers는 고정 IP가 없다).
-- 네이버 개발자센터: 검색 API 애플리케이션 등록, 블로그 검색 사용.
-- `wrangler secret put GOOGLE_PLACES_KEY / NAVER_CLIENT_ID / NAVER_CLIENT_SECRET`.
-- KV 네임스페이스 `CACHE` 추가(`RATE`와 별개).
+### 구글 (2026-09-11 콘솔에서 확인·설정 완료)
 
-호출 수, 계획 하나(업종 슬롯 3개, 후보 30개씩, 캐시 없음): 카카오 15회(변화 없음) · 네이버 90회 · 구글 30회 · `/enrich` 3회. 같은 동네를 다시 계획하면 구글은 0회.
+프로젝트 `My First Project`(project-940ef3e9-568b-4ddf-82a), 결제 계정 `내 결제 계정`(01DCE2-8227F6-3EC5C2).
+
+- Places API (New) 사용 설정됨.
+- API 키 `etavia-places` 생성. **API 제한 = Places API (New) 하나**, 애플리케이션 제한 = 없음(Workers는 고정 IP가 없어 IP 제한을 걸면 막힌다). 콘솔 사용자 인증 정보에서 "키 표시"로 값을 볼 수 있다.
+- 기존 `Maps Platform API Key`는 35개 API가 열려 있다. 이 앱은 쓰지 않으므로 사용자가 삭제하는 게 좋다(미조치).
+- 예산 `etavia` 생성: 월 ₩10,000, 임계값 50·90·100%, 이메일 알림. **"기타 절감" 체크 해제** — 무료 크레딧이 사용량을 가리지 않고 총액 기준으로 알림이 뜬다.
+
+**일일 상한은 아직 걸지 못했다.** 계정이 무료 체험판(₩414,984 크레딧·90일)이라 할당량 페이지의 "할당량 수정"이 비활성이다. 예산의 "지출 한도 적용"(미리보기)은 실제로 사용을 중지시키지만 대상이 Cloud Run·Cloud Run Functions·Gemini API·Vertex AI 4개뿐이라 Places에는 쓸 수 없다.
+
+체험판 동안은 사용료가 크레딧에서 차감되고, 크레딧 소진·90일 경과 시 계정이 정지될 뿐 카드에 자동 청구되지 않는다. 위험은 유료 전환 이후에 생긴다.
+
+> **유료 전환("업그레이드") 직후 반드시 할 것.** 콘솔 → Google Maps Platform → 할당량 → API를 Places API (New)로 선택 → 이름 필터 `SearchTextRequest per day` → 행 선택 → 할당량 수정 → **40**. 현재 기본값은 75,000/일이다. 이걸 걸기 전에는 앱 쪽 월 900회 카운터(§2.2)가 유일한 방어선이다.
+
+### 네이버
+
+- 개발자센터에서 애플리케이션 등록, 검색 API → 블로그 사용. 하루 25,000회 무료.
+
+### Workers
+
+```
+npx wrangler secret put GOOGLE_PLACES_KEY
+npx wrangler secret put NAVER_CLIENT_ID
+npx wrangler secret put NAVER_CLIENT_SECRET
+npx wrangler kv namespace create CACHE   # RATE와 별개
+```
+
+### 호출 수
+
+계획 하나(업종 슬롯 3개, 후보 30개씩, 캐시 없음): 카카오 15회(변화 없음) · 네이버 90회 · 구글 30회 · `/enrich` 3회. 같은 동네를 다시 계획하면 구글은 0회.
+
+개발 중에는 구글 무료분(월 1,000회)이 30번 남짓의 새 지역 계획으로 소진된다. 캐시 14일이 이걸 막는 유일한 장치이므로 KV 없이는 돌리지 않는다.
 
 ## 10. 미루는 것 (NEXT.md에 적는다)
 

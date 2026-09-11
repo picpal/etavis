@@ -6,6 +6,7 @@
  *   toLegacyPlan     — 확정 순간 StopState[] + key:'live' Dataset. A6 이후는 이걸로 그대로 돈다
  * SLOT_STATUS_TEXT/HELP — 슬롯 status 표시 문구. 화면 여러 곳(추천 카드·교체 시트)이 같이 쓴다
  */
+import { formatDistanceM } from '../lib/geo';
 import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
 import { isOpenAt } from '../lib/routePlan/score';
 import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, Visit } from '../lib/routePlan/types';
@@ -124,7 +125,8 @@ export function alternativeToCandidate(alt: Alternative, slotQuery: string, arri
   return {
     id: alt.candidate.id,
     name: alt.candidate.name,
-    note: `${slotQuery} · 경로에서 ${round1(alt.detourKm)}km${alt.estimated ? ' · 추정' : ''}`,
+    // 1km 미만은 m로 — '0km'는 거리를 말하지 않는다
+    note: `${slotQuery} · 경로에서 ${formatDistanceM(alt.detourKm * 1000)}${alt.estimated ? ' · 추정' : ''}`,
     addedMin: Math.round(alt.addedMin),
     detourKm: round1(alt.detourKm),
     arriveAt: toHHMM(arrivalMin),

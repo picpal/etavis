@@ -42,6 +42,13 @@ node server/bench-models.mjs <model>                          # 모델 벤치마
 
 ## 다음 작업
 
+**2026-09-11 저녁 시작점 — 추적기 묶음(§5 참고).** main `dee7c43`. 순서: ① `tracker.tsx` `keepPlan`·`dismissOffRoute`가
+이탈 전 모드로 복귀(live면 live) ② 출발 반경 = min(250m, 다음 지점 거리/2) ③ 다음 지점 도착 반경 안이면 이전 경유지 출발 암묵
+처리(순서 강제 해제) ④ 도착 확정 = 반경 안 연속 3샘플 + 속도 < 2m/s, 대중교통 80m, 반경 = max(80, accuracy), accuracy > 100m 무시
+⑤ 실기기 추적 로그(`src/lib/trackLog.ts`, 개발 메뉴 내보내기). 순수 판정 로직은 `src/lib/`로 빼서 `npm test`로 시험한다.
+작업 방식: 스펙 짧게 → 계획 → 서브에이전트(워크트리, **node_modules 스테이징 금지**) → 리뷰.
+
+
 ### 1. 모델 — gpt-5.6-sol로 결정됨
 
 여러 모델 비교는 하지 않기로 했다(ChatGPT 계정은 설정된 모델만 허용해서

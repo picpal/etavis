@@ -18,6 +18,52 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
 
 const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 
+/**
+ * 출발→도착 타임바. 직행이면 어디까지, 들르면 얼마나 더, 마감은 어디쯤인지를 한 줄로 보인다.
+ * 숫자 세 개(직행·경유·마감)를 문장으로 읽게 하지 않으려고.
+ */
+function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
+  departMin: number; directMin: number; totalMin: number; arriveByMin: number | null; estimated: boolean;
+}) {
+  const deadline = arriveByMin == null ? null : arriveByMin - departMin;
+  const span = Math.max(totalMin, deadline ?? 0) * 1.08;
+  const pct = (m: number) => `${Math.max(0, Math.min(100, (m / span) * 100))}%` as const;
+  const late = deadline != null && totalMin > deadline;
+  const pre = estimated ? '약 ' : '';
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={{ height: 22, justifyContent: 'center' }}>
+        <View style={{ height: 8, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
+          {/* 들르기 포함 전체 — 늦으면 amber */}
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(totalMin), backgroundColor: late ? color.amber : color.primary, borderRadius: 4 }} />
+          {/* 직행만큼은 옅게 — 그 위로 튀어나온 부분이 '들러서 더 걸리는' 시간 */}
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(directMin), backgroundColor: color.stroke, borderRadius: 4 }} />
+        </View>
+        {deadline != null && (
+          <View style={{ position: 'absolute', left: pct(deadline), top: 0, bottom: 0, width: 2, marginLeft: -1, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />
+        )}
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={[type.micro, { color: color.muted }]}>{hhmm(departMin)} 출발</Text>
+        {deadline != null && (
+          <Text style={[type.micro, { color: late ? color.amberDeep : color.green }]}>마감 {hhmm(arriveByMin!)}</Text>
+        )}
+        <Text style={[type.micro, { color: color.muted }]}>{pre}{hhmm(departMin + totalMin)} 도착</Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.stroke }} />
+          <Text style={[type.micro, { color: color.muted }]}>직행 {Math.round(directMin)}분</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: late ? color.amber : color.primary }} />
+          <Text style={[type.micro, { color: color.muted }]}>들르기 +{Math.round(totalMin - directMin)}분</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export function OptionsScreen({ navigation }: Props) {
   const flow = usePlanFlow();
   const request = usePlanRequest();
@@ -91,24 +137,27 @@ export function OptionsScreen({ navigation }: Props) {
           </Pressable>
         )}
 
-        {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 한 줄 + 보조 한 줄: 아래 1안 카드와 숫자를 되풀이하지 않고 자리만 차지하지 않게 */}
-        <View style={{ gap: 6, paddingHorizontal: 2, paddingTop: 2 }}>
-          {slack == null ? (
-            <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
-          ) : late ? (
-            <Text style={[type.displayXL, { color: color.amberDeep }]}>{approx}{-slack}분 늦어요</Text>
-          ) : (
-            <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
-          )}
-          <Text style={[type.caption, { color: slack != null && !late ? color.green : color.muted }]}>
-            {slack == null
-              ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분`
-              : late
-                ? `마감 ${hhmm(req.arriveByMin!)} · ${approx}${hhmm(arriveMin)} 도착`
-                : `마감 ${hhmm(req.arriveByMin!)}까지 ${slack}분 여유`}
-            {' · '}
-            {flow.usingServer ? `실측 ${result.measuredCount}회` : '서버 없이 추정'}
-          </Text>
+        {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로 */}
+        <View style={{ gap: 10, paddingHorizontal: 2, paddingTop: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+            {slack == null ? (
+              <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
+            ) : late ? (
+              <Text style={[type.displayXL, { color: color.amberDeep }]}>{approx}{-slack}분 늦어요</Text>
+            ) : (
+              <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
+            )}
+            <Text style={[type.caption, { color: slack != null && !late ? color.green : color.muted }]}>
+              {slack != null && !late ? `${slack}분 여유` : flow.usingServer ? `실측 ${result.measuredCount}회` : '서버 없이 추정'}
+            </Text>
+          </View>
+          <EtaBar
+            departMin={req.departAtMin}
+            directMin={result.directMin}
+            totalMin={current.timing.totalMin}
+            arriveByMin={req.arriveByMin}
+            estimated={current.timing.estimated || !flow.usingServer}
+          />
           {late && result.relaxed && (
             <Text style={[type.caption, { color: color.body }]}>
               {slotQuery(result.relaxed.droppedSlotId)}{josa(slotQuery(result.relaxed.droppedSlotId), '을/를')} 빼면 {approx}{hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {relaxedSlack! >= 0 ? `${relaxedSlack}분 여유` : `그래도 ${-relaxedSlack!}분 늦음`}

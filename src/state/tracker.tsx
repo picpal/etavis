@@ -1,5 +1,5 @@
 /**
- * 주행 추적 — 경로 폴리라인 대비 수직거리로 도착·출발·이탈을 판정한다.
+ * 주행 추적 — 도착·출발은 반경 기반(stepArrival), 이탈만 경로 폴리라인 대비 수직거리로 판정한다.
  *
  * 위치 공급원은 두 가지이고 판정 로직은 하나를 공유한다.
  *   live   — expo-location 실제 GPS (기본)
@@ -23,7 +23,7 @@ import { notifyArrival, notifyDestinationArrival, notifyNextLeg } from '../notif
 import { buildPolyline, crossTrack, offsetPerpendicular, pointAtProgress, polylineLengthM } from '../lib/geo';
 import { toMin, usePlan } from './plan';
 import { initialArrivalState, profileFor, stepArrival, type ArrivalState, type Fix, type Point } from '../lib/arrival';
-import { logTrack } from '../lib/trackLog';
+import { flushTrackLog, logTrack } from '../lib/trackLog';
 import { usePlanFlow } from './planFlowProvider';
 
 /** 위치 공급원 — live는 실제 GPS, 나머지는 개발용 시뮬레이션 */
@@ -199,6 +199,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     // 도착·출발 — 순수 판정에 넘기고 이벤트만 옮긴다
     const { stops, passedCount, atStop, arrivedAtDest } = planRef.current;
     const destPoint: Point = { id: 'D', coord: shift(destCoordRef.current) };
+    // 경유지를 다 지나면 목적지가 target — 옛 코드는 이 자리가 비어 '회사 도착'이 영영 안 잡혔다
     const targetStop = stops[passedCount];
     const target: Point | null = targetStop
       ? { id: targetStop.id, coord: shift(targetStop.coord) }
@@ -228,6 +229,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         atStop,
       });
     }
+    // 전환 순간에만 알린다 — 상시 갱신을 알림으로 흉내내면 계속 울려서 방해가 된다
     for (const ev of step.events) {
       if (ev.kind === 'arrive' && ev.id === 'D') {
         actionsRef.current.arriveAtDestination();
@@ -327,6 +329,9 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         offRouteStopId,
       };
     });
+
+    // iOS가 배경 위치 이벤트 직후 앱을 정지시킬 수 있어 500ms 배치를 못 쓸 수 있다 — 즉시 흘려보낸다
+    if (src === 'bg') flushTrackLog();
   };
 
   // 가상 주행 — 개발 메뉴 모드에서만
@@ -383,6 +388,22 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     setTracker(t => ({ ...t, mode: 'live' }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.planConfirmed]);
+
+  /*
+    데이터셋이 바뀌면 도착 상태를 초기화한다.
+    데이터셋마다 경유지 id를 재사용해서(s1/s2), 이전 데이터셋에서 남은 arrivedId가
+    새 데이터셋의 첫 도착을 영영 막을 수 있다.
+  */
+  const datasetMountedRef = useRef(false);
+  useEffect(() => {
+    if (!datasetMountedRef.current) {
+      datasetMountedRef.current = true;
+      return;
+    }
+    arrivalRef.current = initialArrivalState;
+    notifiedRef.current = { arrived: null, departed: null, dest: false };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.dataset.key]);
 
   // 실제 GPS — 위치 권한을 받아 이동을 구독한다
   useEffect(() => {

@@ -28,6 +28,19 @@ export function logTrack(e: TrackEvent): void {
   }
 }
 
+/** 대기 중인 배치를 즉시 쓴다 — 타이머가 돌기 전에 앱이 죽을 수 있는 지점에서 부른다 */
+export function flushTrackLog(): void {
+  cancelTimer();
+  flush();
+}
+
+function cancelTimer() {
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+}
+
 function flush() {
   timer = null;
   const lines = queue;
@@ -76,6 +89,7 @@ export async function listTrackLogs(): Promise<{ name: string; bytes: number }[]
 
 /** 7일치를 하나로 합쳐 공유 시트로 넘긴다 (AirDrop·파일 저장·메일) */
 export async function exportTrackLogs(): Promise<'shared' | 'empty' | 'unavailable'> {
+  cancelTimer();
   flush();
   const files = await listTrackLogs();
   if (files.length === 0) return 'empty';
@@ -92,6 +106,7 @@ export async function exportTrackLogs(): Promise<'shared' | 'empty' | 'unavailab
 }
 
 export async function clearTrackLogs(): Promise<void> {
+  cancelTimer();
   queue = [];
   try {
     const d = dir();

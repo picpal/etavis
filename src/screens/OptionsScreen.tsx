@@ -30,6 +30,8 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
   const pct = (m: number) => `${Math.max(0, Math.min(100, (m / span) * 100))}%` as const;
   const late = deadline != null && totalMin > deadline;
   const pre = estimated ? '약 ' : '';
+  const dp = deadline == null ? 0 : (deadline / span) * 100;
+  const deadlineAtEdge = dp < 22 || dp > 78;
   return (
     <View style={{ gap: 6 }}>
       <View style={{ height: 22, justifyContent: 'center' }}>
@@ -43,12 +45,17 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
           <View style={{ position: 'absolute', left: pct(deadline), top: 0, bottom: 0, width: 2, marginLeft: -1, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />
         )}
       </View>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={[type.micro, { color: color.muted }]}>{hhmm(departMin)} 출발</Text>
-        {deadline != null && (
-          <Text style={[type.micro, { color: late ? color.amberDeep : color.green }]}>마감 {hhmm(arriveByMin!)}</Text>
+      <View style={{ height: 14 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <Text style={[type.micro, { color: color.muted }]}>{hhmm(departMin)} 출발</Text>
+          <Text style={[type.micro, { color: color.muted }]}>{pre}{hhmm(departMin + totalMin)} 도착</Text>
+        </View>
+        {/* 마감 라벨은 눈금 바로 아래. 가장자리에 붙어 출발·도착 라벨과 겹칠 때는 아래 범례 줄로 내린다 */}
+        {deadline != null && !deadlineAtEdge && (
+          <View style={{ position: 'absolute', top: 0, left: pct(deadline), width: 120, marginLeft: -60, alignItems: 'center' }}>
+            <Text style={[type.micro, { color: late ? color.amberDeep : color.green, backgroundColor: color.bg, paddingHorizontal: 4 }]}>마감 {hhmm(arriveByMin!)}</Text>
+          </View>
         )}
-        <Text style={[type.micro, { color: color.muted }]}>{pre}{hhmm(departMin + totalMin)} 도착</Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -59,6 +66,12 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: late ? color.amber : color.primary }} />
           <Text style={[type.micro, { color: color.muted }]}>들르기 +{Math.round(totalMin - directMin)}분</Text>
         </View>
+        {deadline != null && deadlineAtEdge && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <View style={{ width: 2, height: 10, borderRadius: 1, backgroundColor: late ? color.amberDeep : color.green }} />
+            <Text style={[type.micro, { color: late ? color.amberDeep : color.green }]}>마감 {hhmm(arriveByMin!)}{deadline <= 0 ? ' 지남' : ''}</Text>
+          </View>
+        )}
       </View>
     </View>
   );

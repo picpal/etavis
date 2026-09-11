@@ -3,7 +3,7 @@
  *
  * 왜: 이 화면의 질문은 "언제 도착하나, 뭘 바꾸면 되나" 둘뿐이다. 3안 선택은 뺐다.
  * 행을 왼쪽으로 밀면 빼기(바로 다시 계산), 탭하면 후보 팝업에서 다른 매장(고르면 다시 계산).
- * 늦을 때는 행마다 '빼면 언제 도착'을 적고, 계획기가 고른 완화 후보에는 배지를 단다.
+ * 늦을 때는 행마다 '빼면 언제 도착'만 적는다 — 무엇을 뺄지는 사용자가 정한다.
  */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -18,7 +18,7 @@ import type { PlanResult, Slot, Visit } from '../lib/routePlan/types';
 const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 
 export function StopList({
-  result, visits, arrivals, slots, departAtMin, arriveByMin, late, approx, bestDropId, onPick, onRemove,
+  result, visits, arrivals, slots, departAtMin, arriveByMin, late, approx, onPick, onRemove,
 }: {
   result: PlanResult;
   visits: Visit[];
@@ -29,8 +29,6 @@ export function StopList({
   late: boolean;
   /** '약 ' 또는 '' — 추정이면 약 */
   approx: string;
-  /** 계획기가 고른 완화 후보(빼면 가장 나은 경유지) — 배지용 */
-  bestDropId: string | null;
   onPick: (slotId: string) => void;
   onRemove: (slotId: string) => void;
 }) {
@@ -74,16 +72,7 @@ export function StopList({
                         <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>{k + 1}</Text>
                       </View>
                       <View style={{ flex: 1, gap: 3 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text numberOfLines={1} style={{ flexShrink: 1, fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
-                          {late && bestDropId === v.slotId && (
-                            <View style={{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: withoutSlack != null && withoutSlack >= 0 ? '#E3F3EC' : color.primaryTint }}>
-                              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 11, lineHeight: 12, color: withoutSlack != null && withoutSlack >= 0 ? color.green : color.primary }}>
-                                {withoutSlack != null && withoutSlack >= 0 ? '빼면 마감 맞춤' : '빼면 가장 빠름'}
-                              </Text>
-                            </View>
-                          )}
-                        </View>
+                        <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
                         <Text style={[type.caption, { color: st === 'late' ? color.late : statusText ? color.amberDeep : color.muted }]}>
                           {approx}{hhmm(arrivals[k])} 도착{statusText ? ` · ${statusText}` : ''}
                         </Text>

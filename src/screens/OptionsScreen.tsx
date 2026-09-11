@@ -195,7 +195,6 @@ export function OptionsScreen({ navigation }: Props) {
           arriveByMin={req.arriveByMin}
           late={late}
           approx={approx}
-          bestDropId={late && result.relaxed ? result.relaxed.droppedSlotId : null}
           onPick={slotId => { setPickSlot(slotId); }}
           onRemove={removeStop}
         />

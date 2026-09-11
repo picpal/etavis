@@ -370,14 +370,6 @@ export const datasets = [datasetCommute, datasetBase, datasetReordered, datasetS
 
 /* 외부 지도 앱(A7)은 목이 아니라 실제 URL scheme 스펙이라 src/lib/mapLinks.ts에 있다 */
 
-/** A3 계산 중 체크리스트 */
-export const calcSteps = [
-  { id: 'k1', text: '경로상 올리브영', count: '4곳', state: 'done' },
-  { id: 'k2', text: '포장 가능한 치킨집', count: '6곳', state: 'done' },
-  { id: 'k3', text: '실제 이동시간 계산', state: 'active' },
-  { id: 'k4', text: '추천 경로 정리', state: 'pending' },
-] as const;
-
 export type RecentDestination = { name: string; address: string; coord: LatLng };
 
 /** 최근 목적지 — 이름이 주인공, 주소는 확인용 */

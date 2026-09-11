@@ -1,272 +1,187 @@
-/** A5 — 경로 3안 비교 (카드 탭 선택, 경유 매장 칩 탭으로 브랜드 변경 → CTA로 확정) */
-import React, { useState } from 'react';
+/** A5 — 추천. 답(제시간 도착 여부)이 맨 위, 3안은 그 아래. "최적"이 아니라 "검증한 안 중 최선" */
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
-import { RouteOption } from '../data/mockData';
-import { getOptionView, OptionStopSlot, usePlan } from '../state/plan';
+import { usePlan, toHHMM } from '../state/plan';
+import { usePlanFlow } from '../state/planFlowProvider';
+import { usePlanRequest } from '../state/usePlanRequest';
+import { alternativeToCandidate, chosenToCandidate, effectiveVisits, optionTitle, toLegacyPlan, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
 import { Card, haptic, PrimaryButton } from '../components/common';
 import { Chevron, DottedLineH, Hairline } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
-import { isSelectable } from '../lib/candidateRank';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
 
-type OptionView = ReturnType<typeof getOptionView>;
+const hhmm = (min: number) => toHHMM(min).padStart(5, '0');
 
-/** 1·2위 추가시간 차이가 이 값 이하면 "애매하다"고 보고 사용자에게 묻는다 */
-const AMBIGUOUS_MIN = 3;
+export function OptionsScreen({ navigation }: Props) {
+  const flow = usePlanFlow();
+  const request = usePlanRequest();
+  const { applyLive } = usePlan();
+  const { state } = flow;
+  const result = state.result;
+  const [pickSlot, setPickSlot] = useState<string | null>(null);
 
-/** 추천안 스타일 — 점선 커넥터로 구간 펼침, 경유지는 매장 선택 칩 */
-function ExpandedOption({
-  option,
-  view,
-  onPickStop,
-}: {
-  option: RouteOption;
-  view: OptionView;
-  onPickStop: (slot: OptionStopSlot) => void;
-}) {
-  const names = view.names;
-  return (
-    <>
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 20,
-          backgroundColor: color.primary,
-          paddingVertical: 6,
-          paddingHorizontal: 9,
-          borderBottomLeftRadius: 8,
-          borderBottomRightRadius: 8,
-        }}
-      >
-        <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 11, lineHeight: 11, letterSpacing: 0.66, color: '#fff' }}>
-          {option.badge ?? option.title}
-        </Text>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
-        <View style={{ flex: 1, gap: 5 }}>
-          <Text style={[type.labelPlain, { color: color.muted }]}>총 소요</Text>
-          <Text style={[type.displayXL, { color: color.ink }]}>{view.totalMin}분</Text>
-        </View>
-        <View style={{ alignItems: 'flex-end', gap: 5 }}>
-          <Text style={[type.labelPlain, { color: color.muted }]}>직행 대비</Text>
-          <Text style={[type.stat, { color: color.amber }]}>+{view.deltaMin}분</Text>
-        </View>
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        {names.map((_, i) => {
-          const node =
-            i === 0 ? (
-              <View style={{ width: 9, height: 9, borderRadius: 4.5, borderWidth: 2.5, borderColor: color.primary }} />
-            ) : i === names.length - 1 ? (
-              <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: color.green }} />
-            ) : (
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.primary }} />
-            );
-          return (
-            <React.Fragment key={i}>
-              {i > 0 && <DottedLineH />}
-              {node}
-            </React.Fragment>
-          );
-        })}
-      </View>
-      {/* 지점명 행 — 후보가 여럿인 경유지는 탭해서 매장 변경 */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-        {names.map((name, i) => {
-          const isEdge = i === 0 || i === names.length - 1;
-          const slot = isEdge ? undefined : view.slots[i - 1];
-          const selectable = !!slot && slot.candidateCount > 1;
-          const align = i === 0 ? 'flex-start' : i === names.length - 1 ? 'flex-end' : 'center';
-          return (
-            <View key={name + i} style={{ flex: 1, alignItems: align }}>
-              {selectable ? (
-                <Pressable
-                  onPress={() => {
-                    haptic();
-                    onPickStop(slot!);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 5,
-                    backgroundColor: color.bg,
-                    paddingVertical: 7,
-                    paddingHorizontal: 9,
-                    borderRadius: 9,
-                    opacity: pressed ? 0.7 : 1,
-                  })}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.body }}
-                  >
-                    {name}
-                  </Text>
-                  <Chevron size={7} thickness={2} color={color.muted} dir="down" style={{ marginTop: -3 }} />
-                </Pressable>
-              ) : (
-                <Text
-                  numberOfLines={1}
-                  style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 16, color: color.muted }}
-                >
-                  {name}
-                </Text>
-              )}
-            </View>
-          );
-        })}
-      </View>
-      <Hairline />
-      <Text style={[type.body, { color: color.body }]}>{option.rationale}</Text>
-    </>
+  const current = useMemo(
+    () => (result ? effectiveVisits(result, state.selectedOptionIdx, state.overrides) : null),
+    [result, state.selectedOptionIdx, state.overrides],
   );
-}
-
-/** 대안 스타일 — 한 줄 압축 */
-function CompactOption({ option, view }: { option: RouteOption; view: OptionView }) {
-  return (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
-        <View style={{ flex: 1, gap: 5 }}>
-          <Text style={[type.labelPlain, { color: color.muted }]}>{option.title}</Text>
-          <Text style={[type.statL, { color: color.ink }]}>{view.totalMin}분</Text>
-        </View>
-        <Text style={[type.statS, { color: color.amber }]}>+{view.deltaMin}분</Text>
+  if (!result || !current || !state.request) {
+    return (
+      <View style={{ flex: 1, backgroundColor: color.bg }}>
+        <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
+        <Text style={[type.body, { color: color.muted, padding: 20 }]}>계산된 경로가 없어요. 계획 화면에서 다시 시작해 주세요.</Text>
+        <TabBar />
       </View>
-      <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted }}>
-        {option.rationale}
-      </Text>
-    </>
-  );
-}
+    );
+  }
 
-export function OptionsScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
-  const { state, selectOption, applyOption, setOptionStore, originDisplay, destinationDisplay } = usePlan();
-  const selected = state.options.find(o => o.id === state.selectedOptionId) ?? state.options[0];
-  const selectedView = getOptionView(state, selected, originDisplay, destinationDisplay);
-  const [pickBaseId, setPickBaseId] = useState<string | null>(null);
-  // 시트가 열려 있는 동안에도 현재 선택이 라이브로 반영되도록 매 렌더에서 파생
-  const pickSlot = pickBaseId ? selectedView.slots.find(s => s.baseId === pickBaseId) ?? null : null;
+  const req = state.request;
+  const arriveMin = req.departAtMin + current.timing.totalMin;
+  const slack = req.arriveByMin == null ? null : req.arriveByMin - arriveMin;
+  const late = slack != null && slack < 0;
+  const approx = current.timing.estimated || !flow.usingServer ? '약 ' : '';
+  const stale = request ? flow.isStale(request) : false;
 
-  // 개발·검증용: ?pick=1 로 첫 선택 가능 슬롯의 시트 자동 오픈
-  React.useEffect(() => {
-    if (!route.params?.pick) return;
-    const slot = selectedView.slots.find(s => s.candidateCount > 1);
-    if (slot) setPickBaseId(slot.baseId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.params?.pick]);
+  const slotQuery = (id: string) => state.slots.find(s => s.id === id)?.query ?? '';
+  const pickIdx = current.visits.findIndex(v => v.slotId === pickSlot);
+  const pickVisit = pickIdx >= 0 ? current.visits[pickIdx] : null;
+  const pickArrive = pickIdx >= 0 ? current.timing.arrivals[pickIdx] : 0;
+  const sheetCands = pickVisit
+    ? [chosenToCandidate(pickVisit, slotQuery(pickVisit.slotId), pickArrive),
+       ...result.alternatives.filter(a => a.slotId === pickVisit.slotId).map(a => alternativeToCandidate(a, slotQuery(a.slotId), pickArrive + a.addedMin, pickVisit.dwellMin))]
+    : [];
 
-  // 1·2위가 애매할 때만 후보를 물어본다. 매번 물으면 "3초 안에 답"과 충돌한다.
-  const askedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (askedRef.current || route.params?.pick) return;
-    for (const slot of selectedView.slots) {
-      const cands = (state.dataset.candidates[slot.baseId] ?? []).filter(isSelectable);
-      if (cands.length < 2) continue;
-      const sorted = [...cands].sort((a, b) => a.addedMin - b.addedMin);
-      if (Math.abs(sorted[0].addedMin - sorted[1].addedMin) <= AMBIGUOUS_MIN) {
-        askedRef.current = true;
-        setPickBaseId(slot.baseId);
-        return;
-      }
-    }
-    askedRef.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const confirm = () => {
+    applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));
+    navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Today' }] });
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
-      {/* 우측 '정렬'은 동작이 없어 제거했다 */}
       <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 20, gap: 14 }}>
+        {stale && (
+          <Pressable onPress={() => { haptic(); flow.reset(); navigation.replace('Calculating'); }}
+            style={{ backgroundColor: color.amberBg, borderRadius: 14, padding: 14 }}>
+            <Text style={[type.body, { color: color.amberDeep }]}>조건이 바뀌었어요 · 다시 계산</Text>
+          </Pressable>
+        )}
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 20, gap: 14 }}
-      >
-        <Text style={[type.label, { color: color.muted }]}>
-          직행 {state.dataset.directMin}분 기준 · {state.options.length}개 안
-        </Text>
-        {state.options.map(option => {
-          const isSelected = option.id === selected.id;
-          const view = isSelected ? selectedView : getOptionView(state, option, originDisplay, destinationDisplay);
+        {/* 1. 판정 카드 — 답 먼저 */}
+        <Card elevated style={{ padding: 20, gap: 8 }}>
+          {slack == null ? (
+            <Text style={[type.displayXL, { color: color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
+          ) : late ? (
+            <Text style={[type.displayXL, { color: color.amberDeep }]}>지금 출발해도 {approx}{Math.round(-slack)}분 늦어요</Text>
+          ) : (
+            <Text style={[type.displayXL, { color: color.ink }]}>들렀다 가도 {approx}{hhmm(arriveMin)} 도착</Text>
+          )}
+          <Text style={[type.body, { color: slack != null && !late ? color.green : color.muted }]}>
+            {slack == null ? `직행보다 +${Math.round(current.timing.totalMin - result.directMin)}분` : late ? `마감 ${hhmm(req.arriveByMin!)}` : `${Math.round(slack)}분 여유`}
+          </Text>
+          {late && result.relaxed && (
+            <Pressable onPress={() => { haptic(); /* 완화안 선택 = 그 슬롯을 빼고 재계산 */ flow.reset(); navigation.navigate('Plan'); }}>
+              <Text style={[type.body, { color: color.primary }]}>
+                {slotQuery(result.relaxed.droppedSlotId)}을(를) 빼면 {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착 · {Math.round(req.arriveByMin! - (req.departAtMin + result.relaxed.totalMin))}분 여유 → 계획에서 빼기
+              </Text>
+            </Pressable>
+          )}
+          <Text style={[type.caption, { color: color.muted }]}>
+            {flow.usingServer ? `검증한 안 중 최선 · 실측 ${result.measuredCount}회` : '서버 없이 추정한 값이에요'}
+          </Text>
+        </Card>
+
+        {/* 2. 경유지 행 */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {current.visits.map(v => {
+            const alts = result.alternatives.filter(a => a.slotId === v.slotId).length;
+            const st = result.slotStatus[v.slotId];
+            const suffix = st && st !== 'ok' ? ` · ${SLOT_STATUS_TEXT[st]}` : '';
+            return (
+              <Pressable key={v.slotId} disabled={alts === 0} onPress={() => { haptic(); setPickSlot(v.slotId); }}
+                style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: color.surface, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 14, opacity: pressed ? 0.7 : 1 })}>
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: st && st !== 'ok' ? color.amberDeep : color.body }}>{v.candidate.name}{suffix}</Text>
+                {alts > 0 && <Chevron size={7} thickness={2} color={color.muted} dir="down" />}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 3. 3안 */}
+        <Text style={[type.label, { color: color.muted }]}>직행 {Math.round(result.directMin)}분 기준 · {result.options.length}개 안</Text>
+        {result.options.map((o, i) => {
+          const selected = i === state.selectedOptionIdx;
+          const eff = effectiveVisits(result, i, state.overrides);
+          const names = [req.originName, ...eff.visits.map(v => v.candidate.name), req.destinationName];
+          const pre = eff.timing.estimated ? '약 ' : '';
           return (
-            <Pressable
-              key={option.id}
-              onPress={() => {
-                if (!isSelected) {
-                  haptic();
-                  selectOption(option.id);
-                }
-              }}
-            >
-              <Card
-                elevated={isSelected}
-                style={{ padding: isSelected ? 20 : 18, gap: isSelected ? 16 : 12 }}
-              >
-                {isSelected ? (
-                  <ExpandedOption option={option} view={view} onPickStop={slot => setPickBaseId(slot.baseId)} />
-                ) : (
-                  <CompactOption option={option} view={view} />
+            <Pressable key={i} onPress={() => { if (!selected) { haptic(); flow.select(i); } }}>
+              <Card elevated={selected} style={{ padding: selected ? 20 : 18, gap: selected ? 16 : 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
+                  <View style={{ flex: 1, gap: 5 }}>
+                    <Text style={[type.labelPlain, { color: color.muted }]}>{optionTitle(result, i)}</Text>
+                    <Text style={[selected ? type.displayXL : type.statL, { color: color.ink }]}>{pre}{Math.round(eff.timing.totalMin)}분</Text>
+                  </View>
+                  <Text style={[selected ? type.stat : type.statS, { color: color.amber }]}>+{Math.round(eff.timing.totalMin - result.directMin)}분</Text>
+                </View>
+                {selected && (
+                  <>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {names.map((_, k) => (
+                        <React.Fragment key={k}>
+                          {k > 0 && <DottedLineH />}
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: k === names.length - 1 ? color.green : color.primary }} />
+                        </React.Fragment>
+                      ))}
+                    </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6 }}>
+                      {names.map((n, k) => (
+                        <Text key={k} numberOfLines={1} style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 16, color: color.muted, textAlign: k === 0 ? 'left' : k === names.length - 1 ? 'right' : 'center' }}>{n}</Text>
+                      ))}
+                    </View>
+                    <Hairline />
+                    <Text style={[type.body, { color: color.body }]}>
+                      {eff.visits.map((v, k) => `${v.candidate.name} ${hhmm(eff.timing.arrivals[k])}`).join(' → ')} → {hhmm(req.departAtMin + eff.timing.totalMin)}
+                    </Text>
+                  </>
                 )}
               </Card>
             </Pressable>
           );
         })}
+
+        {/* 4. 조건 완화 — 늦을 때만, 3안과 분리 */}
+        {late && result.relaxed && (
+          <View style={{ borderWidth: 1.5, borderStyle: 'dashed', borderColor: color.stroke, borderRadius: 20, padding: 18, gap: 8 }}>
+            <Text style={[type.labelPlain, { color: color.muted }]}>조건 완화 · {slotQuery(result.relaxed.droppedSlotId)} 제외</Text>
+            <Text style={[type.statL, { color: color.ink }]}>{Math.round(result.relaxed.totalMin)}분 · {hhmm(req.departAtMin + result.relaxed.totalMin)} 도착</Text>
+            <Text style={[type.caption, { color: color.muted }]}>필수 경유지가 아니면 이 안이 마감을 지켜요. 계획 화면에서 칩을 빼면 이 안으로 다시 계산해요.</Text>
+          </View>
+        )}
       </ScrollView>
 
-      <View
-        style={{
-          backgroundColor: color.surface,
-          borderTopWidth: 1,
-          borderTopColor: color.hairline,
-          paddingTop: 16,
-          paddingHorizontal: 20,
-          paddingBottom: 16,
-          gap: 10,
-        }}
-      >
-        <PrimaryButton
-          label={`${selectedView.totalMin}분 경로로 계속`}
-          chevron
-          height={56}
-          borderRadius={18}
-          onPress={() => {
-            applyOption(selected.id);
-            // 확정하면 진행중으로 넘기고, 계획 탭은 초기 화면(A1)으로 되돌린다
-            navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Today' }] });
-          }}
-        />
-        {/* 문구가 곧 액션 — 탭하면 A2 대화로 복귀 */}
-        <Pressable
-          onPress={() => {
-            haptic();
-            navigation.navigate('Plan');
-          }}
-          hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}
-        >
+      <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>
+        <PrimaryButton label={`${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
+        <Pressable onPress={() => { haptic(); navigation.navigate('Plan'); }} hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
-            확정 전이라 언제든 대화로 바꿀 수 있어요 ·{' '}
-            <Text style={{ fontFamily: 'Pretendard-SemiBold', color: color.primary }}>대화로 바꾸기</Text>
+            확정 전이라 언제든 대화로 바꿀 수 있어요 · <Text style={{ fontFamily: 'Pretendard-SemiBold', color: color.primary }}>대화로 바꾸기</Text>
           </Text>
         </Pressable>
       </View>
       <TabBar />
 
       <CandidateSheet
-        baseId={pickBaseId}
-        currentCandidateId={pickSlot?.candidateId}
-        onPick={candId => pickBaseId && setOptionStore(selected.id, pickBaseId, candId)}
-        onClose={() => setPickBaseId(null)}
+        visible={!!pickVisit}
+        title={`${pickVisit?.candidate.name ?? ''} 교체`}
+        candidates={sheetCands}
+        currentId={pickVisit?.candidate.id}
+        onPick={candId => pickSlot && flow.setOverride(state.selectedOptionIdx, pickSlot, candId)}
+        onClose={() => setPickSlot(null)}
       />
     </View>
   );

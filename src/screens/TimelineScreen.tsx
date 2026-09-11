@@ -11,7 +11,7 @@ import {
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import * as Haptics from 'expo-haptics';
 import { color, radius, shadow, type } from '../theme/tokens';
-import { StopState, usePlan } from '../state/plan';
+import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SmallChip } from '../components/common';
 import { DashedLineV, TrashIcon } from '../components/primitives';
 import { StateBadge, TimelineRow } from '../components/TimelineRow';
@@ -38,6 +38,9 @@ export function TimelineScreen({ navigation, route }: Props) {
   const candidateCurrentId =
     candidateStop?.selectedCandidateId ??
     (candidateCands.find(c => c.recommended) ?? candidateCands[0])?.id;
+  const currentCand = candidateStop
+    ? (state.dataset.candidates[candidateStop.baseId] ?? []).find(c => c.id === candidateCurrentId)
+    : undefined;
 
   // 최초 진입 가이드 — 앱 실행당 한 번만 (목: 영구 저장은 생략)
   const listRef = React.useRef<View>(null);
@@ -337,8 +340,14 @@ export function TimelineScreen({ navigation, route }: Props) {
 
       <TaskSheet stopId={taskStopId} onClose={() => setTaskStopId(null)} />
       <CandidateSheet
-        baseId={candidateStop?.baseId ?? null}
-        currentCandidateId={candidateCurrentId}
+        visible={!!candidateStop}
+        title={`${candidateStop?.name ?? ''} 교체`}
+        candidates={(candidateStop ? state.dataset.candidates[candidateStop.baseId] ?? [] : []).map(c => ({
+          ...c,
+          // 목 데이터의 아침 시각 대신 지금 경로의 도착시각 + 후보 간 차이
+          arriveAt: candidateStop ? toHHMM(toMin(candidateStop.arriveAt) + (c.addedMin - (currentCand?.addedMin ?? 0))) : c.arriveAt,
+        }))}
+        currentId={candidateCurrentId}
         onPick={candId => candidateStop && replaceStop(candidateStop.id, candId)}
         onClose={() => setCandidateStopId(null)}
       />

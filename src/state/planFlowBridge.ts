@@ -37,15 +37,13 @@ export function effectiveVisits(
 ): { visits: Visit[]; timing: Rescored; option: PlanOption } {
   const option = result.options[optionIdx] ?? result.options[0];
   const ov = overrides[optionIdx] ?? {};
-  if (Object.keys(ov).length === 0) {
-    return { visits: option.visits, timing: { totalMin: option.totalMin, arrivals: option.arrivals, distanceKm: option.distanceKm, estimated: false }, option };
-  }
   const visits = option.visits.map(v => {
     const candId = ov[v.slotId];
     if (!candId) return v;
     const alt = result.alternatives.find(a => a.slotId === v.slotId && a.candidate.id === candId);
     return alt ? { ...v, candidate: alt.candidate } : v;
   });
+  // result.rescore가 유일한 시간 산출원 — 실측 leg가 있으면 실측, 없으면 추정(estimated로 드러난다)
   return { visits, timing: result.rescore(visits), option };
 }
 
@@ -104,15 +102,13 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
   if (!result || !request) throw new Error('toLegacyPlan: 결과가 없다');
   const { visits, timing } = effectiveVisits(result, flow.selectedOptionIdx, flow.overrides);
   const queryOf = (slotId: string) => slots.find(s => s.id === slotId)?.query ?? '';
-  const idOf = (candId: string) => visits.find(v => v.candidate.id === candId)?.slotId;
 
-  // stops — 방문 순서대로. leg는 도착시각 차에서
+  // stops — 방문 순서대로. leg는 timing(effectiveVisits의 rescore)의 도착시각·legsKm에서 그대로
   let clock = departMin;
   const stops: StopState[] = visits.map((v, i) => {
     const arrive = timing.arrivals[i];
     const legMin = Math.round(arrive - clock);
-    const legKey = `${i === 0 ? 'O' : visits[i - 1].candidate.id}>${v.candidate.id}`;
-    const legKm = round1(result.legTable[legKey]?.km ?? 0);
+    const legKm = round1(timing.legsKm[i] ?? 0);
     clock = arrive + v.dwellMin;
     const openState = openStateOf(v.candidate, arrive);
     return {
@@ -123,26 +119,46 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     };
   });
 
-  // legs — legTable의 후보 id를 슬롯 id로 (선택된 후보만). 양끝은 origin/dest
+  // legs — 슬롯 id 기준 전체 쌍(재정렬 지원). result.legTable에 기대지 않고 rescore로 직접 낸다 —
+  // 오버라이드로 옵션 밖 후보가 들어와도(legTable에 없는 후보) 빠지는 leg가 없다
   const legs: NonNullable<Dataset['legs']> = {};
-  const mapId = (id: string) => (id === 'O' ? 'origin' : id === 'D' ? 'dest' : idOf(id));
-  for (const [key, leg] of Object.entries(result.legTable)) {
-    const [a, b] = key.split('>');
-    const ma = mapId(a);
-    const mb = mapId(b);
-    if (!ma || !mb) continue;
-    legs[`${ma}>${mb}`] = { min: Math.round(leg.min), km: round1(leg.km) };
+  for (const v of visits) {
+    const single = result.rescore([v]);
+    legs[`origin>${v.slotId}`] = { min: Math.round(single.arrivals[0] - departMin), km: round1(single.legsKm[0] ?? 0) };
+    legs[`${v.slotId}>dest`] = { min: Math.round(single.arrivals[1] - (single.arrivals[0] + v.dwellMin)), km: round1(single.legsKm[1] ?? 0) };
+  }
+  for (const a of visits) {
+    for (const b of visits) {
+      if (a.slotId === b.slotId) continue;
+      const pair = result.rescore([a, b]);
+      legs[`${a.slotId}>${b.slotId}`] = { min: Math.round(pair.arrivals[1] - (pair.arrivals[0] + a.dwellMin)), km: round1(pair.legsKm[1] ?? 0) };
+    }
   }
   legs['origin>dest'] = { min: Math.round(result.directMin), km: round1(result.directKm) };
 
-  // candidates — 슬롯마다 현재 선택 + 대안
+  // candidates — 슬롯마다 현재 선택 + 그 슬롯의 나머지 후보 전부(flow.slots가 출처, 중복 없이).
+  // result.alternatives는 옵션 0 기준이라 다른 안을 고르면 중복·누락이 생긴다 — 여기서 직접 재계산한다
   const candidates: Dataset['candidates'] = {};
   visits.forEach((v, i) => {
     const arrive = timing.arrivals[i];
-    candidates[v.slotId] = [
-      chosenToCandidate(v, queryOf(v.slotId), arrive),
-      ...result.alternatives.filter(a => a.slotId === v.slotId).map(a => alternativeToCandidate(a, queryOf(v.slotId), arrive + a.addedMin, v.dwellMin)),
-    ];
+    const slotCandidates = slots.find(s => s.id === v.slotId)?.candidates ?? [];
+    const seen = new Set<string>([v.candidate.id]);
+    const list: Candidate[] = [chosenToCandidate(v, queryOf(v.slotId), arrive)];
+    for (const cand of slotCandidates) {
+      if (seen.has(cand.id)) continue;
+      seen.add(cand.id);
+      const swapped = visits.map((vv, j) => (j === i ? { ...vv, candidate: cand } : vv));
+      const swappedTiming = result.rescore(swapped);
+      const alt: Alternative = {
+        slotId: v.slotId,
+        candidate: cand,
+        addedMin: swappedTiming.totalMin - timing.totalMin,
+        detourKm: Math.max(0, swappedTiming.distanceKm - timing.distanceKm),
+        estimated: swappedTiming.estimated,
+      };
+      list.push(alternativeToCandidate(alt, queryOf(v.slotId), arrive + alt.addedMin, v.dwellMin));
+    }
+    candidates[v.slotId] = list;
   });
 
   const options: RouteOption[] = result.options.map((o, i) => ({

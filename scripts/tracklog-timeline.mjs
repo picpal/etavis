@@ -2,6 +2,8 @@
 /**
  * 내려받은 추적 로그(JSONL)를 타임라인으로 펼친다. 의존성 없음.
  *
+ * 왜: 실기기 로그를 화면 캡처 대신 시각순으로 읽기 위해.
+ *
  *   node scripts/tracklog-timeline.mjs track-export.jsonl
  *
  * plan 줄에서 지점 이름을 익히고 geofence·track·mode·notify를 시각순으로 한 줄씩 찍는다.

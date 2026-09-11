@@ -192,7 +192,7 @@ export async function clearTrackLogs(): Promise<void>;
 node scripts/tracklog-timeline.mjs track-export.jsonl
 ```
 
-의존성 없음. `plan` 줄에서 지점 이름을 익히고, `geofence`·`track`·`mode`·`notify`를 시각순으로 한 줄씩 펼친다. `fix`는 접고 이벤트 사이 샘플 수·거리 범위만 요약한다.
+의존성 없음. `plan` 줄에서 지점 이름을 익히고, `geofence`·`track`·`mode`·`notify`를 시각순으로 한 줄씩 펼친다. `fix`는 접고 이벤트 사이 샘플 수·정확도·속도 범위만 요약한다.
 
 ## 지킬 것
 

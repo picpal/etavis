@@ -127,6 +127,11 @@ npx wrangler deploy
 - **진행중 탭의 구간 시간·거리가 목 표 값** — "이동 18분 · 6.3km"는 `plan.tsx`의 `LEGS`/`dataset.legs`에서 경유지 id로 찾은 값이라
   목적지를 바꿔도 안 변한다(없으면 10분·5km 기본값). 재설계의 `toLegacyPlan`이 실측 leg를 `Dataset.legs`에 넣으면 확정 시점 값은 맞아진다.
   주행 중 갱신(구간 출발 때 그 구간만 재실측)은 별도 작업.
+- **실기기 추적 로그(2026-09-11 사용자 제안)** — 문서 폴더에 `track-YYYYMMDD.jsonl`(일별, 7일 보관, 2MB 상한).
+  기록: `fix`(GPS lat·lng·accuracy·speed, fg/bg) · `track`(status 전이·crossTrack·progress) · `geofence`(거리·반경·모드) ·
+  `mode`(setMode/keepPlan/dismissOffRoute) · `plan`(확정 스냅샷, 출처 실측/목) · `notify`(보낸 알림·누른 액션).
+  개발 메뉴에 "내보내기"(expo-sharing 공유 시트)·"지우기". 로컬 전용. 분석 스크립트로 타임라인 펼치기.
+  `keepPlan` 가상 주행 버그 수정과 묶어 다음 실기기 빌드 전에.
 
 ---
 

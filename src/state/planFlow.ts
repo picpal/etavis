@@ -65,11 +65,15 @@ export const initialPlanFlow: PlanFlowState = {
 export const isBusy = (phase: Phase): boolean =>
   phase === 'direct' || phase === 'searching' || phase === 'measuring';
 
-/** 이름은 표시용이라 뺀다. 같은 키면 같은 계산이다 */
+/**
+ * 이름은 표시용이라 뺀다. 같은 키면 같은 계산이다.
+ * departAtMin도 뺀다 — 그건 사용자가 바꾼 조건이 아니라 시계다.
+ * 넣어두면 1분만 지나도 A5에 "조건이 바뀌었어요"가 뜬다.
+ */
 export function requestKey(r: PlanRequest): string {
   const c = (p: LatLng) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
   const stops = r.stops.map(s => `${s.query}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`).join('|');
-  return [c(r.origin), c(r.destination), r.mode, r.arriveByMin ?? '-', r.departAtMin, r.order, stops].join('#');
+  return [c(r.origin), c(r.destination), r.mode, r.arriveByMin ?? '-', r.order, stops].join('#');
 }
 
 const PHASE_AFTER: Record<ProgressKey, Phase> = {

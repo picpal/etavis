@@ -57,10 +57,13 @@ test('SET_OVERRIDE는 안별로 누적, RESET은 초기값', () => {
   assert.equal(planFlowReducer(s, { type: 'RESET' }), initialPlanFlow);
 });
 
-test('requestKey는 좌표·모드·마감·출발·칩·순서를 본다', () => {
+test('requestKey는 좌표·모드·마감·칩·순서를 본다 (이름·출발시각은 아니다)', () => {
   assert.equal(requestKey(req), requestKey({ ...req, originName: '다른이름' }));
   assert.notEqual(requestKey(req), requestKey({ ...req, stops: [] }));
   assert.notEqual(requestKey(req), requestKey({ ...req, mode: 'walk' }));
+  assert.notEqual(requestKey(req), requestKey({ ...req, arriveByMin: 600 }));
+  // departAtMin은 시계일 뿐 — 1분 지났다고 "조건이 바뀌었어요"가 뜨면 안 된다
+  assert.equal(requestKey(req), requestKey({ ...req, departAtMin: req.departAtMin + 1 }));
 });
 
 test('isBusy', () => {

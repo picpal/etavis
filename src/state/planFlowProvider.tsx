@@ -9,6 +9,8 @@ import { planSearchFn } from '../lib/places';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider';
 import { serverRouteProvider } from '../lib/routePlan/serverProvider';
 import type { RouteProvider } from '../lib/routePlan/types';
+import { serverEnrichFn, type EnrichFn } from '../lib/enrich/enrichClient';
+import { mockEnrichFn } from '../lib/enrich/mockEnrich';
 import { initialPlanFlow, isBusy, planFlowReducer, requestKey, type PlanFlowState, type PlanRequest } from './planFlow';
 import { runPlan } from './runPlan';
 
@@ -26,15 +28,19 @@ type PlanFlowApi = {
 
 const Ctx = createContext<PlanFlowApi | null>(null);
 
-function pickProvider(): { provider: RouteProvider; usingServer: boolean } {
+function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich: EnrichFn } {
   const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
   const baseUrl = extra.serverUrl?.trim();
   const appToken = extra.appToken?.trim();
   if (baseUrl && appToken) {
     const deviceId = Constants.sessionId ?? 'unknown';
-    return { provider: serverRouteProvider({ baseUrl, appToken, deviceId }), usingServer: true };
+    return {
+      provider: serverRouteProvider({ baseUrl, appToken, deviceId }),
+      usingServer: true,
+      enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
+    };
   }
-  return { provider: mockRouteProvider(), usingServer: false };
+  return { provider: mockRouteProvider(), usingServer: false, enrich: mockEnrichFn() };
 }
 
 export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
@@ -48,7 +54,7 @@ export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
     start: request => {
       const cur = stateRef.current;
       if (isBusy(cur.phase) && cur.request && requestKey(cur.request) === requestKey(request)) return;
-      void runPlan(request, { provider: deps.provider, search: deps.search, dispatch });
+      void runPlan(request, { provider: deps.provider, search: deps.search, enrich: deps.enrich, dispatch });
     },
     select: idx => dispatch({ type: 'SELECT_OPTION', idx }),
     setOverride: (optionIdx, slotId, candidateId) => dispatch({ type: 'SET_OVERRIDE', optionIdx, slotId, candidateId }),

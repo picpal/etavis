@@ -8,17 +8,25 @@ import { plan } from '../lib/routePlan/plan';
 import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
+import type { EnrichFn } from '../lib/enrich/enrichClient';
+import { scoreTrend } from '../lib/trendScore';
 
 export type RunPlanDeps = {
   provider: RouteProvider;
   search: SearchFn;
   dispatch: (a: PlanFlowAction) => void;
   timeoutMs?: number;
+  /** 후보 보강. 없으면 보강 없이 진행한다 */
+  enrich?: EnrichFn;
 };
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 /** 슬롯당 후보 상한. 플래너는 추정만 하므로 늘려도 /route 호출은 안 는다 */
 const MAX_CANDIDATES = 30;
+/** 후보가 이보다 적으면 보강해도 순서가 안 바뀐다 */
+const ENRICH_MIN_CANDIDATES = 4;
+/** 마감이 없을 때, 트렌드 1위로 바꾸며 허용하는 추가시간 */
+const TREND_SWAP_SLACK_MIN = 10;
 
 /** 체류시간 기본값 — 할 일이 생기면 A9에서 바뀐다. 목 데이터와 같은 수준 */
 const DWELL: [RegExp, number][] = [
@@ -82,6 +90,26 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
       dispatch({ type: 'FAIL', error: { kind: 'search', message: String(e) } });
       return;
     }
+    // 0.7 보강 — 업종 슬롯만. 실패해도 계획은 계속 간다
+    if (deps.enrich) {
+      const need = slots.filter(s => s.stopKind === 'category' && s.candidates.length >= ENRICH_MIN_CANDIDATES);
+      if (need.length > 0) {
+        try {
+          const maps = await Promise.all(need.map(s =>
+            deps.enrich!(s.candidates.map(c => ({
+              id: c.id, name: c.name, address: c.address ?? '',
+              lat: c.coord.latitude, lng: c.coord.longitude,
+            })))));
+          need.forEach((s, i) => {
+            const m = maps[i];
+            s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
+          });
+        } catch {
+          // 신호가 없을 뿐이다. 화면은 추가시간순으로 떨어진다
+        }
+      }
+    }
+
     dispatch({ type: 'SLOTS', slots });
     dispatch({ type: 'PROGRESS', key: 'search', detail: slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · ') });
 
@@ -100,6 +128,42 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     }
     dispatch({ type: 'PROGRESS', key: 'measure', detail: `실측 ${result.measuredCount}회` });
     dispatch({ type: 'RESULT', result });
+
+    // 업종 슬롯에서 트렌드 1위가 시간 1위와 다르면 바꾼다.
+    // 단 마감을 넘기면 안 바꾼다 — 추천은 제시간 도착보다 앞설 수 없다.
+    for (const slot of slots) {
+      if (slot.stopKind !== 'category') continue;
+      const base = result.options[0];
+      if (!base) continue;
+      const idx = base.visits.findIndex(v => v.slotId === slot.id);
+      if (idx < 0) continue;
+      const current = base.visits[idx].candidate.id;
+      const baseTiming = result.rescore(base.visits);
+
+      const ranked = scoreTrend(slot.candidates.map(c => {
+        const swapped = base.visits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
+        const t = result.rescore(swapped);
+        return {
+          id: c.id,
+          addedMin: t.totalMin - baseTiming.totalMin,
+          blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
+          google: c.signals?.google
+            ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
+            : undefined,
+        };
+      }));
+
+      const top = ranked[0];
+      if (!top || top.id === current) continue;
+      const cand = slot.candidates.find(c => c.id === top.id);
+      if (!cand) continue;
+      const swapped = base.visits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
+      const t = result.rescore(swapped);
+      const arriveOk = request.arriveByMin == null
+        ? t.totalMin - baseTiming.totalMin <= TREND_SWAP_SLACK_MIN
+        : request.departAtMin + t.totalMin <= request.arriveByMin;
+      if (arriveOk) dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
+    }
   } catch (e) {
     if (e instanceof Timeout) dispatch({ type: 'FAIL', error: { kind: 'timeout', message: '12초 안에 끝나지 않았어요' } });
     else dispatch({ type: 'FAIL', error: { kind: 'measure', message: String(e) } });

@@ -10,6 +10,7 @@ import { parseIntent } from './schema';
 import { SYSTEM_PROMPT } from './prompt';
 import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
+import { handleEnrich } from './enrich';
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -20,6 +21,13 @@ export interface Env {
   APP_TOKEN: string;
   /** developers.kakaomobility.com REST 키. 카카오 로컬(developers.kakao.com) 키와 다르다 */
   KAKAO_MOBILITY_KEY: string;
+  /** NAVER API HUB 검색(블로그). 네이버 클라우드 콘솔의 Client ID·Secret */
+  NCP_API_KEY_ID: string;
+  NCP_API_KEY: string;
+  /** 구글 Places (New). Places API (New) 하나로만 제한된 키 */
+  GOOGLE_PLACES_KEY: string;
+  /** 바깥 응답 캐시. RATE 와 별개 — 용도가 섞이면 TTL 을 못 나눈다 */
+  CACHE: KVNamespace;
   RATE: KVNamespace;
 }
 
@@ -29,7 +37,7 @@ const json = (body: unknown, status = 200) =>
 
 /** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다.
     /route는 계획 하나에 5~9회가 나가므로(설계 문서 호출 수 표) 더 넉넉하다 */
-const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40 };
+const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10 };
 
 /** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
 const DEFAULT_MODEL = 'gpt-5.6-sol';
@@ -78,11 +86,14 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
-    if (url.pathname !== '/extract' && url.pathname !== '/route') return json({ error: 'not found' }, 404);
+
+    const known = ['/extract', '/route', '/enrich'];
+    if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
     if (gated instanceof Response) return gated;
     if (url.pathname === '/route') return handleRoute(gated.body, env);
+    if (url.pathname === '/enrich') return handleEnrich(gated.body, env, { fetch, now: new Date() });
 
     const body = (gated.body ?? {}) as { text?: string; context?: unknown };
     const text = (body.text ?? '').slice(0, 500);

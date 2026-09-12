@@ -8,6 +8,12 @@ compatibility_date = "2026-09-01"
 binding = "RATE"
 id = "여기에_KV_ID"
 
+# 바깥 응답 캐시 — 블로그 24시간, 구글 14일. RATE 와 용도가 달라 따로 둔다
+# npx wrangler kv namespace create CACHE
+[[kv_namespaces]]
+binding = "CACHE"
+id = "여기에_CACHE_KV_ID"
+
 # 비밀은 파일에 두지 않는다
 #   npx wrangler secret put OPENAI_API_KEY
 #   npx wrangler secret put APP_TOKEN

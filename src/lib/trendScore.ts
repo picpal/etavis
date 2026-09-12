@@ -88,7 +88,6 @@ export function scoreTrend(inputs: readonly TrendInput[]): TrendScored[] {
     const reasons: string[] = [];
     if (i.google) reasons.push(`구글 ${i.google.rating.toFixed(1)} (${i.google.ratingCount})`);
     if (buzz != null && i.blog!.weighted > 0) reasons.push(`최근 블로그 ${Math.round(i.blog!.weighted)}건`);
-    if (i.addedMin > 0) reasons.push(`+${Math.round(i.addedMin)}분`);
 
     return { id: i.id, score: blend(parts), fit, quality, buzz, reasons, hot: false, _idx: idx, _added: i.addedMin };
   });

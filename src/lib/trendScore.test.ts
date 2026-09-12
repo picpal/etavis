@@ -83,14 +83,16 @@ test('점수가 같으면 추가시간이 짧은 쪽이 먼저', () => {
   assert.equal(ids(r2)[0], 'b');
 });
 
-test('reasons 는 있는 신호만 이 순서로 — 평점·블로그·추가시간', () => {
+test('reasons 는 있는 신호만 이 순서로 — 평점·블로그', () => {
   const [r] = scoreTrend([
     inp('a', 4, { google: { rating: 4.5, ratingCount: 320 }, blog: { weighted: 8 } }),
   ]);
-  assert.deepEqual(r.reasons, ['구글 4.5 (320)', '최근 블로그 8건', '+4분']);
+  // 추가시간은 카드에 이미 별도 자리(추가시간 라벨)로 나온다 — reasons에 다시 넣으면
+  // 부제가 중복으로 길어져 두 줄로 넘친다(파리바게뜨 여의도2호점에서 실측)
+  assert.deepEqual(r.reasons, ['구글 4.5 (320)', '최근 블로그 8건']);
 });
 
-test('추가시간 0 이면 reasons 에 추가시간을 넣지 않는다', () => {
+test('신호가 없으면 reasons 는 빈 배열 — 추가시간은 여기 넣지 않는다', () => {
   const [r] = scoreTrend([inp('a', 0)]);
   assert.deepEqual(r.reasons, []);
 });

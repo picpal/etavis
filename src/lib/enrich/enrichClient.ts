@@ -6,7 +6,15 @@ import type { EnrichPlace, EnrichResponse, PlaceSignals } from './types';
 
 export type EnrichFn = (places: EnrichPlace[]) => Promise<Record<string, PlaceSignals>>;
 
-/** 계획 전체 12초 안에서 이만큼만 기다린다 */
+/**
+ * 슬롯 하나당 이만큼만 기다린다 — 계획 전체 12초 예산의 일부일 뿐, 그 예산 자체가
+ * 아니다. runPlan.ts가 업종 슬롯을 순차로 부르므로(월 예산 카운터의 예약이 실제
+ * 지출을 반영하려면 같은 계획 안에서 /enrich 호출이 겹치면 안 된다 — 겹치면 여러
+ * 요청이 같은 카운터 값을 동시에 읽고 각자 예약해 실효 상한이 슬롯 수만큼 불어난다)
+ * 업종 슬롯이 3개면 이 타임아웃만으로 최대 7.5초가 나갈 수 있다. 이 타임아웃을
+ * "최적화"한답시고 슬롯 호출을 다시 병렬 map으로 되돌리지 말 것 — 그러면 예산
+ * 카운터가 다시 겹쳐 슬롯 수만큼 새는 결함(최종 브랜치 리뷰 Critical 1)이 되살아난다.
+ */
 const DEFAULT_TIMEOUT_MS = 2_500;
 
 export function serverEnrichFn(opts: {

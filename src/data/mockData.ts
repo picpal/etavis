@@ -39,6 +39,8 @@ export type Candidate = {
   recommended?: boolean;
   disabled?: boolean;
   coord: LatLng;
+  /** /enrich 신호로 낸 추천 점수. 없으면 보강을 안 했거나 실패한 것 */
+  trend?: { score: number; reasons: string[]; hot: boolean };
 };
 
 export type RouteOption = {

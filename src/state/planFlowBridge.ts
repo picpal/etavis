@@ -9,6 +9,7 @@
 import { formatDistanceM } from '../lib/geo';
 import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
 import { isOpenAt } from '../lib/routePlan/score';
+import { scoreTrend } from '../lib/trendScore';
 import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, Visit } from '../lib/routePlan/types';
 import type { PlanFlowState } from './planFlow';
 import type { ApplyLivePayload, StopState } from './plan';
@@ -180,7 +181,36 @@ export function slotCandidates(
     };
     list.push(alternativeToCandidate(alt, query, arrive + alt.addedMin, v.dwellMin));
   }
-  return list;
+
+  // 신호가 하나라도 있으면 추천 점수를 붙인다. 없으면 trend 없이 그대로 —
+  // 시트가 '추천' 탭을 숨기는 기준이 이것이다.
+  const byId = new Map((slot?.candidates ?? []).map(c => [c.id, c]));
+  const anySignal = [...byId.values()].some(c => c.signals?.blog || c.signals?.google);
+  if (!anySignal) return list;
+
+  const ranked = scoreTrend(list.map(c => {
+    const src = byId.get(c.id);
+    return {
+      id: c.id,
+      addedMin: c.addedMin,
+      blog: src?.signals?.blog ? { weighted: src.signals.blog.weighted } : undefined,
+      google: src?.signals?.google
+        ? { rating: src.signals.google.rating, ratingCount: src.signals.google.ratingCount }
+        : undefined,
+    };
+  }));
+  const scoreById = new Map(ranked.map(r => [r.id, r]));
+
+  return list.map(c => {
+    const r = scoreById.get(c.id);
+    if (!r) return c;
+    return {
+      ...c,
+      trend: { score: r.score, reasons: r.reasons, hot: r.hot },
+      // 부제를 근거로 바꾼다. 근거가 없으면(추가시간 0에 신호도 없음) 원래 문구를 남긴다
+      note: r.reasons.length > 0 ? r.reasons.join(' · ') : c.note,
+    };
+  });
 }
 
 export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departMin: number }): ApplyLivePayload {

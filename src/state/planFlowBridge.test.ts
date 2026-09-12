@@ -132,6 +132,42 @@ test('slotCandidates — 2안에서도 중복 없이 슬롯 후보 전부, recom
   });
 });
 
+test('slotCandidates — 신호가 있으면 trend 를 붙이고 note 를 근거로 바꾼다(혼재 포함)', async () => {
+  // 어떤 후보가 지금 선택되는지 먼저 알아낸다 — 그 후보에는 신호를 안 붙여야
+  // '현재 경로'가 근거 없이 원래 note 를 유지하는 경우를 확실히 본다
+  const base = await ready();
+  const currentId = effectiveVisits(base.result!, slots, 0, {}).visits.find(v => v.slotId === 's-1')!.candidate.id;
+  const signalTargetId = slots.find(s => s.id === 's-1')!.candidates.find(c2 => c2.id !== currentId)!.id;
+
+  const signalSlots: Slot[] = slots.map(s =>
+    s.id === 's-1'
+      ? { ...s, candidates: s.candidates.map(cand => cand.id === signalTargetId
+          ? { ...cand, signals: { google: { rating: 4.5, ratingCount: 120, hours: null, matchedName: cand.name }, fetchedAt: '2026-01-01T00:00:00.000Z' } }
+          : cand) }
+      : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: signalSlots, order: 'auto' }, mockRouteProvider());
+  const { visits, timing } = effectiveVisits(result, signalSlots, 0, {});
+  const idx = visits.findIndex(v => v.slotId === 's-1');
+  const list = slotCandidates(result, signalSlots, visits, idx, timing);
+
+  // 신호가 하나라도 있으면 슬롯 후보 전부에 trend 가 붙는다 — 신호 없는 후보도 fit 만으로 점수를 받는다(혼재)
+  assert.ok(list.every(x => x.trend), 's-1 슬롯은 신호가 있으니 후보 전부에 trend 가 있어야 한다');
+
+  const withSignal = list.find(x => x.id === signalTargetId)!;
+  assert.ok(withSignal.trend!.reasons.length > 0);
+  assert.equal(withSignal.note, withSignal.trend!.reasons.join(' · '));
+
+  const current = list.find(x => x.id === visits[idx].candidate.id)!;
+  assert.equal(current.trend!.reasons.length, 0, '지금 경로는 추가시간 0·신호 없음이라 근거가 비어야 한다');
+  assert.equal(current.note, '올리브영 · 현재 경로', '근거가 없으면 note 는 원래 문구를 유지해야 한다');
+
+  // 신호가 없는 슬롯은 그대로 — trend 가 붙지 않는다
+  const idx2 = visits.findIndex(v => v.slotId === 's-2');
+  const list2 = slotCandidates(result, signalSlots, visits, idx2, timing);
+  assert.ok(list2.every(x => x.trend === undefined), 's-2 슬롯은 신호가 없으니 trend 가 붙지 않아야 한다');
+});
+
 test('effectiveVisits — 2안에서 1안의 후보로 오버라이드해도 실제로 바뀐다', async () => {
   const s0 = await ready();
   const result = s0.result!;

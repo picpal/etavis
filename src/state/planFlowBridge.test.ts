@@ -166,6 +166,19 @@ test('slotCandidates — 신호가 있으면 trend 를 붙이고 note 를 근거
   const idx2 = visits.findIndex(v => v.slotId === 's-2');
   const list2 = slotCandidates(result, signalSlots, visits, idx2, timing);
   assert.ok(list2.every(x => x.trend === undefined), 's-2 슬롯은 신호가 없으니 trend 가 붙지 않아야 한다');
+
+  // +N분을 reasons에서 뺀 뒤로는 '추가시간이 0이 아닌데 근거가 비는' 경우가 새로 생긴다 —
+  // 지금 경로(current)는 addedMin이 항상 0이라 이 케이스를 가리지 못한다. s-1의 세 번째
+  // 후보(현재도 아니고 신호도 안 받은 쪽)로 확인한다. 원래 문구(추정 여부 포함)는
+  // 신호를 하나도 안 받은 baseline 계산에서 그대로 가져와 비교한다 — 문자열을 직접
+  // 재구성하면 alternativeToCandidate의 '· 추정' 분기를 다시 베끼는 셈이라 깨지기 쉽다
+  const bystander = list.find(x => x.id !== current.id && x.id !== withSignal.id)!;
+  assert.ok(bystander, 's-1에 신호 없는 제3의 후보가 있어야 한다');
+  assert.notEqual(bystander.addedMin, 0, '추가시간이 0이 아닌 후보로 검증해야 current와 같은 케이스가 되지 않는다');
+  assert.equal(bystander.trend!.reasons.length, 0, '이 후보 자신에게는 구글·블로그 신호가 없으니 근거가 비어야 한다');
+  const baseline = slotCandidates(base.result!, slots, effectiveVisits(base.result!, slots, 0, {}).visits, idx, effectiveVisits(base.result!, slots, 0, {}).timing);
+  const bystanderBaseline = baseline.find(x => x.id === bystander.id)!;
+  assert.equal(bystander.note, bystanderBaseline.note, '근거가 없으면 추가시간이 0이 아니어도 note는 원래 문구를 유지해야 한다');
 });
 
 test('effectiveVisits — 2안에서 1안의 후보로 오버라이드해도 실제로 바뀐다', async () => {

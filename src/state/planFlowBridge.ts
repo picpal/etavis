@@ -207,7 +207,9 @@ export function slotCandidates(
     return {
       ...c,
       trend: { score: r.score, reasons: r.reasons, hot: r.hot },
-      // 부제를 근거로 바꾼다. 근거가 없으면(추가시간 0에 신호도 없음) 원래 문구를 남긴다
+      // 부제를 근거로 바꾼다. 근거가 없으면(이 후보 자신에게 구글·블로그 신호가 둘 다
+      // 없음 — 추가시간은 이제 reasons에 안 들어가므로 0이 아니어도 비어 있을 수 있다)
+      // 원래 문구를 남긴다
       note: r.reasons.length > 0 ? r.reasons.join(' · ') : c.note,
     };
   });

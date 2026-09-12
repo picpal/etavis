@@ -90,10 +90,9 @@ export function CandidateSheet({
   const VISIBLE = 5;
   const visibleCands = showAll ? sorted : sorted.slice(0, VISIBLE);
   const hidden = sorted.length - visibleCands.length;
-  const recommended = sorted.find(c => c.recommended) ?? sorted[0];
 
   /**
-   * 펼쳐 볼 후보 — 기본은 추천.
+   * 펼쳐 볼 후보 — 기본은 지금 정렬의 1위(visibleCands[0]).
    * 목록에서 빼내 위로 올리지 않는다. 자리가 바뀌면 내가 고른 건지 골라야 하는 건지 헷갈린다.
    */
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -104,7 +103,9 @@ export function CandidateSheet({
       setShowAll(false);
     }
   }, [visible]);
-  const expanded = sorted.find(c => c.id === expandedId) ?? recommended;
+  // 화면에 실제로 그려지는 카드(visibleCands) 기준으로 찾는다 — sorted 전체에서 찾으면
+  // 탭을 바꿔 그 후보가 상위 5개 밖으로 밀려났을 때 어떤 카드도 펼쳐지지 않는다
+  const expanded = visibleCands.find(c => c.id === expandedId) ?? visibleCands[0];
 
   /** 카드 탭 — 선택이 아니라 '그 자리에서 펼치기' */
   const focus = (cand: Candidate) => {
@@ -168,9 +169,14 @@ export function CandidateSheet({
                           <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.ink }}>
                             {cand.name}
                           </Text>
-                          {cand.trend?.hot && <HotBadge />}
-                          {cand.trend?.hot ? null : cand.recommended && !isCurrent && <RecommendBadge />}
-                          {isCurrent && <CurrentBadge />}
+                          {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
+                          {cand.trend?.hot ? (
+                            <HotBadge />
+                          ) : isCurrent ? (
+                            <CurrentBadge />
+                          ) : (
+                            cand.recommended && <RecommendBadge />
+                          )}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
                           {cand.note}
@@ -238,9 +244,14 @@ export function CandidateSheet({
                       <View style={{ flex: 1, gap: 5 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={[type.item, { color: color.ink }]}>{cand.name}</Text>
-                          {cand.trend?.hot && <HotBadge />}
-                          {cand.trend?.hot ? null : cand.recommended && !isCurrent && <RecommendBadge />}
-                          {isCurrent && <CurrentBadge />}
+                          {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
+                          {cand.trend?.hot ? (
+                            <HotBadge />
+                          ) : isCurrent ? (
+                            <CurrentBadge />
+                          ) : (
+                            cand.recommended && <RecommendBadge />
+                          )}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
                           {cand.note}

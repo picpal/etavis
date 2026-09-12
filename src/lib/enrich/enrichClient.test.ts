@@ -92,3 +92,61 @@ test('timeoutMs 안에 끝나면 abort는 발동하지 않는다', async () => {
   await enrich([place]);
   assert.equal(sawSignal!.aborted, false);
 });
+
+// --- 최종 브랜치 리뷰 fix 5: __DEV__에서 budget을 콘솔에 남긴다 -----------------------------
+// 콘솔 일일 할당량을 아직 못 걸어서 /enrich의 월 900회 카운터가 유일한 방어선인데,
+// budget을 화면 어디에도 보여주지 않으면 소진 여부를 관찰할 방법이 없다. 개발 메뉴
+// 화면은 없어서 콘솔 로그 한 줄로 대신한다 — __DEV__일 때만, budget이 실려 왔을 때만.
+async function withDev<T>(value: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+  const g = globalThis as { __DEV__?: boolean };
+  const had = '__DEV__' in g;
+  const prev = g.__DEV__;
+  if (value === undefined) delete g.__DEV__;
+  else g.__DEV__ = value;
+  try {
+    return await fn();
+  } finally {
+    if (had) g.__DEV__ = prev;
+    else delete g.__DEV__;
+  }
+}
+
+test('__DEV__일 때 budget을 콘솔에 남긴다', async () => {
+  const { fn } = fakeFetch(() => ({ status: 200, body: { results: {}, budget: { googleUsed: 12, googleLeft: 888 } } }));
+  const logs: unknown[][] = [];
+  const realLog = console.log;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  try {
+    await withDev(true, () => serverEnrichFn({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'd', fetchFn: fn })([place]));
+  } finally {
+    console.log = realLog;
+  }
+  assert.equal(logs.length, 1, '__DEV__이고 budget이 있으면 정확히 한 줄 남겨야 한다');
+  assert.ok(String(logs[0][0]).includes('12') && String(logs[0][0]).includes('888'), `googleUsed·googleLeft 값이 로그에 있어야 하는데: ${logs[0]}`);
+});
+
+test('__DEV__가 아니면 budget이 와도 콘솔에 남기지 않는다', async () => {
+  const { fn } = fakeFetch(() => ({ status: 200, body: { results: {}, budget: { googleUsed: 12, googleLeft: 888 } } }));
+  const logs: unknown[][] = [];
+  const realLog = console.log;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  try {
+    await withDev(false, () => serverEnrichFn({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'd', fetchFn: fn })([place]));
+  } finally {
+    console.log = realLog;
+  }
+  assert.equal(logs.length, 0);
+});
+
+test('__DEV__이어도 budget이 없으면 콘솔에 남기지 않는다', async () => {
+  const { fn } = fakeFetch(() => ({ status: 200, body: { results: {} } }));
+  const logs: unknown[][] = [];
+  const realLog = console.log;
+  console.log = (...args: unknown[]) => { logs.push(args); };
+  try {
+    await withDev(true, () => serverEnrichFn({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'd', fetchFn: fn })([place]));
+  } finally {
+    console.log = realLog;
+  }
+  assert.equal(logs.length, 0);
+});

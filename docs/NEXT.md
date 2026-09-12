@@ -184,9 +184,18 @@ npx wrangler deploy
     유일한 방어선이다.
   - `server/wrangler.toml`의 KV id 두 개가 자리표시자다. 배포 전에 채운다:
     `npx wrangler kv namespace create RATE` / `... create CACHE`
-  - 월간 구글 예산 카운터는 Cloudflare KV에 compare-and-swap이 없어 atomic하지 않다. 코드는 미리 호출 수를
-    예약하고 사용 후 보정하므로 동시 요청 경쟁에서는 과초과보다는 과계산(throttle)으로 기울고, 도중 실패는
-    이미 쓴 호출을 잃지 않는다. 진정한 atomicity는 Durable Objects가 필요하다.
+  - 월간 구글 예산 카운터는 Cloudflare KV에 compare-and-swap이 없어 atomic하지 않다. 계획 하나 안에서는
+    `runPlan.ts`가 슬롯을 순차로 보강하므로(최종 리뷰 Critical 1 — 원래 슬롯 병렬 보강이 실효 상한을
+    900×동시 슬롯 수로 불려버렸다) 같은 계획이 `/enrich`를 동시에 여러 번 부르는 일이 없다. 서로 다른
+    계획(다른 기기·다른 순간)의 요청은 여전히 겹칠 수 있는데, 코드는 호출 전에 먼저 예약을 쓰고 끝난 뒤
+    실제 지출로 정정하되 그 정정을 절대 뒤로 가지 않게(재읽은 현재값과 Math.max) 한다 — 그래서 겹치는
+    요청이 서로의 예약·지출 기록을 지우지는 못한다. 진정한 atomicity는 Durable Objects가 필요하다.
+  - 구글 `hours`(영업시간)는 받아만 두고 영업 상태(open/closed) 판정에 배선하지 않았다. 배선하려면
+    `runPlan`의 자동 스왑도 같이 고쳐야 한다 — `runPlan`은 후보를 고를 때 시트의 `isSelectable`(마감
+    필터)을 적용하지 않으므로, hours만 붙이고 필터링을 빼먹으면 자동 스왑이 마감 매장을 고를 수 있다.
+  - 구글이 이름을 로마자로만 돌려주는 매장(카카오는 한글, 구글은 영문 표기만 있는 경우)은
+    `normalizeName`이 스크립트 간 변환을 하지 않으므로 이름 일치로 못 잡고 60m 이내 단독 매칭
+    규칙(`placeMatch.ts` 규칙 4)에만 기댄다 — 그 반경 안에 후보가 둘 이상이면 평점이 안 붙는다.
   - 타입 검사: `tsconfig.json`이 `server`를 제외하므로 `npx tsc --noEmit -p .`는 서버 파일을 0개 검사한다.
     **`npx tsc --noEmit -p .`와 `npx tsc --noEmit -p server` 둘 다 실행해야 한다.** 참고로 두 config 모두
     `**/*.test.ts`를 제외하므로, 이 저장소에서는 테스트 파일이 타입 검사에 안 들어가는 게 사전 결정이다.

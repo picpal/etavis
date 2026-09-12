@@ -435,3 +435,100 @@ test('업종 슬롯 한 곳의 보강이 실패해도 다른 슬롯의 신호는
   assert.ok(badSlot.candidates.every(c => c.signals === undefined), '실패한 슬롯은 신호 없이 넘어가되 나머지를 막지 않는다');
   assert.ok(actions.some(a => a.type === 'RESULT'), '한 슬롯이 실패해도 계획은 나온다');
 });
+
+// --- 최종 브랜치 리뷰 fix 1 회귀: 슬롯 보강은 순차라야 한다 -------------------------------
+// Promise.allSettled로 되돌리면(구 코드) 두 슬롯의 enrich 호출이 동시에 시작돼 겹친다.
+// 겹치면 server/src/enrich.ts의 월 예산 카운터가 슬롯 수만큼 실효 상한을 불려버린다
+// (900 × 동시 슬롯 수) — 최종 리뷰 Critical 1. 여기서는 실제 서버 없이, enrich 호출의
+// '동시 진행 중(in-flight) 개수'가 2를 넘는 순간이 있는지로 겹침 여부를 직접 잰다.
+test('업종 슬롯 여러 곳이면 보강을 슬롯마다 순차로 부른다 — 동시에 겹치지 않는다', async () => {
+  let inFlight = 0;
+  let sawOverlap = false;
+  const order: string[] = [];
+  const enrich = async (places: { id: string }[]) => {
+    inFlight++;
+    if (inFlight > 1) sawOverlap = true;
+    order.push(places[0]?.id.slice(0, 1) ?? '');
+    await new Promise(r => setTimeout(r, 5)); // 겹치면 두 번째 호출이 이 대기 중에 시작돼 잡힌다
+    inFlight--;
+    return {};
+  };
+  const mk = (prefix: string, n: number): PlaceCandidate[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${prefix}${i}`, name: `${prefix}가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+    }));
+  const twoSlotSearch: SearchFn = async q => (q === '빵집' ? mk('b', 6) : mk('c', 6));
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([
+      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    ]),
+    { provider: mockRouteProvider(), search: twoSlotSearch, enrich, dispatch: a => actions.push(a) },
+  );
+  assert.ok(actions.some(a => a.type === 'RESULT'), '결과가 나와야 한다');
+  assert.ok(!sawOverlap, '두 슬롯의 보강 호출이 동시에 겹치면 안 된다 — 겹치면 예산 카운터가 슬롯 수만큼 실효 상한을 불린다');
+  assert.deepEqual(order, ['b', 'c'], '첫 슬롯이 끝난 뒤 다음 슬롯을 불러야 한다');
+});
+
+// --- 최종 브랜치 리뷰 fix 4 회귀: 추정치 위에서는 스왑하지 않는다 --------------------------
+// SINGLE_R=8이라 후보가 9개 이상이면 그중 하나는 구조적으로 실측을 못 받는다(estimated=true).
+// 아래 좌표는 실제로 그렇게 되도록 확인된 값이다(probe로 확인): near는 8개 시드 밖으로
+// 밀려 추정치로 남고, far가 시드에 뽑혀 시간 1위(base)가 된다. 신호는 아무도 없으므로
+// scoreTrend는 fit(추가시간)만으로 순위를 매기는데, near의 실측 없는 타이밍이 base보다
+// 약 4.1분 빠르게 나와(둘 다 fit=1로 동점이라 '동률은 addedMin 오름차순' 규칙이 near를
+// 1위로 올린다) 마감·10분 여유 둘 다 가볍게 통과하는 값이 된다. 그 숫자가 "제시간 도착"의
+// 근거가 되는데 추정치라 신뢰할 수 없다 — 그래서 estimated면 아예 스왑하지 않아야 한다.
+// (측정된 타이밍이면 스왑해야 한다는 반대쪽 분기는 기존 '트렌드 1위가 마감을 지키면 그
+// 후보로 SET_OVERRIDE를 보낸다' 테스트가 이미 고정한다 — 그 테스트의 후보는 4개뿐이라
+// SINGLE_R(8) 안에 다 들어가 전부 실측되기 때문이다.)
+test('트렌드 1위의 타이밍이 추정치(estimated)면 스왑하지 않는다', async () => {
+  const near: PlaceCandidate = { id: 'near', name: '카페 근처', coord: { latitude: 37.5, longitude: 127.05 } };
+  const far: PlaceCandidate = { id: 'far', name: '카페 트렌드', coord: { latitude: 37.55, longitude: 127.05 } };
+  const fillers: PlaceCandidate[] = Array.from({ length: 7 }, (_, i) => ({
+    id: `f${i}`, name: `필러${i}`, coord: { latitude: 37.5 + (i + 1) * 0.001, longitude: 127.05 },
+  }));
+  const cands = [near, far, ...fillers];
+  const estSearch: SearchFn = async () => cands;
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
+      origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.6, longitude: 127.0 },
+      departAtMin: 540, arriveByMin: null,
+    }),
+    { provider: mockRouteProvider(), search: estSearch, enrich: (async () => ({})) as never, dispatch: a => actions.push(a) },
+  );
+  assert.ok(actions.some(a => a.type === 'RESULT'), '결과가 나와야 한다');
+  // base(시간 1위)가 far여야 near가 추정치 후보로 남는 이 시나리오가 성립한다 — 전제 확인
+  const result = actions.find(a => a.type === 'RESULT') as { type: 'RESULT'; result: { options: { visits: { candidate: { id: string } }[] }[] } };
+  assert.equal(result.result.options[0].visits[0].candidate.id, 'far', '전제 확인 — base가 far가 아니면 이 시나리오가 성립하지 않는다');
+  assert.ok(!actions.some(a => a.type === 'SET_OVERRIDE'), 'near의 타이밍은 실측이 아니므로(estimated) 스왑하면 안 된다');
+});
+
+// --- 최종 브랜치 리뷰 fix 8 회귀: 신호 모양이 이상해도 이미 나간 RESULT를 FAIL로 덮지 않는다 --
+// enrichClient.ts는 서버 응답을 깊이 검증하지 않는다(그건 server/src/schema.ts의 몫이라
+// 클라이언트 쪽은 방어선이 없다). google.rating이 숫자가 아닌 신호가 들어오면
+// scoreTrend의 `rating.toFixed(1)`이 던진다 — 트렌드 스왑 블록을 감싸지 않으면 이
+// 예외가 바깥 catch까지 올라가 이미 dispatch된 RESULT를 FAIL이 뒤엎어 버린다.
+test('신호 하나가 망가진 모양이어도(google.rating이 숫자가 아님) RESULT가 FAIL로 덮이지 않는다', async () => {
+  const cands: PlaceCandidate[] = Array.from({ length: 4 }, (_, i) => ({
+    id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+  }));
+  const brokenSearch: SearchFn = async () => cands;
+  // 서버가 정상이라면 있을 수 없는 모양이지만, 클라이언트는 이걸 막을 방법이 없다 —
+  // rating이 문자열로 온 경우를 그대로 흉내 낸다.
+  const enrich = async (places: { id: string }[]) => {
+    const out: Record<string, unknown> = {};
+    for (const p of places) {
+      out[p.id] = { fetchedAt: 't', google: { rating: '망가짐', ratingCount: 10, hours: null, matchedName: p.id } };
+    }
+    return out;
+  };
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    { provider: mockRouteProvider(), search: brokenSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
+  );
+  assert.ok(actions.some(a => a.type === 'RESULT'), 'RESULT는 나가야 한다');
+  assert.ok(!actions.some(a => a.type === 'FAIL'), '스코어링이 던져도 이미 나간 RESULT를 FAIL이 덮으면 안 된다');
+});

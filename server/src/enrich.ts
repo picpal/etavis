@@ -4,9 +4,14 @@
  * 여기가 구글 과금을 막는 자리다. 세 겹으로 막는다:
  *   1) 캐시(블로그 24시간, 구글 14일)
  *   2) 슬롯당 상위 10곳만 구글에 묻는다(prescore) — room이 부족하면 순위 그대로 자른다
- *   3) 월 900회 카운터 — 무료분 1,000회 안에서 멈춘다. KV엔 compare-and-swap이 없어
- *      완전한 원자성은 못 얻지만, 쓰기 전에 먼저 예약해서 실패 방향을 "겹쳐서 새는 것"에서
- *      "겹쳐서 스로틀되는 것"으로 바꾼다 — 자세한 이유는 아래 카운터 코드 주석 참고.
+ *   3) 월 900회 카운터 — 무료분 1,000회 안에서 멈춘다. 호출부(src/state/runPlan.ts)가
+ *      계획 하나 안에서 슬롯을 순차로 보강하므로 같은 계획에서 이 엔드포인트가 동시에
+ *      여러 번 불리는 일은 없다. 그래도 서로 다른 계획(다른 기기·다른 순간)의 요청은
+ *      겹칠 수 있다 — KV엔 compare-and-swap이 없어 그 경우까지 완전한 원자성은 못
+ *      얻는다. 쓰기 전에 먼저 예약하고, 끝난 뒤 실제 지출로 정정하되 절대 뒤로 가지
+ *      않게(Math.max) 하므로 겹치는 요청이 서로의 예약·지출 기록을 지우지는 못한다 —
+ *      자세한 이유는 아래 카운터 코드 주석 참고. 진짜 원자성이 필요하면 Durable
+ *      Objects로 가야 한다.
  * 콘솔 일일 할당량은 무료 체험판이라 아직 못 걸었다(설계 §9). 그래서 3)이 유일한 코드 방어선이다.
  *
  * 부분 실패는 실패가 아니다. 블로그만 와도 200 이다.
@@ -15,6 +20,7 @@ import { parseEnrichRequest, type EnrichPlace } from './enrichSchema';
 import { fetchNaverBlog } from './naverBlog';
 import { fetchGooglePlace } from './googlePlaces';
 import { prescore } from '../../src/lib/trendScore';
+import { normalizeName } from '../../src/lib/placeMatch';
 import type { BlogSignal, GoogleSignal, PlaceSignals } from './enrichTypes';
 
 export type KVLike = {
@@ -34,6 +40,9 @@ export type EnrichDeps = { fetch: typeof fetch; now: Date };
 const BLOG_TTL_S = 24 * 60 * 60;      // 설계 §2.1.1 — 24시간을 넘기지 않는다
 const GOOGLE_TTL_S = 14 * 24 * 60 * 60;
 const GOOGLE_MONTHLY_CAP = 900;        // 무료분 1,000 보다 낮게
+// 월 키(gbudget:YYYY-MM)는 매달 새로 시작하므로 정확도엔 영향이 없다 — TTL은 그저
+// 다음 달로 넘어간 뒤에도 옛 키가 KV에 무한히 쌓이지 않게 한 달을 넉넉히 넘겨 만료시킨다.
+const BUDGET_TTL_S = 45 * 24 * 60 * 60;
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) =>
@@ -111,6 +120,7 @@ export async function handleEnrich(
     used = Number.isFinite(n) ? n : GOOGLE_MONTHLY_CAP;
   }
   let spent = 0;
+  let finalUsed = used; // 응답 budget.googleUsed — 구글을 안 부르면 그대로 used
   const googles = new Map<string, GoogleSignal | null>();
 
   if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP) {
@@ -132,25 +142,42 @@ export async function handleEnrich(
     const attempting = targets.slice(0, room);
 
     // 쓰기 전에 먼저 예약한다: 이번 배치가 최대 attempting.length 만큼 쓸 수 있다고
-    // 루프 시작 전에 적어 둔다. KV엔 compare-and-swap이 없어 완전한 원자성은 못 얻지만
-    // 실패 방향을 바꾼다 — 겹치는 요청은 서로 상대의 지출을 못 본 채 함께 새는(캡을
-    // 넘기는) 대신, 이미 예약된 걸 보고 스로틀되는 쪽으로 실패한다. 루프 중간에
-    // 요청이 죽어도 이미 만든 호출 수만큼은 예약이 남아 있어 지출을 잊어버리지 않는다.
+    // 루프 시작 전에 적어 둔다. 이 예약 쓰기 자체는 그냥 덮어쓰기라, 서로 다른 계획의
+    // 요청 두 개가 정말 동시에(같은 used를 읽은 채) 예약하면 나중 쓰기가 먼저 쓰기를
+    // 덮어써 두 예약이 합쳐지지 않는 문제는 여전히 남는다(파일 머리 주석 참고, KV
+    // compare-and-swap 부재). 그래도 루프 중간에 요청이 죽어도 이미 만든 호출 수만큼은
+    // 이 예약이 남아 있어 지출을 잊어버리지는 않는다 — 그 유지는 아래 정정 단계가
+    // 절대 뒤로 가지 않게(Math.max) 지켜준다.
     if (attempting.length > 0) {
-      await env.CACHE.put(budgetKey, String(used + attempting.length));
+      finalUsed = used + attempting.length;
+      await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
     }
 
-    for (const p of attempting) {
-      const sig = await cached(env.CACHE, `gplace:${p.id}`, GOOGLE_TTL_S, async () => {
-        spent++; // 캐시 미스일 때만 실제 호출이 나간다
+    // 구글 호출은 서로 독립이라 병렬로 보낸다. 예산 예약이 이미 호출 전에 끝나 있으므로
+    // 완료 순서는 지출 계산과 무관하다 — spent는 캐시 미스(실제 호출)일 때만 늘어난다.
+    // 순차였을 때는 슬롯 하나가 순차 보강(runPlan.ts)과 겹쳐 지연이 배로 쌓였다.
+    await Promise.all(attempting.map(async p => {
+      const sig = await cached(env.CACHE, `gplace:${p.id}:${normalizeName(p.name)}`, GOOGLE_TTL_S, async () => {
+        spent++;
         return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
       });
       googles.set(p.id, sig);
-    }
+    }));
 
-    // 캐시 히트가 섞여 실제 호출이 예약보다 적었다면 내려서 정정한다
-    if (attempting.length > 0 && spent !== attempting.length) {
-      await env.CACHE.put(budgetKey, String(used + spent));
+    if (attempting.length > 0) {
+      // 정정 직전에 카운터를 다시 읽는다. 이 요청이 예약한 뒤로 겹치는(다른 계획의)
+      // 요청이 이미 자신의 예약이나 정정을 써 놨을 수 있다 — 이 요청이 아는 used+spent가
+      // 그 값보다 작다고 그냥 덮어 쓰면 그 요청의 지출 기록이 통째로 사라진다(이게 바로
+      // 고쳐야 했던 결함이다: 정정이 자기 요청의 stale한 used만 보고 매번 새로 썼다).
+      // 그래서 절대 뒤로 가지 않게 재읽은 현재값과 Math.max로 쓴다. 대가는 캐시 히트가
+      // 섞인 요청에서 카운터가 실제 지출보다 높게(이 요청 자신의 예약분까지) 남을 수
+      // 있다는 것뿐이다 — 그건 과소집계(과금 위험)가 아니라 과대집계(조기 스로틀)라서
+      // 안전한 방향이다.
+      const currentRaw = await env.CACHE.get(budgetKey);
+      const n = currentRaw === null ? NaN : Number(currentRaw);
+      const current = Number.isFinite(n) ? n : GOOGLE_MONTHLY_CAP;
+      finalUsed = Math.max(current, used + spent);
+      await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
     }
   }
 
@@ -166,7 +193,7 @@ export async function handleEnrich(
 
   return json({
     results,
-    budget: { googleUsed: used + spent, googleLeft: Math.max(0, GOOGLE_MONTHLY_CAP - used - spent) },
+    budget: { googleUsed: finalUsed, googleLeft: Math.max(0, GOOGLE_MONTHLY_CAP - finalUsed) },
   });
 }
 

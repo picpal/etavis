@@ -93,22 +93,32 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     // 0.7 보강 — 업종 슬롯만. 실패해도 계획은 계속 간다. 전체 12초 예산에 물려 있어야
     // 한다 — 그래서 race()로 감싼다. 단 데드라인 탈락(Timeout)은 다시 던져 파이프라인이
     // 끝나게 하고, 그 외(개별 슬롯 실패 포함)는 신호 없이 넘어간다.
+    //
+    // 슬롯은 순차로 부른다(동시 아님). server/src/enrich.ts의 월 예산 카운터는 "먼저
+    // 예약 쓰기 → 실제 지출로 정정"인데, 이건 요청이 겹치지 않을 때만 유효하다.
+    // 슬롯 N개를 Promise.allSettled로 동시에 보내면 N개 요청이 같은 used를 동시에
+    // 읽고 각자 예약·정정하므로 카운터엔 마지막 정정 한 번만 남고 실제로는 N배가
+    // 나간다(실효 상한이 900×N이 되는 결함). 순차로 보내면 각 요청이 이전 요청이 쓴
+    // 카운터를 보고 예약하므로 카운터가 실제 지출을 그대로 반영한다.
+    // 비용은 슬롯 수만큼 지연이 누적되는 것 — 구글 호출을 슬롯 안에서 병렬화(§enrich.ts
+    // fix 2)해 상쇄한다.
     if (deps.enrich) {
       const need = slots.filter(s => s.stopKind === 'category' && s.candidates.length >= ENRICH_MIN_CANDIDATES);
       if (need.length > 0) {
         try {
-          // allSettled — 슬롯 하나가 실패해도 나머지 슬롯의 신호까지 버리지 않는다
-          const settled = await race(Promise.allSettled(need.map(s =>
-            deps.enrich!(s.candidates.map(c => ({
-              id: c.id, name: c.name, address: c.address ?? '',
-              lat: c.coord.latitude, lng: c.coord.longitude,
-            }))))));
-          need.forEach((s, i) => {
-            const r = settled[i];
-            if (r.status !== 'fulfilled') return; // 이 슬롯만 신호 없이 남는다
-            const m = r.value;
-            s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
-          });
+          await race((async () => {
+            for (const s of need) {
+              try {
+                const m = await deps.enrich!(s.candidates.map(c => ({
+                  id: c.id, name: c.name, address: c.address ?? '',
+                  lat: c.coord.latitude, lng: c.coord.longitude,
+                })));
+                s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
+              } catch {
+                // 이 슬롯만 신호 없이 남는다 — 나머지 슬롯은 계속 진행한다
+              }
+            }
+          })());
         } catch (e) {
           if (e instanceof Timeout) throw e;
           // 신호가 없을 뿐이다. 화면은 추가시간순으로 떨어진다
@@ -143,45 +153,60 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     // 단 "마감 없을 때 총 +10분 이내"는 원래 여행 전체 기준 딱 한 번이어야 한다 — 슬롯마다
     // 직전 슬롯이 이미 늘려놓은 시간을 기준으로 다시 재면 슬롯 N개면 최대 N×10분까지 새는
     // 사고가 난다. 그래서 이 비교만 원본 total(originTotalMin)로 고정해 둔다.
-    const base = result.options[0];
-    if (base) {
-      const originTotalMin = result.rescore(base.visits).totalMin;
-      let runningVisits = base.visits;
-      for (const slot of slots) {
-        if (slot.stopKind !== 'category') continue;
-        const idx = runningVisits.findIndex(v => v.slotId === slot.id);
-        if (idx < 0) continue;
-        const current = runningVisits[idx].candidate.id;
-        const baseTiming = result.rescore(runningVisits);
+    // 이 블록 전체를 감싼다 — 신호 하나가 이상한 모양으로 와도(server/src/schema.ts
+    // 검증을 거치지만 클라이언트 쪽엔 그런 방어선이 없다) scoreTrend의 toFixed 같은
+    // 호출이 던지면, 이미 RESULT로 내보낸 멀쩡한 시간 최적 경로까지 바깥 catch가
+    // FAIL로 덮어써 버린다. 여기서 삼키면 이미 나간 SET_OVERRIDE(있다면)는 유지한 채
+    // 남은 스왑만 건너뛰고 시간 최적 경로가 그대로 선다.
+    try {
+      const base = result.options[0];
+      if (base) {
+        const originTotalMin = result.rescore(base.visits).totalMin;
+        let runningVisits = base.visits;
+        for (const slot of slots) {
+          if (slot.stopKind !== 'category') continue;
+          const idx = runningVisits.findIndex(v => v.slotId === slot.id);
+          if (idx < 0) continue;
+          const current = runningVisits[idx].candidate.id;
+          const baseTiming = result.rescore(runningVisits);
 
-        const ranked = scoreTrend(slot.candidates.map(c => {
-          const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
+          const ranked = scoreTrend(slot.candidates.map(c => {
+            const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
+            const t = result.rescore(swapped);
+            return {
+              id: c.id,
+              addedMin: t.totalMin - baseTiming.totalMin,
+              blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
+              google: c.signals?.google
+                ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
+                : undefined,
+            };
+          }));
+
+          const top = ranked[0];
+          if (!top || top.id === current) continue;
+          const cand = slot.candidates.find(c => c.id === top.id);
+          if (!cand) continue;
+          const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
           const t = result.rescore(swapped);
-          return {
-            id: c.id,
-            addedMin: t.totalMin - baseTiming.totalMin,
-            blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
-            google: c.signals?.google
-              ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
-              : undefined,
-          };
-        }));
+          // t.estimated면 이 타이밍은 실측 leg가 아니라 하버사인 추정이다(SINGLE_R=8 이후
+          // 30개 후보 중 상위 8곳 밖은 구조적으로 추정치). 마감 판정을 마진 0 추정치 위에서
+          // 내리면 +8분 추정이 실제 +15분일 때 "제시간 도착"이라 말하고 늦게 만든다 —
+          // 그래서 추정이면 스왑을 아예 하지 않는다. 시트에서는 여전히 고를 수 있고
+          // 이미 "약"·"추정"으로 표시된다.
+          const arriveOk = !t.estimated && (request.arriveByMin == null
+            ? t.totalMin - originTotalMin <= TREND_SWAP_SLACK_MIN // 여행 전체 기준 — 슬롯마다 다시 재면 안 된다
+            : request.departAtMin + t.totalMin <= request.arriveByMin); // 절대 도착시각이라 이미 누적이다
 
-        const top = ranked[0];
-        if (!top || top.id === current) continue;
-        const cand = slot.candidates.find(c => c.id === top.id);
-        if (!cand) continue;
-        const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
-        const t = result.rescore(swapped);
-        const arriveOk = request.arriveByMin == null
-          ? t.totalMin - originTotalMin <= TREND_SWAP_SLACK_MIN // 여행 전체 기준 — 슬롯마다 다시 재면 안 된다
-          : request.departAtMin + t.totalMin <= request.arriveByMin; // 절대 도착시각이라 이미 누적이다
-
-        if (arriveOk) {
-          dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
-          runningVisits = swapped; // 다음 슬롯은 이 스왑이 반영된 상태를 기준으로 잰다
+          if (arriveOk) {
+            dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
+            runningVisits = swapped; // 다음 슬롯은 이 스왑이 반영된 상태를 기준으로 잰다
+          }
         }
       }
+    } catch {
+      // 신호 모양이 이상해 스코어링이 죽어도 계획 자체는 이미 RESULT로 나갔다 —
+      // 남은 슬롯의 트렌드 스왑만 포기하고 시간 최적 경로를 그대로 둔다.
     }
   } catch (e) {
     if (e instanceof Timeout) dispatch({ type: 'FAIL', error: { kind: 'timeout', message: '12초 안에 끝나지 않았어요' } });

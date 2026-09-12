@@ -36,6 +36,13 @@ export function serverEnrichFn(opts: {
       });
       if (!res.ok) return {};
       const body = (await res.json()) as Partial<EnrichResponse>;
+      // 콘솔 일일 할당량을 아직 못 걸어서(설계 §9) /enrich의 월 900회 카운터가 유일한
+      // 방어선인데, budget을 화면 어디에도 보여주지 않으면 소진 여부를 관찰할 방법이
+      // 없다. 개발 메뉴 화면은 없으니 __DEV__ 콘솔 로그 한 줄로 대신한다.
+      // typeof 가드는 이 파일을 순수하게 유지한다(Node 테스트 환경엔 __DEV__가 없다).
+      if (typeof __DEV__ !== 'undefined' && __DEV__ && body.budget) {
+        console.log(`[enrich] googleUsed=${body.budget.googleUsed} googleLeft=${body.budget.googleLeft}`);
+      }
       return body.results && typeof body.results === 'object' ? body.results : {};
     } catch {
       return {};

@@ -3,8 +3,10 @@
  *
  * 여기가 구글 과금을 막는 자리다. 세 겹으로 막는다:
  *   1) 캐시(블로그 24시간, 구글 14일)
- *   2) 슬롯당 상위 10곳만 구글에 묻는다(prescore)
- *   3) 월 900회 카운터 — 무료분 1,000회 안에서 멈춘다
+ *   2) 슬롯당 상위 10곳만 구글에 묻는다(prescore) — room이 부족하면 순위 그대로 자른다
+ *   3) 월 900회 카운터 — 무료분 1,000회 안에서 멈춘다. KV엔 compare-and-swap이 없어
+ *      완전한 원자성은 못 얻지만, 쓰기 전에 먼저 예약해서 실패 방향을 "겹쳐서 새는 것"에서
+ *      "겹쳐서 스로틀되는 것"으로 바꾼다 — 자세한 이유는 아래 카운터 코드 주석 참고.
  * 콘솔 일일 할당량은 무료 체험판이라 아직 못 걸었다(설계 §9). 그래서 3)이 유일한 코드 방어선이다.
  *
  * 부분 실패는 실패가 아니다. 블로그만 와도 200 이다.
@@ -89,29 +91,66 @@ export async function handleEnrich(
   // 2) 구글 — 예산 안에서 상위 10곳만.
   //    addedMin 은 서버가 모른다(플래너가 아직 안 돌았다). 회랑 검색이 이미 회랑
   //    거리순으로 주므로 그 순서를 addedMin 대용으로 쓴다 — prescore 는 순서만 본다.
-  const used = Number((await env.CACHE.get(`google:budget:${monthOf(deps.now)}`)) ?? 0);
+  //
+  //    캐시 키(gplace:)와 예산 키(gbudget:)는 접두사를 분리한다. place.id 는 클라이언트가
+  //    고르는 값이라 "budget:2026-09" 같은 걸 넣으면, 접두사가 같았던 옛 스킴
+  //    (google:${id} vs google:budget:${month})에서는 캐시 JSON 쓰기가 과금 카운터
+  //    키와 정확히 겹칠 수 있었다. 서로 다른 접두사를 쓰면 어떤 id가 와도 구조적으로
+  //    겹칠 수 없다.
+  const budgetKey = `gbudget:${monthOf(deps.now)}`;
+  const usedRaw = await env.CACHE.get(budgetKey);
+  let used: number;
+  if (usedRaw === null) {
+    used = 0;
+  } else {
+    const n = Number(usedRaw);
+    // 카운터 값이 깨져서(파싱 불가·NaN·Infinity) 숫자가 아니면 0이 아니라 캡으로 본다.
+    // 모르는 값을 0으로 읽으면 이미 다 쓴 예산 위에 또 쓸 수 있다 — 모르면 이번 달은
+    // 구글을 건너뛰는 쪽으로 fail-safe 한다. 키는 달마다 새로 시작하므로 최악의 경우도
+    // 그 한 달만 구글 신호가 빠지는 것으로 끝나고 과금 위험은 없다.
+    used = Number.isFinite(n) ? n : GOOGLE_MONTHLY_CAP;
+  }
   let spent = 0;
   const googles = new Map<string, GoogleSignal | null>();
 
   if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP) {
     const apiKey = env.GOOGLE_PLACES_KEY;
-    const wanted = new Set(prescore(places.map((p, i) => ({
+    const wantedIds = prescore(places.map((p, i) => ({
       id: p.id,
       addedMin: i,
       blog: blogs.get(p.id) ? { weighted: blogs.get(p.id)!.weighted } : undefined,
-    }))));
-    const targets = places.filter(p => wanted.has(p.id));
+    })));
+    const wanted = new Set(wantedIds);
+    // prescore가 매긴 순위를 유지한 채로 room만큼 자른다. places 원래(입력) 순서로
+    // 되돌린 뒤 자르면, 예산이 부족한 달 말(예산이 존재하는 이유 그 자체인 상황)에
+    // 순위가 아니라 배열 위치로 상위 N곳이 뽑히게 된다.
+    const rankOf = new Map(wantedIds.map((id, i) => [id, i]));
+    const targets = places
+      .filter(p => wanted.has(p.id))
+      .sort((a, b) => rankOf.get(a.id)! - rankOf.get(b.id)!);
     const room = Math.max(0, GOOGLE_MONTHLY_CAP - used);
+    const attempting = targets.slice(0, room);
 
-    for (const p of targets.slice(0, room)) {
-      const sig = await cached(env.CACHE, `google:${p.id}`, GOOGLE_TTL_S, async () => {
+    // 쓰기 전에 먼저 예약한다: 이번 배치가 최대 attempting.length 만큼 쓸 수 있다고
+    // 루프 시작 전에 적어 둔다. KV엔 compare-and-swap이 없어 완전한 원자성은 못 얻지만
+    // 실패 방향을 바꾼다 — 겹치는 요청은 서로 상대의 지출을 못 본 채 함께 새는(캡을
+    // 넘기는) 대신, 이미 예약된 걸 보고 스로틀되는 쪽으로 실패한다. 루프 중간에
+    // 요청이 죽어도 이미 만든 호출 수만큼은 예약이 남아 있어 지출을 잊어버리지 않는다.
+    if (attempting.length > 0) {
+      await env.CACHE.put(budgetKey, String(used + attempting.length));
+    }
+
+    for (const p of attempting) {
+      const sig = await cached(env.CACHE, `gplace:${p.id}`, GOOGLE_TTL_S, async () => {
         spent++; // 캐시 미스일 때만 실제 호출이 나간다
         return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
       });
       googles.set(p.id, sig);
     }
-    if (spent > 0) {
-      await env.CACHE.put(`google:budget:${monthOf(deps.now)}`, String(used + spent));
+
+    // 캐시 히트가 섞여 실제 호출이 예약보다 적었다면 내려서 정정한다
+    if (attempting.length > 0 && spent !== attempting.length) {
+      await env.CACHE.put(budgetKey, String(used + spent));
     }
   }
 

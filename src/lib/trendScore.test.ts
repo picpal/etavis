@@ -128,3 +128,31 @@ test('prescore 에서 fit 이 바닥인 후보는 buzz 만점이어도 밀린다
 test('prescore 는 후보가 10개 미만이면 전부 준다', () => {
   assert.equal(prescore([inp('a', 1), inp('b', 2)]).length, 2);
 });
+
+test('평점 축(0.35)이 버즈 축(0.25)보다 우선한다 — 가중치를 바꿔치기하면 이 테스트가 깨진다', () => {
+  // addedMin 이 같아 fit 은 두 후보에 동일하게 기여 — 순위는 quality·buzz 가중치 차이로만 갈린다.
+  // q: 평점은 만점, 언급은 0 / z: 평점은 바닥(리뷰도 1개뿐), 언급은 만점 — 서로 거울상.
+  // 0.35 > 0.25 이면 q 가 이기고, 둘을 바꾸면 z 가 이긴다(손계산: 0.63 vs 0.539 → 0.53 vs 0.637).
+  const r = scoreTrend([
+    inp('q', 3, { google: { rating: 5, ratingCount: 200 }, blog: { weighted: 0 } }),
+    inp('z', 3, { google: { rating: 1, ratingCount: 1 }, blog: { weighted: 10 } }),
+  ]);
+  assert.deepEqual(ids(r), ['q', 'z']);
+});
+
+test('요즘 인기 배지는 buzz 가 높아도 4위부터는 붙지 않는다 (HOT_RANK)', () => {
+  // buzz 를 전부 동일하게 만점으로 맞춰서 순위를 fit(addedMin) 만으로 결정한다.
+  // 그래서 buzz 조건은 5개 전부 통과하는데도 4·5위는 배지가 붙으면 안 된다 —
+  // HOT_RANK 가 3이 아니라 4·5로 느슨해지면 이 테스트가 깨진다.
+  const many = [
+    inp('r0', 0, { blog: { weighted: 10 } }),
+    inp('r1', 1, { blog: { weighted: 10 } }),
+    inp('r2', 2, { blog: { weighted: 10 } }),
+    inp('r3', 3, { blog: { weighted: 10 } }),
+    inp('r4', 4, { blog: { weighted: 10 } }),
+  ];
+  const r = scoreTrend(many);
+  assert.deepEqual(ids(r), ['r0', 'r1', 'r2', 'r3', 'r4']);
+  assert.ok(r.every(x => x.buzz! >= 0.6), '5개 전부 buzz 조건은 만족해야 이 테스트가 HOT_RANK 만 검증한다');
+  assert.deepEqual(r.map(x => x.hot), [true, true, true, false, false]);
+});

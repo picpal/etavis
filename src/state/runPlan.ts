@@ -138,9 +138,14 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     // 업종 슬롯에서 트렌드 1위가 시간 1위와 다르면 바꾼다.
     // 단 마감을 넘기면 안 바꾼다 — 추천은 제시간 도착보다 앞설 수 없다.
     // 슬롯이 여럿이면 스왑을 누적한다 — 각자 따로는 마감을 지켜도 합치면 넘길 수 있다.
-    // runningVisits가 그 누적 상태고, 다음 슬롯의 기준선(baseTiming)도 여기서 다시 잰다.
+    // runningVisits가 그 누적 상태고, 다음 슬롯의 기준선(baseTiming)도 여기서 다시 잰다 —
+    // addedMin(scoreTrend용)과 마감 판정(도착 절대시각은 이미 누적이라 그대로 둔다)엔 이게 맞다.
+    // 단 "마감 없을 때 총 +10분 이내"는 원래 여행 전체 기준 딱 한 번이어야 한다 — 슬롯마다
+    // 직전 슬롯이 이미 늘려놓은 시간을 기준으로 다시 재면 슬롯 N개면 최대 N×10분까지 새는
+    // 사고가 난다. 그래서 이 비교만 원본 total(originTotalMin)로 고정해 둔다.
     const base = result.options[0];
     if (base) {
+      const originTotalMin = result.rescore(base.visits).totalMin;
       let runningVisits = base.visits;
       for (const slot of slots) {
         if (slot.stopKind !== 'category') continue;
@@ -169,8 +174,9 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
         const t = result.rescore(swapped);
         const arriveOk = request.arriveByMin == null
-          ? t.totalMin - baseTiming.totalMin <= TREND_SWAP_SLACK_MIN
-          : request.departAtMin + t.totalMin <= request.arriveByMin;
+          ? t.totalMin - originTotalMin <= TREND_SWAP_SLACK_MIN // 여행 전체 기준 — 슬롯마다 다시 재면 안 된다
+          : request.departAtMin + t.totalMin <= request.arriveByMin; // 절대 도착시각이라 이미 누적이다
+
         if (arriveOk) {
           dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
           runningVisits = swapped; // 다음 슬롯은 이 스왑이 반영된 상태를 기준으로 잰다

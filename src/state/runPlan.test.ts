@@ -333,6 +333,52 @@ test('업종 슬롯 두 곳 — 각자는 마감을 지켜도 합치면 넘기�
   assert.deepEqual(overrides.map(o => o.slotId), ['s1'], `첫 슬롯만 바뀌어야 하는데: ${JSON.stringify(overrides)}`);
 });
 
+test('마감이 없는 업종 슬롯 두 곳 — 각자는 총 +10분 이내여도 합치면 넘기면 첫 번째만 바꾼다', async () => {
+  // "마감 없으면 총 +10분 이내"는 여행 전체 기준 딱 한 번이어야 한다. 슬롯마다 직전 스왑이
+  // 이미 늘려놓은 시간을 기준으로 다시 재면(버그) 슬롯 2개로 최대 20분까지 샐 수 있다.
+  // 실측(mockRouteProvider, order:'locked')으로 확인한 값:
+  //   base(양쪽 near) 대비 한쪽만 far로 바꾸면 +9.31분(≤10, 개별 통과)
+  //   둘 다 바꾸면 +10.33분(원본 대비, >10 — 마감이 없어도 이건 넘기면 안 된다)
+  // 직전 슬롯 기준으로 다시 재면(버그) 두 번째 슬롯은 "+10.33-9.31=+1.02분"으로 보여 통과해
+  // 버린다 — 이 시험은 원본(origin) 기준으로 고정했는지를 가른다.
+  const mk = (query: string, lon: number): PlaceCandidate[] => [
+    { id: `${query}-near`, name: `${query} 근처`, coord: { latitude: 37.5, longitude: lon } },
+    { id: `${query}-far`, name: `${query} 트렌드`, coord: { latitude: 37.545, longitude: lon } },
+    { id: `${query}-f1`, name: `${query} 필러1`, coord: { latitude: 37.6, longitude: lon } },
+    { id: `${query}-f2`, name: `${query} 필러2`, coord: { latitude: 37.7, longitude: lon } },
+  ];
+  const cafeCands = mk('카페', 127.06);
+  const bakeryCands = mk('베이커리', 127.14);
+  const twoSlotSearch: SearchFn = async q => (q === '카페' ? cafeCands : bakeryCands);
+  const enrich = async (places: { id: string; name: string }[]) => {
+    const out: Record<string, { fetchedAt: string; blog?: unknown; google?: unknown }> = {};
+    for (const p of places) {
+      if (p.id.endsWith('-near')) out[p.id] = { fetchedAt: 't', google: { rating: 3.8, ratingCount: 20, hours: null, matchedName: p.name } };
+      if (p.id.endsWith('-far')) {
+        out[p.id] = {
+          fetchedAt: 't',
+          blog: { weighted: 20, count90d: 32, latestDaysAgo: 1, source: 'kakao' },
+          google: { rating: 5.0, ratingCount: 250, hours: null, matchedName: p.name },
+        };
+      }
+    }
+    return out;
+  };
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req(
+      [
+        { id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's2', query: '베이커리', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      ],
+      { origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.2 }, departAtMin: 540, arriveByMin: null, order: 'locked' },
+    ),
+    { provider: mockRouteProvider(), search: twoSlotSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
+  );
+  const overrides = actions.filter(a => a.type === 'SET_OVERRIDE') as { slotId: string; candidateId: string }[];
+  assert.deepEqual(overrides.map(o => o.slotId), ['s1'], `첫 슬롯만 바뀌어야 하는데: ${JSON.stringify(overrides)}`);
+});
+
 test('보강이 응답 없이 걸려도(hang) 파이프라인은 12초 예산 안에서 끝난다', async () => {
   const actions: PlanFlowAction[] = [];
   await runPlan(

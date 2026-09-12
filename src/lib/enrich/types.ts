@@ -3,7 +3,7 @@
  * 설계: docs/superpowers/specs/2026-09-11-trend-candidates-design.md §2
  */
 
-/** 블로그 최근 언급. weighted = 90일 안 글의 Σ exp(-age/45) */
+/** 블로그 최근 언급. 0~90일(91일 폭). weighted = 이 창 안 글의 Σ exp(-age/45) */
 export type BlogSignal = {
   count90d: number;
   latestDaysAgo: number | null;

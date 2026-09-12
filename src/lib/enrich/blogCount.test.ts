@@ -30,6 +30,23 @@ test('망가진 날짜는 무시하고 나머지를 센다', () => {
   assert.equal(r.count90d, 1);
 });
 
+test('90일 경계 — 정확히 90일 전은 포함된다', () => {
+  const r = countBlog(['20260614'], '20260912', 'naver');
+  assert.equal(r.count90d, 1);
+  assert.equal(r.latestDaysAgo, 90);
+});
+
+test('90일 경계 — 정확히 91일 전은 제외된다', () => {
+  const r = countBlog(['20260613'], '20260912', 'naver');
+  assert.equal(r.count90d, 0);
+});
+
+test('불가능한 날짜는 무시한다 — 2월 30일', () => {
+  const r = countBlog(['20260230', '20260912'], '20260912', 'naver');
+  assert.equal(r.count90d, 1);
+  assert.equal(r.latestDaysAgo, 0);
+});
+
 test('미래 날짜는 세지 않는다 — 서버 시계가 어긋나도 가중치가 1을 넘지 않게', () => {
   const r = countBlog(['20261231'], '20260912', 'naver');
   assert.equal(r.count90d, 0);

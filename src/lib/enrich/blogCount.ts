@@ -6,6 +6,7 @@
  */
 import type { BlogSignal } from './types';
 
+/** age 0~90 포함 (91일 폭). age > 90 은 버린다 */
 const WINDOW_DAYS = 90;
 const HALF_LIFE_DAYS = 45;
 /** 네이버는 display=100, 카카오는 size=50. 어느 쪽이든 이 이상은 안 들어온다 */

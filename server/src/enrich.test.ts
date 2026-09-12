@@ -112,3 +112,27 @@ test('예산 카운터는 실제 호출 수만큼 오른다', async () => {
   await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
   assert.equal(kv.store.get('google:budget:2026-09'), '2');
 });
+
+test('두 번째 호출은 캐시에서 — 구글을 다시 부르지 않는다', async () => {
+  const kv = memKV();
+  const { f, calls } = mockFetch({ google: true });
+  await handleEnrich({ places: [place('k0')] }, env(kv), { fetch: f, now: NOW });
+  const before = calls.google;
+  await handleEnrich({ places: [place('k0')] }, env(kv), { fetch: f, now: NOW });
+  assert.equal(calls.google, before);
+});
+
+test('예산 카운터는 캐시 히트를 세지 않는다 — 신규 호출 수만큼만 오른다', async () => {
+  const kv = memKV();
+  // k0는 이미 캐시된 것으로 미리 채워둔다 — 이번 요청에서는 캐시 히트라 업스트림을 부르지 않아야 한다
+  kv.store.set('google:k0', JSON.stringify({
+    v: { rating: 4.0, ratingCount: 10, hours: null, matchedName: '가게k0' },
+  }));
+  const { f, calls } = mockFetch({ google: true });
+  const res = await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
+  // k0는 캐시 히트, k1만 신규 호출 — 후보는 2곳이지만 실제 업스트림 호출은 1회뿐이다
+  assert.equal(calls.google, 1);
+  assert.equal(kv.store.get('google:budget:2026-09'), '1');
+  const body = await res.json() as { budget: { googleUsed: number } };
+  assert.equal(body.budget.googleUsed, 1);
+});

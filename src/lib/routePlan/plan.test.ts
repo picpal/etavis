@@ -10,7 +10,7 @@ const at = (lat: number, lng: number) => ({ latitude: lat, longitude: lng });
 const c = (id: string, coord: { latitude: number; longitude: number }, extra: Partial<PlaceCandidate> = {}): PlaceCandidate =>
   ({ id, name: id, coord, ...extra });
 const slot = (id: string, candidates: PlaceCandidate[], extra: Partial<Slot> = {}): Slot =>
-  ({ id, query: id, candidates, dwellMin: 10, count: 1, flexible: true, openNow: false, ...extra });
+  ({ id, query: id, candidates, dwellMin: 10, count: 1, flexible: true, openNow: false, stopKind: 'category', ...extra });
 const base = (slots: Slot[], extra: Partial<PlanInput> = {}): PlanInput =>
   ({ origin: O, destination: D, departAtMin: 480, mode: 'car', slots, order: 'auto', ...extra });
 

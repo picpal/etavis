@@ -5,7 +5,7 @@ import type { PlaceCandidate, Slot, Visit } from './types';
 
 const c = (id: string): PlaceCandidate => ({ id, name: id, coord: { latitude: 0, longitude: 0 } });
 const slot = (id: string, ids: string[], extra: Partial<Slot> = {}): Slot => ({
-  id, query: id, candidates: ids.map(c), dwellMin: 5, count: 1, flexible: true, openNow: false, ...extra,
+  id, query: id, candidates: ids.map(c), dwellMin: 5, count: 1, flexible: true, openNow: false, stopKind: 'category', ...extra,
 });
 const key = (p: Visit[]) => p.map(v => v.candidate.id).join('>');
 const noScore = () => 0;

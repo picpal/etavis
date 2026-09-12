@@ -260,6 +260,6 @@ export function getProvider(near: LatLng | null): PlaceSearchProvider {
 export function planSearchFn(): (query: string, near: LatLng, radiusM: number) => Promise<PlaceCandidate[]> {
   return async (query, near, radiusM) => {
     const places = await getProvider(near).search(query, near, radiusM);
-    return places.map(p => ({ id: p.id, name: p.name, coord: p.coord }));
+    return places.map(p => ({ id: p.id, name: p.name, coord: p.coord, address: p.address }));
   };
 }

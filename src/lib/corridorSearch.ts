@@ -15,6 +15,8 @@ export type CorridorSearchOptions = {
   samples?: number;
   /** far 단계에서 한 번 더 찾을 반지름. 카카오 로컬 상한 20km */
   farRadiusM?: number;
+  /** 최대 몇 개까지 돌려줄지. 추천 점수는 후보가 많아야 의미가 있다 */
+  max?: number;
 };
 
 const INITIAL: Record<Mode, number> = { car: 2000, walk: 500, transit: 800 };
@@ -41,8 +43,11 @@ export async function searchAlong(
   const points: LatLng[] = [];
   for (let i = 0; i < samples; i++) points.push(pointAtProgress(poly, (L * i) / (samples - 1)).point);
 
+  const max = opts.max ?? 30;
   const byCorridor = (list: PlaceCandidate[]) =>
-    [...list].sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM);
+    [...list]
+      .sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM)
+      .slice(0, max);
 
   const merge = (lists: PlaceCandidate[][]) => {
     const seen = new Map<string, PlaceCandidate>();

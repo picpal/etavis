@@ -24,7 +24,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 /** 채팅 추출 결과를 화면에 드러내는 단위. 조용한 실패를 보이는 실패로 바꾼다 */
 export type IntentChip =
-  | { id: string; kind: 'stop'; label: string; queries: string[] }
+  | { id: string; kind: 'stop'; label: string; queries: string[]; stopKind: 'brand' | 'category' | 'specific' }
   | { id: string; kind: 'arriveBy'; label: string; value: number }
   | { id: string; kind: 'mode'; label: string; value: 'car' | 'walk' | 'transit' };
 
@@ -178,6 +178,7 @@ function initState(ds: Dataset): PlanState {
     kind: 'stop' as const,
     label: st.queries[0],
     queries: st.queries,
+    stopKind: st.kind,
   }));
   seedChips.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[ds.mode], value: ds.mode });
   return {
@@ -543,7 +544,7 @@ function reducer(state: PlanState, action: Action): PlanState {
           continue;
         }
         for (let k = 0; k < Math.max(1, st.count); k++) {
-          chips.push({ id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries });
+          chips.push({ id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries, stopKind: st.kind });
         }
       }
       const keep: IntentChip[] = chips.filter(c => c.kind === 'stop');

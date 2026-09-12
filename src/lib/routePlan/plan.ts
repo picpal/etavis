@@ -1,7 +1,7 @@
 /**
  * 오케스트레이터. 설계 0~7단계 중 API가 필요한 부분을 provider로 돌린다.
  *
- *   직행 1회 → 회랑 투영 → 열거·추정 → 시드 R회(V=1은 전부) 병렬 실측
+ *   직행 1회 → 회랑 투영 → 열거·추정 → 시드 R회(V=1은 SINGLE_R회) 병렬 실측
  *   → section에서 leg 학습 → 전체 재채점 → 조건부 2라운드 → Q=3 → 슬롯 status
  */
 import { polylineLengthM } from '../geo';
@@ -15,6 +15,9 @@ import type { Alternative, LatLng, PlanInput, PlanOption, PlanResult, Rescored, 
 const DEFAULT_R = 4;
 const BEAM_FULL_UPTO = 3;
 const BEAM_WIDTH = 64;
+/** 경유지가 1곳이면 후보 하나하나가 곧 계획이라 전부 실측할 수 있었다.
+    후보 상한이 30으로 오르면서 그 전제가 깨졌다 — 실측 예산만 묶는다 */
+const SINGLE_R = 8;
 
 export async function plan(
   input: PlanInput,
@@ -66,7 +69,7 @@ export async function plan(
   });
 
   // 3. 1라운드 실측
-  const seeds = V === 0 ? [] : V === 1 ? ranked.map(r => r.visits) : pickSeeds(ranked, R);
+  const seeds = V === 0 ? [] : pickSeeds(ranked, V === 1 ? SINGLE_R : R);
   const measured: Scored[] = [];
   if (V === 0) measured.push(scorePlan([], ctx)); // 직행이 곧 계획. 이미 실측됐다
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];

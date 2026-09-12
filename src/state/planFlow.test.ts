@@ -6,7 +6,7 @@ import type { PlanResult } from '../lib/routePlan/types';
 const req: PlanRequest = {
   origin: { latitude: 37.5, longitude: 127 }, destination: { latitude: 37.6, longitude: 127.1 },
   originName: '집', destinationName: '회사', mode: 'car', arriveByMin: 540, departAtMin: 480,
-  stops: [{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false }], order: 'auto',
+  stops: [{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'category' }], order: 'auto',
 };
 const result = { options: [], alternatives: [], slotStatus: {}, apiCalls: 1, directMin: 20, directKm: 10, measuredCount: 1, legTable: {}, rescore: () => ({ totalMin: 0, arrivals: [], distanceKm: 0, estimated: true }) } as unknown as PlanResult;
 

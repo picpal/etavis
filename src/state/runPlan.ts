@@ -17,6 +17,8 @@ export type RunPlanDeps = {
 };
 
 const DEFAULT_TIMEOUT_MS = 12_000;
+/** 슬롯당 후보 상한. 플래너는 추정만 하므로 늘려도 /route 호출은 안 는다 */
+const MAX_CANDIDATES = 30;
 
 /** 체류시간 기본값 — 할 일이 생기면 A9에서 바뀐다. 목 데이터와 같은 수준 */
 const DWELL: [RegExp, number][] = [
@@ -70,7 +72,8 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         );
         return {
           // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
-          id: st.id, query: st.query, candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, 8), dwellMin: dwellFor(st.query),
+          id: st.id, query: st.query, stopKind: st.stopKind,
+          candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, MAX_CANDIDATES), dwellMin: dwellFor(st.query),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: found.status,
         } satisfies Slot;
       })));

@@ -21,7 +21,15 @@ export function usePlanRequest(): PlanRequest | null {
     if (!origin || !destination) return null;
     const stops = state.chips
       .filter(c => c.kind === 'stop')
-      .map(c => ({ id: c.id, query: c.kind === 'stop' ? c.queries[0] : '', count: 1, flexible: true, openNow: false }));
+      .map(c => ({
+        id: c.id,
+        query: c.kind === 'stop' ? c.queries[0] : '',
+        count: 1,
+        flexible: true,
+        openNow: false,
+        // 옛 상태에 stopKind 가 없을 수 있다 — 업종으로 본다(보강이 도는 쪽이 기본)
+        stopKind: (c.kind === 'stop' ? c.stopKind : undefined) ?? 'category',
+      }));
     return {
       origin, destination, originName: originDisplay, destinationName: destinationDisplay,
       mode: state.mode, arriveByMin: state.arriveByMin, departAtMin: nowMin(), stops, order: 'auto',

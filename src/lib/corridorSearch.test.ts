@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPolyline, haversineM } from './geo';
-import { initialRadiusM, maxRadiusM, searchAlong, type SearchFn } from './corridorSearch';
-import type { PlaceCandidate } from './routePlan/types';
+import { buildPolyline, haversineM } from './geo.ts';
+import { initialRadiusM, maxRadiusM, searchAlong, type SearchFn } from './corridorSearch.ts';
+import type { PlaceCandidate } from './routePlan/types.ts';
 
 const O = { latitude: 37.5, longitude: 127.0 };
 const D = { latitude: 37.5, longitude: 127.1136 }; // ≈10km
@@ -78,4 +78,39 @@ test('결과는 회랑에서 가까운 순', async () => {
   const { fn } = catalogSearch(cat);
   const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 2000, maxRadiusM: 4000 }, fn);
   assert.deepEqual(r.candidates.map(c => c.id), ['on', 'off']);
+});
+
+test('need 를 채운 뒤에도 max 까지 준다 — 추천은 후보가 많아야 의미가 있다', async () => {
+  const poly = [{ latitude: 37.5, longitude: 127.0 }, { latitude: 37.6, longitude: 127.0 }];
+  // 샘플 점마다 12곳씩, 전부 다른 id
+  let n = 0;
+  const search: SearchFn = async () =>
+    Array.from({ length: 12 }, () => {
+      n++;
+      return { id: `p${n}`, name: `가게${n}`, coord: { latitude: 37.5 + n * 0.0001, longitude: 127.0 } };
+    });
+  const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 1000, maxRadiusM: 4000, max: 30 }, search);
+  assert.equal(r.status, 'ok');
+  assert.equal(r.candidates.length, 30);
+});
+
+test('max 가 없으면 30 이 기본', async () => {
+  const poly = [{ latitude: 37.5, longitude: 127.0 }, { latitude: 37.6, longitude: 127.0 }];
+  let n = 0;
+  const search: SearchFn = async () =>
+    Array.from({ length: 12 }, () => {
+      n++;
+      return { id: `q${n}`, name: `가게${n}`, coord: { latitude: 37.5 + n * 0.0001, longitude: 127.0 } };
+    });
+  const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 1000, maxRadiusM: 4000 }, search);
+  assert.equal(r.candidates.length, 30);
+});
+
+test('중복 id 는 한 번만 — 샘플 점이 겹쳐도 같은 가게가 두 번 오지 않는다', async () => {
+  const poly = [{ latitude: 37.5, longitude: 127.0 }, { latitude: 37.6, longitude: 127.0 }];
+  const search: SearchFn = async () => [
+    { id: 'same', name: '한곳', coord: { latitude: 37.55, longitude: 127.0 } },
+  ];
+  const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 1000, maxRadiusM: 4000 }, search);
+  assert.equal(r.candidates.length, 1);
 });

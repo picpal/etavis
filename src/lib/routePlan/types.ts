@@ -15,6 +15,10 @@ export type PlaceCandidate = {
   /** 분 단위 하루 시각. 없으면 항상 열려 있다고 본다 */
   hours?: { openMin: number; closeMin: number };
   parking?: '가능' | '어려움' | '없음';
+  /** 카카오 address_name. /enrich 요청에 싣는다 */
+  address?: string;
+  /** /enrich 가 붙인 바깥 신호. 없으면 보강을 안 했거나 실패한 것 */
+  signals?: import('../enrich/types').PlaceSignals;
 };
 
 /** 검색 단계가 붙이는 상태. 플래너는 이걸 슬롯 status로 승격한다 */
@@ -30,6 +34,8 @@ export type Slot = {
   /** false면 candidates[0] 한 곳으로 고정 */
   flexible: boolean;
   openNow: boolean;
+  /** 추출이 정한 경유지 종류. 'category' 일 때만 보강·추천이 돈다 */
+  stopKind: 'brand' | 'category' | 'specific';
   searchStatus?: SearchStatus;
 };
 

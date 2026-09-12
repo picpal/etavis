@@ -84,6 +84,19 @@ const CATALOG: Place[] = [
   { id: 'p-tokyo-st', name: '도쿄역', address: '일본 도쿄도 지요다구', coord: { latitude: 35.6812, longitude: 139.7671 } },
   { id: 'p-kix', name: '간사이 국제공항', address: '일본 오사카부 이즈미사노시', coord: { latitude: 34.4342, longitude: 135.2328 } },
   { id: 'p-sin', name: '싱가포르 창이공항', address: '싱가포르 창이', coord: { latitude: 1.3644, longitude: 103.9915 } },
+  // 시뮬레이터에서 '후보 30개' 화면을 만들기 위한 목. 좌표는 서교동·동교동 일대
+  { id: 'p-hd-01', name: '목베이커리 서교점', address: '서울 마포구 서교동', coord: { latitude: 37.5533, longitude: 126.9220 } },
+  { id: 'p-hd-02', name: '목카페 동교', address: '서울 마포구 동교동', coord: { latitude: 37.5561, longitude: 126.9236 } },
+  { id: 'p-hd-03', name: '목빵집 홍대입구역점', address: '서울 마포구 동교동', coord: { latitude: 37.5572, longitude: 126.9250 } },
+  { id: 'p-hd-04', name: '목디저트 합정', address: '서울 마포구 서교동', coord: { latitude: 37.5497, longitude: 126.9139 } },
+  { id: 'p-hd-05', name: '목커피 상수', address: '서울 마포구 상수동', coord: { latitude: 37.5478, longitude: 126.9224 } },
+  { id: 'p-hd-06', name: '목브런치 연남', address: '서울 마포구 연남동', coord: { latitude: 37.5601, longitude: 126.9256 } },
+  { id: 'p-hd-07', name: '목베이커리 망원', address: '서울 마포구 망원동', coord: { latitude: 37.5561, longitude: 126.9100 } },
+  { id: 'p-hd-08', name: '목카페 홍대정문앞아주긴이름점', address: '서울 마포구 서교동', coord: { latitude: 37.5518, longitude: 126.9253 } },
+  { id: 'p-hd-09', name: '목빵 서교', address: '서울 마포구 서교동', coord: { latitude: 37.5540, longitude: 126.9201 } },
+  { id: 'p-hd-10', name: '목케이크 동교', address: '서울 마포구 동교동', coord: { latitude: 37.5585, longitude: 126.9270 } },
+  { id: 'p-hd-11', name: '목커피 서교2', address: '서울 마포구 서교동', coord: { latitude: 37.5525, longitude: 126.9188 } },
+  { id: 'p-hd-12', name: '목디저트 상수2', address: '서울 마포구 상수동', coord: { latitude: 37.5489, longitude: 126.9240 } },
 ];
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');

@@ -354,6 +354,7 @@ export function TimelineScreen({ navigation, route }: Props) {
         title={`${candidateStop?.name ?? ''} 교체`}
         candidates={candidateSheetCands}
         currentId={candidateCurrentId}
+        mode={state.dataset.mode}
         onPick={candId => candidateStop && replaceStop(candidateStop.id, candId)}
         onClose={() => setCandidateStopId(null)}
       />

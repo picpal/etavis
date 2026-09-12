@@ -212,6 +212,7 @@ export function OptionsScreen({ navigation }: Props) {
         title={`${pickVisit?.candidate.name ?? ''} 교체`}
         candidates={sheetCands}
         currentId={pickVisit?.candidate.id}
+        mode={req.mode}
         onPick={candId => pickSlot && flow.setOverride(state.selectedOptionIdx, pickSlot, candId)}
         onClose={() => setPickSlot(null)}
       />

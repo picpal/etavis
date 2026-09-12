@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { Candidate } from '../data/mockData';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SegmentControl } from '../components/common';
-import { CANDIDATE_SORTS, CandidateSort, rankCandidates } from '../lib/candidateRank';
+import { CandidateSort, rankCandidates, sortsFor } from '../lib/candidateRank';
 import { StripePhoto } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
 
@@ -34,6 +34,17 @@ function Tag({ label, tint, bg }: { label: string; tint: string; bg: string }) {
 const CurrentBadge = () => <Tag label="현재 경로" tint={color.primary} bg={color.primaryTint} />;
 const RecommendBadge = () => <Tag label="추천" tint="#fff" bg={color.primary} />;
 
+/** 최근 블로그 언급이 많고 상위 3위 안인 후보. 도착 배지와 같은 모양 */
+function HotBadge() {
+  return (
+    <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: color.greenBg }}>
+      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.green }}>
+        요즘 인기
+      </Text>
+    </View>
+  );
+}
+
 /** 부호는 하나만 — 빼는 후보(음수)는 '+-1분'이 아니라 '−1분' */
 const signedMin = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(Math.round(n))}분`;
 /** 후보 note에 '추정'이 섞여 있으면 추가시간이 실측이 아니라는 뜻 — 앞에 '약 '을 붙인다 */
@@ -46,6 +57,7 @@ export function CandidateSheet({
   currentId,
   onPick,
   onClose,
+  mode,
 }: {
   visible: boolean;
   title: string;
@@ -54,9 +66,10 @@ export function CandidateSheet({
   currentId?: string;
   onPick: (candidateId: string) => void;
   onClose: () => void;
+  mode: 'car' | 'walk' | 'transit';
 }) {
   const insets = useSafeAreaInsets();
-  const [sortIdx, setSortIdx] = useState<CandidateSort>(0);
+  const [tabIdxRaw, setTabIdx] = useState(0);
 
   // 닫힘 애니메이션 동안 내용을 유지 — visible이 꺼지면 호출부의 candidates가 []로 무너져도
   // Sheet는 CLOSE_MS(220ms) 동안 마운트를 유지하므로, 마지막으로 보여준 내용을 그대로 붙잡아 둔다
@@ -64,8 +77,19 @@ export function CandidateSheet({
   if (visible) lastRef.current = { title, candidates, currentId };
   const shown = visible ? { title, candidates, currentId } : lastRef.current;
 
+  // 이 목록에서 고를 수 있는 탭만 만든다
+  const hasTrend = shown.candidates.some(c => c.trend);
+  const tabs = useMemo(() => sortsFor(mode, hasTrend), [mode, hasTrend]);
+  // 탭 구성이 바뀌면 고른 인덱스가 범위를 벗어날 수 있다
+  const tabIdx = Math.min(tabIdxRaw, tabs.length - 1);
+  const sortIdx = tabs[tabIdx]?.sort ?? 1;
+
   // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다. 마감·선택불가는 여기서 걸러진다
   const sorted = useMemo(() => rankCandidates(shown.candidates, sortIdx), [shown.candidates, sortIdx]);
+  const [showAll, setShowAll] = useState(false);
+  const VISIBLE = 5;
+  const visibleCands = showAll ? sorted : sorted.slice(0, VISIBLE);
+  const hidden = sorted.length - visibleCands.length;
   const recommended = sorted.find(c => c.recommended) ?? sorted[0];
 
   /**
@@ -74,7 +98,11 @@ export function CandidateSheet({
    */
   const [expandedId, setExpandedId] = useState<string | null>(null);
   React.useEffect(() => {
-    if (visible) setExpandedId(null); // 시트가 새로 열리면 추천으로 되돌림
+    if (visible) {
+      setExpandedId(null); // 시트가 새로 열리면 추천으로 되돌림
+      setTabIdx(0);
+      setShowAll(false);
+    }
   }, [visible]);
   const expanded = sorted.find(c => c.id === expandedId) ?? recommended;
 
@@ -111,9 +139,9 @@ export function CandidateSheet({
               </Pressable>
             </View>
             <SegmentControl
-              options={[...CANDIDATE_SORTS]}
-              value={sortIdx}
-              onChange={i => setSortIdx(i as CandidateSort)}
+              options={tabs.map(t => t.label)}
+              value={tabIdx}
+              onChange={setTabIdx}
               track={color.track}
               fontSize={14}
               padV={11}
@@ -126,7 +154,7 @@ export function CandidateSheet({
             showsVerticalScrollIndicator={false}
           >
             {/* 후보 목록 — 순서는 정렬 기준만 따르고, 탭하면 그 자리에서 펼쳐진다 */}
-            {sorted.map(cand => {
+            {visibleCands.map(cand => {
               const isCurrent = cand.id === shown.currentId;
               const isOpen = cand.id === expanded.id;
 
@@ -140,7 +168,8 @@ export function CandidateSheet({
                           <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.ink }}>
                             {cand.name}
                           </Text>
-                          {cand.recommended && !isCurrent && <RecommendBadge />}
+                          {cand.trend?.hot && <HotBadge />}
+                          {cand.trend?.hot ? null : cand.recommended && !isCurrent && <RecommendBadge />}
                           {isCurrent && <CurrentBadge />}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
@@ -209,7 +238,8 @@ export function CandidateSheet({
                       <View style={{ flex: 1, gap: 5 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={[type.item, { color: color.ink }]}>{cand.name}</Text>
-                          {cand.recommended && !isCurrent && <RecommendBadge />}
+                          {cand.trend?.hot && <HotBadge />}
+                          {cand.trend?.hot ? null : cand.recommended && !isCurrent && <RecommendBadge />}
                           {isCurrent && <CurrentBadge />}
                         </View>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
@@ -227,6 +257,18 @@ export function CandidateSheet({
                 </Pressable>
               );
             })}
+            {hidden > 0 && (
+              <Pressable
+                onPress={() => {
+                  haptic();
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setShowAll(true);
+                }}
+                style={{ paddingVertical: 14, alignItems: 'center' }}
+              >
+                <Text style={[type.action, { color: color.primary }]}>{hidden}곳 더 보기</Text>
+              </Pressable>
+            )}
           </ScrollView>
         </>
       ) : (

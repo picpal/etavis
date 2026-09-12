@@ -90,21 +90,27 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
       dispatch({ type: 'FAIL', error: { kind: 'search', message: String(e) } });
       return;
     }
-    // 0.7 보강 — 업종 슬롯만. 실패해도 계획은 계속 간다
+    // 0.7 보강 — 업종 슬롯만. 실패해도 계획은 계속 간다. 전체 12초 예산에 물려 있어야
+    // 한다 — 그래서 race()로 감싼다. 단 데드라인 탈락(Timeout)은 다시 던져 파이프라인이
+    // 끝나게 하고, 그 외(개별 슬롯 실패 포함)는 신호 없이 넘어간다.
     if (deps.enrich) {
       const need = slots.filter(s => s.stopKind === 'category' && s.candidates.length >= ENRICH_MIN_CANDIDATES);
       if (need.length > 0) {
         try {
-          const maps = await Promise.all(need.map(s =>
+          // allSettled — 슬롯 하나가 실패해도 나머지 슬롯의 신호까지 버리지 않는다
+          const settled = await race(Promise.allSettled(need.map(s =>
             deps.enrich!(s.candidates.map(c => ({
               id: c.id, name: c.name, address: c.address ?? '',
               lat: c.coord.latitude, lng: c.coord.longitude,
-            })))));
+            }))))));
           need.forEach((s, i) => {
-            const m = maps[i];
+            const r = settled[i];
+            if (r.status !== 'fulfilled') return; // 이 슬롯만 신호 없이 남는다
+            const m = r.value;
             s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
           });
-        } catch {
+        } catch (e) {
+          if (e instanceof Timeout) throw e;
           // 신호가 없을 뿐이다. 화면은 추가시간순으로 떨어진다
         }
       }
@@ -131,38 +137,45 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
 
     // 업종 슬롯에서 트렌드 1위가 시간 1위와 다르면 바꾼다.
     // 단 마감을 넘기면 안 바꾼다 — 추천은 제시간 도착보다 앞설 수 없다.
-    for (const slot of slots) {
-      if (slot.stopKind !== 'category') continue;
-      const base = result.options[0];
-      if (!base) continue;
-      const idx = base.visits.findIndex(v => v.slotId === slot.id);
-      if (idx < 0) continue;
-      const current = base.visits[idx].candidate.id;
-      const baseTiming = result.rescore(base.visits);
+    // 슬롯이 여럿이면 스왑을 누적한다 — 각자 따로는 마감을 지켜도 합치면 넘길 수 있다.
+    // runningVisits가 그 누적 상태고, 다음 슬롯의 기준선(baseTiming)도 여기서 다시 잰다.
+    const base = result.options[0];
+    if (base) {
+      let runningVisits = base.visits;
+      for (const slot of slots) {
+        if (slot.stopKind !== 'category') continue;
+        const idx = runningVisits.findIndex(v => v.slotId === slot.id);
+        if (idx < 0) continue;
+        const current = runningVisits[idx].candidate.id;
+        const baseTiming = result.rescore(runningVisits);
 
-      const ranked = scoreTrend(slot.candidates.map(c => {
-        const swapped = base.visits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
+        const ranked = scoreTrend(slot.candidates.map(c => {
+          const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
+          const t = result.rescore(swapped);
+          return {
+            id: c.id,
+            addedMin: t.totalMin - baseTiming.totalMin,
+            blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
+            google: c.signals?.google
+              ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
+              : undefined,
+          };
+        }));
+
+        const top = ranked[0];
+        if (!top || top.id === current) continue;
+        const cand = slot.candidates.find(c => c.id === top.id);
+        if (!cand) continue;
+        const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
         const t = result.rescore(swapped);
-        return {
-          id: c.id,
-          addedMin: t.totalMin - baseTiming.totalMin,
-          blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
-          google: c.signals?.google
-            ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
-            : undefined,
-        };
-      }));
-
-      const top = ranked[0];
-      if (!top || top.id === current) continue;
-      const cand = slot.candidates.find(c => c.id === top.id);
-      if (!cand) continue;
-      const swapped = base.visits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
-      const t = result.rescore(swapped);
-      const arriveOk = request.arriveByMin == null
-        ? t.totalMin - baseTiming.totalMin <= TREND_SWAP_SLACK_MIN
-        : request.departAtMin + t.totalMin <= request.arriveByMin;
-      if (arriveOk) dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
+        const arriveOk = request.arriveByMin == null
+          ? t.totalMin - baseTiming.totalMin <= TREND_SWAP_SLACK_MIN
+          : request.departAtMin + t.totalMin <= request.arriveByMin;
+        if (arriveOk) {
+          dispatch({ type: 'SET_OVERRIDE', optionIdx: 0, slotId: slot.id, candidateId: cand.id });
+          runningVisits = swapped; // 다음 슬롯은 이 스왑이 반영된 상태를 기준으로 잰다
+        }
+      }
     }
   } catch (e) {
     if (e instanceof Timeout) dispatch({ type: 'FAIL', error: { kind: 'timeout', message: '12초 안에 끝나지 않았어요' } });

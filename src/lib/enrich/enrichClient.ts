@@ -14,14 +14,17 @@ export function serverEnrichFn(opts: {
   appToken: string;
   deviceId: string;
   timeoutMs?: number;
+  /** 테스트용 주입. 기본 globalThis.fetch — serverProvider.ts와 같은 자리 */
+  fetchFn?: typeof fetch;
 }): EnrichFn {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const fetchFn = opts.fetchFn ?? fetch;
   return async places => {
     if (places.length === 0) return {};
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(`${opts.baseUrl.replace(/\/$/, '')}/enrich`, {
+      const res = await fetchFn(`${opts.baseUrl.replace(/\/$/, '')}/enrich`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

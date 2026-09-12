@@ -288,3 +288,104 @@ test('마감이 없어도 추가시간이 10분을 넘으면 트렌드 1위로 �
   );
   assert.ok(!actions.some(a => a.type === 'SET_OVERRIDE'));
 });
+
+test('업종 슬롯 두 곳 — 각자는 마감을 지켜도 합치면 넘기면 첫 번째만 바꾼다', async () => {
+  // 카페·베이커리 각각 near/far 두 후보. 실측(mockRouteProvider, order:'locked')으로 확인한 값:
+  //   base(양쪽 near) totalMin ≈55.87, departAtMin 540 → 기준 도착 595.87
+  //   한쪽만 far로 바꾸면 +2.05분(도착 597.92) — 둘 다 바꾸면 +2.32분(도착 598.20)
+  // arriveByMin=598 은 "각자 따로"는 지키지만(597.92<=598) "합쳐서"는 넘긴다(598.20>598).
+  // 원본 base 대비로만 검사하면(합산 없이) 두 슬롯 다 통과해 버려 이 시험이 실패해야 정상이다.
+  const mk = (query: string, lon: number): PlaceCandidate[] => [
+    { id: `${query}-near`, name: `${query} 근처`, coord: { latitude: 37.5, longitude: lon } },
+    { id: `${query}-far`, name: `${query} 트렌드`, coord: { latitude: 37.52, longitude: lon } },
+    { id: `${query}-f1`, name: `${query} 필러1`, coord: { latitude: 37.6, longitude: lon } },
+    { id: `${query}-f2`, name: `${query} 필러2`, coord: { latitude: 37.7, longitude: lon } },
+  ];
+  const cafeCands = mk('카페', 127.06);
+  const bakeryCands = mk('베이커리', 127.14);
+  const twoSlotSearch: SearchFn = async q => (q === '카페' ? cafeCands : bakeryCands);
+  const enrich = async (places: { id: string; name: string }[]) => {
+    const out: Record<string, { fetchedAt: string; blog?: unknown; google?: unknown }> = {};
+    for (const p of places) {
+      if (p.id.endsWith('-near')) out[p.id] = { fetchedAt: 't', google: { rating: 3.8, ratingCount: 20, hours: null, matchedName: p.name } };
+      if (p.id.endsWith('-far')) {
+        out[p.id] = {
+          fetchedAt: 't',
+          blog: { weighted: 20, count90d: 32, latestDaysAgo: 1, source: 'kakao' },
+          google: { rating: 5.0, ratingCount: 250, hours: null, matchedName: p.name },
+        };
+      }
+    }
+    return out;
+  };
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req(
+      [
+        { id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's2', query: '베이커리', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      ],
+      { origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.2 }, departAtMin: 540, arriveByMin: 598, order: 'locked' },
+    ),
+    { provider: mockRouteProvider(), search: twoSlotSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
+  );
+  const overrides = actions.filter(a => a.type === 'SET_OVERRIDE') as { slotId: string; candidateId: string }[];
+  assert.deepEqual(overrides.map(o => o.slotId), ['s1'], `첫 슬롯만 바뀌어야 하는데: ${JSON.stringify(overrides)}`);
+});
+
+test('보강이 응답 없이 걸려도(hang) 파이프라인은 12초 예산 안에서 끝난다', async () => {
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    {
+      provider: mockRouteProvider(),
+      search: async () => Array.from({ length: 6 }, (_, i) => ({
+        id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+      })),
+      enrich: () => new Promise(() => {}), // 절대 안 끝나는 보강
+      dispatch: a => actions.push(a),
+      timeoutMs: 30,
+    },
+  );
+  const last = actions[actions.length - 1];
+  assert.equal(last.type, 'FAIL');
+  assert.equal((last as { type: 'FAIL'; error: { kind: string } }).error.kind, 'timeout');
+});
+
+test('보강 최소 후보수 경계 — 정확히 4개면 보강을 부른다(> 아니라 >=)', async () => {
+  const seen: { id: string }[][] = [];
+  const actions = await runTrend({ stopKind: 'category', n: 4, enrich: async ps => { seen.push(ps); return {}; } });
+  assert.ok(actions.some(a => a.type === 'RESULT'));
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].length, 4);
+});
+
+test('업종 슬롯 한 곳의 보강이 실패해도 다른 슬롯의 신호는 살아남는다(allSettled)', async () => {
+  const mk = (prefix: string, n: number): PlaceCandidate[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${prefix}${i}`, name: `${prefix}가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+    }));
+  const okCands = mk('ok', 4);
+  const badCands = mk('bad', 4);
+  const twoSlotSearch: SearchFn = async q => (q === '빵집' ? okCands : badCands);
+  const enrich = async (places: { id: string; name: string }[]) => {
+    if (places[0].id.startsWith('bad')) throw new Error('이 슬롯만 실패');
+    const out: Record<string, { fetchedAt: string; google?: unknown }> = {};
+    for (const p of places) out[p.id] = { fetchedAt: 't', google: { rating: 4.5, ratingCount: 100, hours: null, matchedName: p.name } };
+    return out;
+  };
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([
+      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    ]),
+    { provider: mockRouteProvider(), search: twoSlotSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
+  );
+  const slotsAction = actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { id: string; candidates: { signals?: unknown }[] }[] };
+  const okSlot = slotsAction.slots.find(s => s.id === 's1')!;
+  const badSlot = slotsAction.slots.find(s => s.id === 's2')!;
+  assert.ok(okSlot.candidates.every(c => c.signals !== undefined), '실패하지 않은 슬롯은 신호가 전부 붙어야 한다');
+  assert.ok(badSlot.candidates.every(c => c.signals === undefined), '실패한 슬롯은 신호 없이 넘어가되 나머지를 막지 않는다');
+  assert.ok(actions.some(a => a.type === 'RESULT'), '한 슬롯이 실패해도 계획은 나온다');
+});

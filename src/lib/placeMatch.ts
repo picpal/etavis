@@ -24,7 +24,7 @@ const BRANCH_SUFFIX = /(본점|지점|점)$/;
 export function normalizeName(s: string): string {
   const stripped = s
     .toLowerCase()
-    .replace(/[\s()[\]{}·・,.'"""''\-_/\\&@!?~]/g, '');
+    .replace(/[\s()[\]{}·・,.'""‘’\-_/\\&@!?~]/g, '');
   return stripped.replace(BRANCH_SUFFIX, '');
 }
 

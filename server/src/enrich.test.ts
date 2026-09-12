@@ -126,7 +126,18 @@ test('두 번째 호출은 캐시에서 — 구글을 다시 부르지 않는다
   assert.equal(calls.google, before);
 });
 
-test('캐시 히트는 실제 호출을 만들지 않지만, 예산 카운터는 정정으로도 예약분 아래로 내려가지 않는다', async () => {
+// --- fix 3 재검토: 조건부 쓰기(current === reserved일 때만 내려쓴다) -----------------
+// 처음엔 Math.max(current, used+spent)로 "절대 뒤로 가지 않게" 했었는데, 그러면 겹침이
+// 없는 보통의 경우(반복 계획 → 캐시 대부분 적중)조차 current가 늘 이 요청 자신의
+// 예약값과 같아 정정이 사실상 죽어 버렸다 — reserved(=used+attempting.length)가 항상
+// used+spent보다 크거나 같으니 max가 매번 reserved만 골랐다. 캐시 히트가 대부분인
+// 반복 계획에서 카운터가 실제 지출의 몇 배로 부풀어 예산이 실제보다 훨씬 일찍
+// 바닥나는(그래서 이 기능이 실제 지출의 몇 배 이르게 조용히 꺼지는) 결과였다.
+// 조건부 쓰기 — "내가 방금 쓴 예약이 그대로 남아 있을 때만" 내려쓴다 — 는 겹침이
+// 없으면 정확히 실제 지출로 정정하고, 겹치면(다른 요청이 이미 자기 값을 써 놨으면)
+// 그 값을 지우지 않는다. 아래 세 테스트가 그 세 갈래를 각각 확인한다.
+
+test('fix3-a: 겹침 없음 + 캐시 히트 있음 → 카운터가 실제 지출로 정정된다', async () => {
   const kv = memKV();
   // k0는 이미 캐시된 것으로 미리 채워둔다 — 이번 요청에서는 캐시 히트라 업스트림을 부르지 않아야 한다
   kv.store.set(`gplace:k0:${normalizeName('가게k0')}`, JSON.stringify({
@@ -136,13 +147,56 @@ test('캐시 히트는 실제 호출을 만들지 않지만, 예산 카운터는
   const res = await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
   // k0는 캐시 히트, k1만 신규 호출 — 실제 업스트림 호출은 1회뿐이다
   assert.equal(calls.google, 1);
-  // 그런데도 카운터는 실제 지출(1)이 아니라 예약한 attempting.length(2)로 남는다.
-  // 정정은 "절대 뒤로 가지 않는다"(fix 3) — 다시 읽은 현재값과 Math.max로 쓰는데,
-  // 겹치는 다른 요청이 없었던 이 경우 현재값은 이미 이 요청 자신의 예약(2)이라 실제
-  // 지출(1)보다 항상 크거나 같아 절대 아래로 못 내려간다. 캐시 히트가 섞인 요청은
-  // 예산을 실제보다 보수적으로(더 많이 쓴 것처럼) 카운트하게 되지만, 그게 겹치는
-  // 요청의 예약을 지우는 것보다 안전하다.
+  // 겹치는 요청이 없으므로 예약(2)이 그대로 남아 있다가 실제 지출(1)로 정정돼야 한다.
+  assert.equal(kv.store.get('gbudget:2026-09'), '1', '겹침이 없으면 실제 지출로 내려가야 한다');
+  const body = await res.json() as { budget: { googleUsed: number } };
+  assert.equal(body.budget.googleUsed, 1);
+});
+
+test('fix3-b: 겹침 있음(다른 요청이 그 사이 더 큰 값을 씀) → 내 정정을 건너뛰고 그 값을 지키지 않는다', async () => {
+  const kv = memKV();
+  const realGet = kv.get.bind(kv);
+  const realPut = kv.put.bind(kv);
+  let budgetGets = 0;
+  kv.get = (async (k: string) => {
+    if (k === 'gbudget:2026-09') {
+      budgetGets++;
+      // 정정 직전 재읽기(2번째 호출) 시점에 "그 사이 겹치는 다른 요청이 실제로 자신의
+      // 값(5)을 써 놓았다"를 재현한다 — 페이크 반환값이 아니라 실제 store에 써서,
+      // 이 요청이 그 값을 지우지 않는지(진짜로 store에 남는지)를 검증한다.
+      if (budgetGets === 2) {
+        await realPut(k, '5', { expirationTtl: 1 });
+        return '5';
+      }
+    }
+    return realGet(k);
+  }) as typeof kv.get;
+
+  const { f } = mockFetch({ google: true });
+  const res = await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
+
+  // k0·k1 둘 다 신규 호출(used(0)+spent(2)=2)이라 이 요청 혼자라면 2를 쓰고 싶어 하지만,
+  // 재읽은 현재값(5)이 이 요청의 예약(2)과 다르므로 손대지 않고 5가 그대로 남아야 한다.
+  assert.equal(kv.store.get('gbudget:2026-09'), '5', '겹치는 다른 요청의 값을 지우면 안 된다');
+  const body = await res.json() as { budget: { googleUsed: number } };
+  assert.equal(body.budget.googleUsed, 5, '응답도 방금 읽은 최신값(5)을 보고해야 한다');
+});
+
+test('fix3-c: 캐시 미스만 있음(정정 불필요) → 카운터는 예약값에 머물고 두 번째 쓰기가 없다', async () => {
+  const kv = memKV();
+  let budgetPuts = 0;
+  const realPut = kv.put.bind(kv);
+  kv.put = (async (k: string, v: string, o?: { expirationTtl?: number }) => {
+    if (k === 'gbudget:2026-09') budgetPuts++;
+    return realPut(k, v, o);
+  }) as typeof kv.put;
+
+  const { f } = mockFetch({ google: true });
+  const res = await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
+
+  // 캐시 미스만 있으므로 spent === attempting.length(2) — 정정이 필요 없다.
   assert.equal(kv.store.get('gbudget:2026-09'), '2');
+  assert.equal(budgetPuts, 1, '예약 쓰기 한 번뿐이어야 한다 — 정정이 불필요하면 두 번째 쓰기가 없어야 한다');
   const body = await res.json() as { budget: { googleUsed: number } };
   assert.equal(body.budget.googleUsed, 2);
 });
@@ -253,31 +307,7 @@ test('루프 중간에 죽어도 예약분은 남는다 — 이미 만든 호출
   assert.equal(stored, 3);
 });
 
-// --- 최종 브랜치 리뷰 fix 3 회귀: 정정이 겹치는 요청의 더 큰 예약을 지우면 안 된다 -----
-// 정정 직전 재읽기가 "그 사이 다른(겹치는) 요청이 예약을 더 크게 밀어 놓았다"를 보게 되면
-// 이 요청 자신의 used+spent가 그보다 작아도 그 값으로 덮어써서는 안 된다. env.CACHE.get을
-// 가로채 handleEnrich 안에서 budgetKey를 읽는 두 번째 호출(정정 직전 재읽기)에만 더 큰
-// 값을 흉내 낸 응답을 주입해 이 인터리빙을 재현한다.
-test('정정이 그 사이 다른 요청이 써 놓은 더 큰 예약을 지우지 않는다', async () => {
-  const kv = memKV();
-  let budgetGets = 0;
-  const realGet = kv.get.bind(kv);
-  kv.get = (async (k: string) => {
-    if (k === 'gbudget:2026-09') {
-      budgetGets++;
-      // 1번째 읽기(요청 시작, used)는 실제 저장값(없음→0)을 그대로 준다.
-      // 2번째 읽기(정정 직전 재읽기)는 "그 사이 겹치는 다른 요청이 예약을 5로
-      // 밀어 놓았다"를 흉내 낸다 — 이 요청은 k0·k1 둘 다 신규 호출이라 used(0)+spent(2)=2
-      // 를 쓰고 싶어 하지만, 그보다 큰 5가 이미 있으므로 지우면 안 된다.
-      if (budgetGets === 2) return '5';
-    }
-    return realGet(k);
-  }) as typeof kv.get;
-
-  const { f } = mockFetch({ google: true });
-  const res = await handleEnrich({ places: [place('k0'), place('k1')] }, env(kv), { fetch: f, now: NOW });
-
-  assert.equal(kv.store.get('gbudget:2026-09'), '5', '더 큰 값(다른 요청의 예약)을 지우면 안 된다');
-  const body = await res.json() as { budget: { googleUsed: number } };
-  assert.equal(body.budget.googleUsed, 5, '응답의 googleUsed도 실제로 쓴 값(5)과 같아야 한다');
-});
+// (예전 "정정이 겹치는 요청의 더 큰 예약을 지우지 않는다" 테스트는 위 fix3-a/b/c로
+// 대체됐다 — Math.max 버전을 검증하던 테스트라 조건부 쓰기로 바뀌면서 페이크 get()
+// 응답이 실제 store에 반영되지 않는다는 점이 드러났다. fix3-b가 실제 store에 값을
+// 써서 같은 시나리오를 물리적으로 더 정확하게 재현한다.)

@@ -8,10 +8,10 @@
  *      계획 하나 안에서 슬롯을 순차로 보강하므로 같은 계획에서 이 엔드포인트가 동시에
  *      여러 번 불리는 일은 없다. 그래도 서로 다른 계획(다른 기기·다른 순간)의 요청은
  *      겹칠 수 있다 — KV엔 compare-and-swap이 없어 그 경우까지 완전한 원자성은 못
- *      얻는다. 쓰기 전에 먼저 예약하고, 끝난 뒤 실제 지출로 정정하되 절대 뒤로 가지
- *      않게(Math.max) 하므로 겹치는 요청이 서로의 예약·지출 기록을 지우지는 못한다 —
- *      자세한 이유는 아래 카운터 코드 주석 참고. 진짜 원자성이 필요하면 Durable
- *      Objects로 가야 한다.
+ *      얻는다. 쓰기 전에 먼저 예약하고, 끝난 뒤 "내가 방금 쓴 예약이 그대로 남아
+ *      있을 때만" 실제 지출로 정정한다 — 그 사이 겹치는 요청이 이미 자기 값을
+ *      써 놨으면 손대지 않는다. 자세한 이유는 아래 카운터 코드 주석 참고. 진짜
+ *      원자성이 필요하면 Durable Objects로 가야 한다.
  * 콘솔 일일 할당량은 무료 체험판이라 아직 못 걸었다(설계 §9). 그래서 3)이 유일한 코드 방어선이다.
  *
  * 부분 실패는 실패가 아니다. 블로그만 와도 200 이다.
@@ -145,9 +145,9 @@ export async function handleEnrich(
     // 루프 시작 전에 적어 둔다. 이 예약 쓰기 자체는 그냥 덮어쓰기라, 서로 다른 계획의
     // 요청 두 개가 정말 동시에(같은 used를 읽은 채) 예약하면 나중 쓰기가 먼저 쓰기를
     // 덮어써 두 예약이 합쳐지지 않는 문제는 여전히 남는다(파일 머리 주석 참고, KV
-    // compare-and-swap 부재). 그래도 루프 중간에 요청이 죽어도 이미 만든 호출 수만큼은
-    // 이 예약이 남아 있어 지출을 잊어버리지는 않는다 — 그 유지는 아래 정정 단계가
-    // 절대 뒤로 가지 않게(Math.max) 지켜준다.
+    // compare-and-swap 부재). 그래도 루프 중간에 요청이 죽으면 아래 정정 단계 자체가
+    // 실행되지 않으므로, 이미 만든 호출 수만큼 적어 둔 이 예약값이 그대로 남아
+    // 지출을 잊어버리지는 않는다.
     if (attempting.length > 0) {
       finalUsed = used + attempting.length;
       await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
@@ -165,19 +165,30 @@ export async function handleEnrich(
     }));
 
     if (attempting.length > 0) {
-      // 정정 직전에 카운터를 다시 읽는다. 이 요청이 예약한 뒤로 겹치는(다른 계획의)
-      // 요청이 이미 자신의 예약이나 정정을 써 놨을 수 있다 — 이 요청이 아는 used+spent가
-      // 그 값보다 작다고 그냥 덮어 쓰면 그 요청의 지출 기록이 통째로 사라진다(이게 바로
-      // 고쳐야 했던 결함이다: 정정이 자기 요청의 stale한 used만 보고 매번 새로 썼다).
-      // 그래서 절대 뒤로 가지 않게 재읽은 현재값과 Math.max로 쓴다. 대가는 캐시 히트가
-      // 섞인 요청에서 카운터가 실제 지출보다 높게(이 요청 자신의 예약분까지) 남을 수
-      // 있다는 것뿐이다 — 그건 과소집계(과금 위험)가 아니라 과대집계(조기 스로틀)라서
-      // 안전한 방향이다.
+      // 정정 직전에 카운터를 다시 읽는다. "내가 방금 쓴 예약이 그대로 남아 있을 때만"
+      // 실제 지출로 내려쓴다 — 그 사이 다른(겹치는) 요청이 이미 자신의 값을 써 놨다면
+      // 그건 그 요청의 몫이니 건드리지 않는다. (한때 Math.max(current, used+spent)로
+      // "절대 뒤로 가지 않게" 했었는데, 그러면 겹침이 없는 보통의 경우조차 current가
+      // 항상 이 요청 자신의 예약값과 같아 정정이 사실상 죽어 버렸다 — reserved ≥
+      // used+spent가 늘 성립하니 max가 매번 reserved만 골랐다. 캐시 히트가 대부분인
+      // 반복 계획에서 카운터가 실제 지출의 몇 배로 부풀어 예산이 훨씬 일찍 바닥나는
+      // 결과였다.) 조건부 쓰기는 겹침이 없으면 정확히 실제 지출로 내려가고, 겹치면
+      // 남의 값을 지우지 않는 대신 이번 요청의 캐시 히트만 과다집계로(최대
+      // attempting.length만큼) 남긴다 — 남의 예약을 지우는 것보다 훨씬 작은 비용이다.
+      const reserved = used + attempting.length;
       const currentRaw = await env.CACHE.get(budgetKey);
-      const n = currentRaw === null ? NaN : Number(currentRaw);
-      const current = Number.isFinite(n) ? n : GOOGLE_MONTHLY_CAP;
-      finalUsed = Math.max(current, used + spent);
-      await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
+      const current = Number(currentRaw ?? 0);
+      if (Number.isFinite(current) && current === reserved && spent !== attempting.length) {
+        finalUsed = used + spent;
+        await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
+      } else if (Number.isFinite(current)) {
+        // 정정이 필요 없거나(캐시 미스가 없어 reserved가 이미 실제 지출과 같다) 다른
+        // 요청이 이미 더 최신 값을 써 놨다 — 카운터는 손대지 않고 응답엔 방금 읽은
+        // 최신값을 그대로 보고한다.
+        finalUsed = current;
+      }
+      // current가 깨져서(파싱 불가) Number.isFinite가 거짓이면 finalUsed는 이미
+      // reserved로 남아 있다 — 모르는 값 위에 쓰지 않고 예약값을 그대로 보고한다.
     }
   }
 

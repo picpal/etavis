@@ -53,11 +53,36 @@ test('trend 가 없는 후보는 추천 정렬에서 뒤로 간다', () => {
   assert.deepEqual(ids(rankCandidates(list, 0)), ['b', 'a']);
 });
 
-test('주차 탭은 자동차일 때만, 추천 탭은 신호가 있을 때만', () => {
-  assert.deepEqual(sortsFor('car', true).map(s => s.label), ['추천', '추가시간', '주차']);
-  assert.deepEqual(sortsFor('transit', true).map(s => s.label), ['추천', '추가시간']);
-  assert.deepEqual(sortsFor('car', false).map(s => s.label), ['추가시간', '주차']);
-  assert.deepEqual(sortsFor('walk', false).map(s => s.label), ['추가시간']);
+test('추천 정렬 — 전부 trend 가 없으면(보강 전부 실패) 추가시간으로 타이브레이크', () => {
+  const list = [
+    c('a', 9, 1, '가능'),
+    c('b', 2, 1, '가능'),
+    c('c', 5, 1, '가능'),
+  ];
+  assert.deepEqual(ids(rankCandidates(list, 0)), ['b', 'c', 'a']);
+});
+
+test('주차 탭은 자동차일 때만, 추천 탭은 신호가 있을 때만 — 라벨과 sort 인덱스가 같이 맞아야 한다', () => {
+  // label만 보면 '추천'/sort:1, '추가시간'/sort:0 처럼 뒤바뀌어도 통과한다 —
+  // 전체 객체를 비교해 라벨↔인덱스 매핑 자체를 고정한다. mode×hasTrend 6칸을 전부 덮는다.
+  assert.deepEqual(sortsFor('car', true), [
+    { label: '추천', sort: 0 }, { label: '추가시간', sort: 1 }, { label: '주차', sort: 2 },
+  ]);
+  assert.deepEqual(sortsFor('car', false), [
+    { label: '추가시간', sort: 1 }, { label: '주차', sort: 2 },
+  ]);
+  assert.deepEqual(sortsFor('walk', true), [
+    { label: '추천', sort: 0 }, { label: '추가시간', sort: 1 },
+  ]);
+  assert.deepEqual(sortsFor('walk', false), [
+    { label: '추가시간', sort: 1 },
+  ]);
+  assert.deepEqual(sortsFor('transit', true), [
+    { label: '추천', sort: 0 }, { label: '추가시간', sort: 1 },
+  ]);
+  assert.deepEqual(sortsFor('transit', false), [
+    { label: '추가시간', sort: 1 },
+  ]);
 });
 
 test('입력 배열은 건드리지 않는다', () => {

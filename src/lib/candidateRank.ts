@@ -15,8 +15,10 @@ const parkingRank: Record<Candidate['parking'], number> = { 가능: 0, 모름: 1
 const byAdded = (a: Candidate, b: Candidate) => a.addedMin - b.addedMin;
 const keyFor: Record<CandidateSort, (c: Candidate) => number> = {
   // 점수는 클수록 좋다 — 다른 축과 방향을 맞추려고 음수로 뒤집는다.
-  // trend 가 없으면 2(어떤 점수보다도 큰 값)라 항상 뒤로 간다
-  0: c => (c.trend ? -c.trend.score : 2),
+  // trend 가 없으면 +Infinity — scoreTrend의 점수 범위가 나중에 바뀌어도
+  // "구조적으로 어떤 점수보다 크다"는 사실 자체는 안 바뀐다. 매직넘버로 상한을
+  // 가정하지 않는다.
+  0: c => (c.trend ? -c.trend.score : Number.POSITIVE_INFINITY),
   1: c => c.addedMin,
   2: c => parkingRank[c.parking],
 };

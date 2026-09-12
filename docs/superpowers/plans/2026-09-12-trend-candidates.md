@@ -262,11 +262,9 @@ Expected: PASS (7 tests)
 
 - [ ] **Step 6: `isoToYmd` 테스트를 추가한다**
 
-`src/lib/enrich/blogCount.test.ts` 끝에 붙인다:
+파일 맨 위 import 를 `import { countBlog, isoToYmd, toYmd } from './blogCount.ts';` 로 바꾸고, 테스트를 파일 끝에 붙인다(파일 중간에 두 번째 import 문을 두지 않는다):
 
 ```ts
-import { isoToYmd, toYmd } from './blogCount.ts';
-
 test('ISO 8601 을 YYYYMMDD 로 자른다', () => {
   assert.equal(isoToYmd('2026-09-12T10:00:00.000+09:00'), '20260912');
   assert.equal(isoToYmd('망가진 값'), '');
@@ -339,8 +337,9 @@ test('접두 일치 4자 이상이면 채택한다', () => {
   assert.equal(i, 0);
 });
 
-test('접두가 3자면 채택하지 않는다 — 우연한 겹침을 막는다', () => {
-  const i = matchPlace(at('김밥천국'), [at('김밥나라')]);
+test('접두가 안 맞으면 채택하지 않는다 — 우연한 겹침을 막는다', () => {
+  // 60m 밖에 두어 '가까운 게 하나뿐' 규칙이 끼어들지 않게 한다(≈89m)
+  const i = matchPlace(at('김밥천국'), [at('김밥나라', 0.0008)]);
   assert.equal(i, null);
 });
 
@@ -602,12 +601,20 @@ test('요즘 인기 배지는 buzz 0.6 이상이고 3위 안일 때만', () => {
 });
 
 test('prescore 는 fit·buzz 만으로 상위 10개 id 를 준다', () => {
+  // p15 는 추가시간만 보면 16위지만 언급이 많아 올라와야 한다.
+  // (p29 처럼 fit 이 0인 후보는 buzz 만점이어도 0.4 라 10위 밖이다 — 의도된 동작)
   const many = Array.from({ length: 30 }, (_, i) =>
-    inp(`p${i}`, i, { blog: { weighted: i === 29 ? 50 : 0 } }));
+    inp(`p${i}`, i, { blog: { weighted: i === 15 ? 50 : 0 } }));
   const picked = prescore(many);
   assert.equal(picked.length, 10);
   assert.ok(picked.includes('p0'), '추가시간이 가장 짧은 후보는 뽑혀야 한다');
-  assert.ok(picked.includes('p29'), '언급이 가장 많은 후보는 뽑혀야 한다');
+  assert.ok(picked.includes('p15'), '언급이 많은 후보는 추가시간이 중간이어도 뽑혀야 한다');
+});
+
+test('prescore 에서 fit 이 바닥인 후보는 buzz 만점이어도 밀린다', () => {
+  const many = Array.from({ length: 30 }, (_, i) =>
+    inp(`p${i}`, i, { blog: { weighted: i === 29 ? 50 : 0 } }));
+  assert.ok(!prescore(many).includes('p29'));
 });
 
 test('prescore 는 후보가 10개 미만이면 전부 준다', () => {
@@ -1019,9 +1026,11 @@ test('이름을 그대로 query 로 보낸다 — 동네를 붙이지 않는다'
     return new Response(JSON.stringify({ total: 1, items: [] }), { status: 200 });
   }) as unknown as typeof fetch;
   await fetchNaverBlog('베이글랜드 홍대점', 'id', 'key', f, '20260912');
-  assert.ok(seen.includes(encodeURIComponent('베이글랜드 홍대점')), seen);
-  assert.ok(seen.includes('sort=date'));
-  assert.ok(seen.includes('display=100'));
+  // URLSearchParams 는 공백을 '+'로 인코딩한다(폼 표준). 디코딩해서 비교한다
+  const q = new URL(seen).searchParams;
+  assert.equal(q.get('query'), '베이글랜드 홍대점');
+  assert.equal(q.get('sort'), 'date');
+  assert.equal(q.get('display'), '100');
 });
 
 test('인증 헤더 두 개를 보낸다', async () => {
@@ -1352,7 +1361,7 @@ export async function fetchGooglePlace(
 Run: `npx tsx --test server/src/googlePlaces.test.ts`
 Expected: PASS (10 tests)
 
-`../../src/lib/placeMatch` import 가 `tsx`에서 실패하면(경로 해석 문제), `placeMatch.ts`의 `normalizeName`·`matchPlace`를 `server/src/placeMatch.ts`로 복사하고 파일 머리에 `// 원본: src/lib/placeMatch.ts — 내용이 같아야 한다`를 적는다. `server/src/enrichTypes.ts`와 같은 이유다.
+`../../src/lib/placeMatch` import 가 `tsx`에서 실패하면(경로 해석 문제), `placeMatch.ts`의 `normalizeName`·`matchPlace`를 `server/src/placeMatch.ts`로 복사하고 파일 머리에 `// 원본: src/lib/placeMatch.ts — 내용이 같아야 한다`를 적는다. `server/src/enrichTypes.ts`와 같은 이유다. **Task 6의 `../../src/lib/trendScore` import 도 같은 규칙을 따른다** — 실패하면 `prescore` 와 그것이 쓰는 `fitOf`·`buzzOf` 만 `server/src/trendScore.ts` 로 복사하고 같은 주석을 단다.
 
 - [ ] **Step 8: 전체 테스트와 타입 검사**
 
@@ -1625,13 +1634,11 @@ export async function handleEnrich(
     const room = Math.max(0, GOOGLE_MONTHLY_CAP - used);
 
     for (const p of targets.slice(0, room)) {
-      const before = spent;
       const sig = await cached(env.CACHE, `google:${p.id}`, GOOGLE_TTL_S, async () => {
         spent++; // 캐시 미스일 때만 실제 호출이 나간다
         return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
       });
       googles.set(p.id, sig);
-      void before;
     }
     if (spent > 0) {
       await env.CACHE.put(`google:budget:${monthOf(deps.now)}`, String(used + spent));
@@ -2214,7 +2221,7 @@ const TREND_SWAP_SLACK_MIN = 10;
 
 - [ ] **Step 6: 트렌드 1위로 기본 선택을 옮긴다**
 
-`dispatch({ type: 'RESULT', result });` **바로 앞**에 넣는다:
+`dispatch({ type: 'RESULT', result });` **바로 뒤**에 넣는다. 앞에 두면 안 된다 — `src/state/planFlow.ts:115` 의 `RESULT` 처리가 `overrides: {}` 로 리셋하므로 먼저 보낸 override 는 무조건 사라진다(2026-09-12 리듀서 직접 확인).
 
 ```ts
     // 업종 슬롯에서 트렌드 1위가 시간 1위와 다르면 바꾼다.
@@ -2680,7 +2687,6 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `docs/NEXT.md`
-- Modify: `server/wrangler.toml` (주석)
 
 - [ ] **Step 1: `NEXT.md` 를 고친다**
 

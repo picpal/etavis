@@ -77,7 +77,10 @@ test('FieldMask 와 키 헤더를 보낸다', async () => {
 });
 
 test('4xx·5xx 면 null', async () => {
-  const f = (async () => new Response('quota', { status: 429 })) as unknown as typeof fetch;
+  // 바디가 비-JSON이면 res.ok 가드 없이도 res.json() 파싱 실패로 우연히 null이 나온다.
+  // 쿼터 초과라도 스키마상 유효한 바디(캐시된 이전 결과 등)를 실어 보낼 수 있다는 걸
+  // 가정해 검사한다 — 가드가 없으면 이 바디가 그대로 매칭을 통과해 평점이 붙는다.
+  const f = (async () => new Response(JSON.stringify({ places: [gp()] }), { status: 429 })) as unknown as typeof fetch;
   assert.equal(await fetchGooglePlace(target, 'k', f, 5), null);
 });
 

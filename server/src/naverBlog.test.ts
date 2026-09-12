@@ -24,7 +24,9 @@ test('total 이 정확히 20000 이면 아직 쓴다', () => {
 
 test('응답이 망가지면 null', () => {
   assert.equal(parseNaverBlog(null, '20260912'), null);
-  assert.equal(parseNaverBlog({ items: '배열아님' }, '20260912'), null);
+  // total이 없으면 이 검사 전에 total 체크가 먼저 걸린다.
+  // items 배열 검사 자체를 확인하려면 total은 유효해야 한다.
+  assert.equal(parseNaverBlog({ total: 5, items: '배열아님' }, '20260912'), null);
   assert.equal(parseNaverBlog({ total: 'x', items: [] }, '20260912'), null);
 });
 
@@ -60,7 +62,11 @@ test('인증 헤더 두 개를 보낸다', async () => {
 });
 
 test('429 나 5xx 면 null — 재시도하지 않는다', async () => {
-  const f = (async () => new Response('too many', { status: 429 })) as unknown as typeof fetch;
+  // 바디가 비-JSON이면 res.ok 가드 없이도 res.json() 파싱 실패로 우연히 null이 나온다.
+  // 게이트웨이가 429에도 스키마상 유효한 바디(캐시된 이전 결과 등)를 실어 보낼 수 있다는
+  // 걸 가정해 검사한다 — 가드가 없으면 이 바디가 그대로 파서를 통과해 신호로 둔갑한다.
+  const f = (async () =>
+    new Response(JSON.stringify({ total: 5, items: [{ postdate: '20260912' }] }), { status: 429 })) as unknown as typeof fetch;
   assert.equal(await fetchNaverBlog('x', 'a', 'b', f, '20260912'), null);
 });
 

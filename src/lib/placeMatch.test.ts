@@ -12,6 +12,13 @@ test('정규화는 공백·특수문자·지점 접미사를 떼고 소문자로
   assert.equal(normalizeName('쿠리노키 제빵 본점'), '쿠리노키제빵');
 });
 
+test('정규화는 스마트 인용부호·기호도 제거한다 (Unicode \\p{P}\\p{S})', () => {
+  // U+201C " U+201D " U+2018 ' U+2019 ' 포함
+  assert.equal(normalizeName('"Café"\'s'), 'cafés');
+  // 기호 \p{S} 포함: ©, ®, ™
+  assert.equal(normalizeName('Brand™'), 'brand');
+});
+
 test('정규화 이름이 같으면 채택한다', () => {
   const i = matchPlace(at('파리바게트 홍대점'), [at('스타벅스 홍대'), at('파리바게트 홍대')]);
   assert.equal(i, 1);

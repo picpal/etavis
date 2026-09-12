@@ -54,6 +54,8 @@ export function parseGooglePlaces(
     const dn = (r.displayName ?? {}) as Record<string, unknown>;
     return {
       name: typeof dn.text === 'string' ? dn.text : '',
+      // location이 없으면 0,0(기니만 해안)으로 떨어진다. target과 150m 안일 리 없으니
+      // matchPlace의 거리 필터가 이 후보를 그냥 걸러낸다 — 조용한 0이어도 안전하다.
       lat: num(loc.latitude) ?? 0,
       lng: num(loc.longitude) ?? 0,
     };

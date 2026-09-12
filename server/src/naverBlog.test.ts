@@ -75,6 +75,11 @@ test('fetch 가 던져도 null 로 삼킨다', async () => {
   assert.equal(await fetchNaverBlog('x', 'a', 'b', f, '20260912'), null);
 });
 
+test('200 이어도 바디가 JSON이 아니면 null — 프록시 타임아웃 페이지 등', async () => {
+  const f = (async () => new Response('<html>Gateway Timeout</html>', { status: 200 })) as unknown as typeof fetch;
+  assert.equal(await fetchNaverBlog('x', 'a', 'b', f, '20260912'), null);
+});
+
 test('정상 경로', async () => {
   const r = await fetchNaverBlog('x', 'a', 'b', ok({ total: 10, items: [{ postdate: '20260912' }] }), '20260912');
   assert.equal(r?.count90d, 1);

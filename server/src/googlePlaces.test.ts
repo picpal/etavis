@@ -88,3 +88,8 @@ test('fetch 가 던져도 null', async () => {
   const f = (async () => { throw new Error('network'); }) as unknown as typeof fetch;
   assert.equal(await fetchGooglePlace(target, 'k', f, 5), null);
 });
+
+test('200 이어도 바디가 JSON이 아니면 null — 프록시 타임아웃 페이지 등', async () => {
+  const f = (async () => new Response('<html>Gateway Timeout</html>', { status: 200 })) as unknown as typeof fetch;
+  assert.equal(await fetchGooglePlace(target, 'k', f, 5), null);
+});

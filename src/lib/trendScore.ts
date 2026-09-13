@@ -1,9 +1,16 @@
 /**
  * 후보 추천 점수. 순수 함수라 네트워크·UI 없이 시험한다.
  *
- * 한 소스에 기대지 않는다. 세 축(경로 적합도·평점 품질·최근 언급)의 가중합이고,
- * 없는 축은 빼고 남은 가중치를 다시 나눈다. 그래서 블로그가 죽어도, 구글이
- * 예산을 다 써도 순위는 계속 나온다.
+ * 한 소스에 기대지 않는다. 세 축(경로 적합도·평점 품질·최근 언급)의 가중합이다.
+ * 그래서 블로그가 죽어도, 구글이 예산을 다 써도 순위는 계속 나온다.
+ *
+ * 축은 슬롯 단위로 켜지거나 꺼진다. 한 후보라도 관측됐으면 축을 켜고, 관측 못 한
+ * 후보는 그 슬롯 관측값의 중앙값으로 채운다. 아무도 관측 못 했으면 축을 통째로 끄고
+ * 모든 후보에 대해 똑같이 재정규화한다.
+ *
+ * 후보마다 따로 재정규화하면 안 된다. 그러면 없는 축이 "그 후보의 나머지 축과 같은
+ * 값"으로 채워져, 경로가 가까운 미조회 후보일수록 공짜 보너스가 커진다 — 측정 안 한
+ * 가게가 측정해서 평점이 낮게 나온 가게를 이기는 결함이었다.
  *
  * 순위는 전부 여기서 정한다. LLM은 '무엇을 찾을지'만 뽑는다(AGENTS.md).
  */
@@ -58,11 +65,18 @@ function buzzOf(weighted: number): number {
   return Math.min(1, Math.log10(1 + Math.max(0, weighted)) / Math.log10(1 + BUZZ_SATURATION));
 }
 
-/** 있는 축만 모아 가중평균. 축이 하나도 없으면 fit 만 남으므로 항상 하나는 있다 */
+/** 켜진 축만 모아 가중평균. fit 은 항상 켜져 있으므로 분모가 0이 되지 않는다 */
 function blend(parts: { w: number; v: number }[]): number {
   const total = parts.reduce((s, p) => s + p.w, 0);
   if (total === 0) return 0;
   return parts.reduce((s, p) => s + p.w * p.v, 0) / total;
+}
+
+/** 관측값의 중앙값 — 미관측 후보를 채우는 값. 빈 배열이면 축이 꺼지므로 부르지 않는다 */
+function medianOf(values: readonly number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 export function scoreTrend(inputs: readonly TrendInput[]): TrendScored[] {
@@ -76,14 +90,23 @@ export function scoreTrend(inputs: readonly TrendInput[]): TrendScored[] {
   const zeros = withBlog.filter(i => i.blog!.weighted === 0).length;
   const buzzBlind = withBlog.length === 0 || zeros / withBlog.length >= BUZZ_BLIND_RATIO;
 
+  // 축을 켤지 끌지는 슬롯 전체를 보고 한 번 정한다. 켜면 미관측 후보는 중앙값으로 채운다
+  const observedQuality = inputs.map(i => (i.google ? qualityOf(i.google) : null))
+    .filter((v): v is number => v != null);
+  const observedBuzz = inputs.map(i => (!buzzBlind && i.blog ? buzzOf(i.blog.weighted) : null))
+    .filter((v): v is number => v != null);
+  const qualityPrior = observedQuality.length > 0 ? medianOf(observedQuality) : null;
+  const buzzPrior = observedBuzz.length > 0 ? medianOf(observedBuzz) : null;
+
   const scored = inputs.map((i, idx) => {
     const fit = fitOf(i.addedMin, maxAdded);
     const quality = i.google ? qualityOf(i.google) : null;
     const buzz = !buzzBlind && i.blog ? buzzOf(i.blog.weighted) : null;
 
+    // 가중치 구성은 슬롯 안 모든 후보가 똑같다 — 채운 값도 축이 켜졌으면 그대로 쓴다
     const parts = [{ w: W_FIT, v: fit }];
-    if (quality != null) parts.push({ w: W_QUALITY, v: quality });
-    if (buzz != null) parts.push({ w: W_BUZZ, v: buzz });
+    if (qualityPrior != null) parts.push({ w: W_QUALITY, v: quality ?? qualityPrior });
+    if (buzzPrior != null) parts.push({ w: W_BUZZ, v: buzz ?? buzzPrior });
 
     const reasons: string[] = [];
     if (i.google) reasons.push(`구글 ${i.google.rating.toFixed(1)} (${i.google.ratingCount})`);

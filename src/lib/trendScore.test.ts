@@ -158,3 +158,36 @@ test('요즘 인기 배지는 buzz 가 높아도 4위부터는 붙지 않는다 
   assert.ok(r.every(x => x.buzz! >= 0.6), '5개 전부 buzz 조건은 만족해야 이 테스트가 HOT_RANK 만 검증한다');
   assert.deepEqual(r.map(x => x.hot), [true, true, true, false, false]);
 });
+
+test('미조회 후보가 조회된 후보를 공짜로 이기지 않는다 — 없는 축은 관측 중앙값으로 채운다', () => {
+  // 예전엔 없는 축을 빼고 남은 가중치를 후보마다 다시 나눴다. 그러면 미조회 후보의
+  // 점수가 fit 그대로가 되어, 없는 평점이 "자기 fit 과 같은 평점"으로 채워진 셈이었다.
+  // 가까운 후보일수록 이 공짜 보너스가 커져 '측정 안 한 가게'가 이겼다.
+  const r = scoreTrend([
+    inp('rated', 0, { google: { rating: 2.0, ratingCount: 300 } }),
+    inp('unknown', 0),
+    inp('far', 10, { google: { rating: 2.0, ratingCount: 300 } }),
+  ]);
+  // 관측된 품질 중앙값(0.4)으로 채우면 rated 와 unknown 이 같은 점수라 입력 순서로 갈린다
+  assert.deepEqual(ids(r), ['rated', 'unknown', 'far']);
+  // 채운 값은 점수에만 쓰고, 관측하지 않았다는 사실은 그대로 남긴다
+  assert.equal(r[1].quality, null);
+});
+
+test('축을 채우는 기준은 그 후보의 fit 이 아니라 슬롯 전체의 관측 중앙값이다', () => {
+  // 평점이 좋은 후보들만 관측됐으면, 미조회 후보도 그만큼 좋다고 보는 게 맞다
+  const r = scoreTrend([
+    inp('unknown', 3),
+    inp('good', 3, { google: { rating: 4.8, ratingCount: 300 } }),
+    inp('alsoGood', 3, { google: { rating: 4.6, ratingCount: 300 } }),
+  ]);
+  // 중앙값이 높으니 unknown 은 good 들과 겨룰 만한 점수를 받는다 — fit 이 같으므로
+  // 세 후보 점수 차는 관측 평점 차에서만 나온다
+  assert.ok(r[0].id === 'good');
+  assert.ok(r[1].score > r[2].score || r[1].id === 'alsoGood');
+});
+
+test('아무도 관측 안 된 축은 모든 후보에게 똑같이 꺼진다 — 순서는 추가시간 순', () => {
+  const r = scoreTrend([inp('a', 9), inp('b', 2), inp('c', 5)]);
+  assert.deepEqual(ids(r), ['b', 'c', 'a']);
+});

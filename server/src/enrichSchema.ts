@@ -36,6 +36,22 @@ function parseOne(raw: unknown): EnrichPlace | null {
   };
 }
 
+/** 보강 단계에 허용된 시간. 앱이 파이프라인 잔여 예산에서 계산해 보낸다 */
+const BUDGET_DEFAULT_MS = 8_000;
+const BUDGET_MIN_MS = 500;
+const BUDGET_MAX_MS = 8_000;
+
+/**
+ * budgetMs 검증. 없거나 이상하면 기본값 — 예산 없이 온 옛 클라이언트도 계속 동작한다.
+ * 상한을 두는 이유는 바깥에서 온 값이 Worker 를 원하는 만큼 붙잡아 둘 수 없게 하려는 것이다.
+ */
+export function parseBudgetMs(raw: unknown): number {
+  if (!raw || typeof raw !== 'object') return BUDGET_DEFAULT_MS;
+  const v = (raw as Record<string, unknown>).budgetMs;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return BUDGET_DEFAULT_MS;
+  return Math.min(BUDGET_MAX_MS, Math.max(BUDGET_MIN_MS, Math.round(v)));
+}
+
 /**
  * /enrich 요청 전체 검증. 30개까지 유효한 장소를 반환하거나, 하나도 없으면 null.
  * places 배열이 MAX_INPUT_ARRAY를 초과하면 내용 검증 없이 null — 쿼터 보호.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseEnrichRequest } from './enrichSchema.ts';
+import { parseBudgetMs, parseEnrichRequest } from './enrichSchema.ts';
 
 const p = (over: Record<string, unknown> = {}) =>
   ({ id: 'k1', name: '아오이토리', address: '서울 마포구 서교동 1', lat: 37.55, lng: 126.92, ...over });
@@ -96,4 +96,14 @@ test('입력 배열이 100을 넘으면 null을 반환한다 — 쿼터 보호',
 test('입력 배열이 100 이하면 통과한다', () => {
   const big = Array.from({ length: 100 }, (_, i) => p({ id: `k${i}` }));
   assert.equal(parseEnrichRequest({ places: big })?.length, 30); // 100개 중 30개만 반환
+});
+
+test('budgetMs 는 500~8000 으로 자르고, 없으면 기본 8000', () => {
+  assert.equal(parseBudgetMs({ places: [] }), 8_000);
+  assert.equal(parseBudgetMs({ budgetMs: 3_000 }), 3_000);
+  assert.equal(parseBudgetMs({ budgetMs: 10 }), 500);
+  assert.equal(parseBudgetMs({ budgetMs: 999_999 }), 8_000);
+  assert.equal(parseBudgetMs({ budgetMs: 'soon' }), 8_000);
+  assert.equal(parseBudgetMs({ budgetMs: Number.NaN }), 8_000);
+  assert.equal(parseBudgetMs(null), 8_000);
 });

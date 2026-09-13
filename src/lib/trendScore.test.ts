@@ -158,3 +158,103 @@ test('요즘 인기 배지는 buzz 가 높아도 4위부터는 붙지 않는다 
   assert.ok(r.every(x => x.buzz! >= 0.6), '5개 전부 buzz 조건은 만족해야 이 테스트가 HOT_RANK 만 검증한다');
   assert.deepEqual(r.map(x => x.hot), [true, true, true, false, false]);
 });
+
+test('미조회 후보가 조회된 후보를 공짜로 이기지 않는다 — 없는 축은 관측 중앙값으로 채운다', () => {
+  // 예전엔 없는 축을 빼고 남은 가중치를 후보마다 다시 나눴다. 그러면 미조회 후보의
+  // 점수가 fit 그대로가 되어, 없는 평점이 "자기 fit 과 같은 평점"으로 채워진 셈이었다.
+  // 가까운 후보일수록 이 공짜 보너스가 커져 '측정 안 한 가게'가 이겼다.
+  const r = scoreTrend([
+    inp('rated', 0, { google: { rating: 2.0, ratingCount: 300 } }),
+    inp('unknown', 0),
+    inp('far', 10, { google: { rating: 2.0, ratingCount: 300 } }),
+  ]);
+  // 관측된 품질 중앙값(0.4)으로 채우면 rated 와 unknown 이 같은 점수라 입력 순서로 갈린다
+  assert.deepEqual(ids(r), ['rated', 'unknown', 'far']);
+  // 채운 값은 점수에만 쓰고, 관측하지 않았다는 사실은 그대로 남긴다
+  assert.equal(r[1].quality, null);
+});
+
+test('축을 채우는 기준은 그 후보의 fit 이 아니라 슬롯 전체의 관측 중앙값이다', () => {
+  // 평점이 좋은 후보들만 관측됐으면, 미조회 후보도 그만큼 좋다고 보는 게 맞다
+  const r = scoreTrend([
+    inp('unknown', 3),
+    inp('good', 3, { google: { rating: 4.8, ratingCount: 300 } }),
+    inp('alsoGood', 3, { google: { rating: 4.6, ratingCount: 300 } }),
+  ]);
+  // 중앙값이 높으니 unknown 은 good 들과 겨룰 만한 점수를 받는다 — fit 이 같으므로
+  // 세 후보 점수 차는 관측 평점 차에서만 나온다
+  assert.ok(r[0].id === 'good');
+  assert.ok(r[1].score > r[2].score || r[1].id === 'alsoGood');
+});
+
+test('아무도 관측 안 된 축은 모든 후보에게 똑같이 꺼진다 — 순서는 추가시간 순', () => {
+  const r = scoreTrend([inp('a', 9), inp('b', 2), inp('c', 5)]);
+  assert.deepEqual(ids(r), ['b', 'c', 'a']);
+});
+
+test('조회한 후보만 커버리지 분모다 — 미조회 18곳이 buzz 축을 죽이지 않는다', () => {
+  const list: TrendInput[] = [];
+  for (let i = 0; i < 12; i++) {
+    list.push(inp(`q${i}`, 3, { blogQueried: true, blog: { weighted: 5 } }));
+  }
+  for (let i = 0; i < 18; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  // 조회분 12곳 전부 언급이 있으니 축이 살아있다. 미조회 18곳을 '언급 0'으로
+  // 세면 30곳 중 18곳(60%)이 0이 되어 예전 규칙으로는 위태로웠다
+  assert.ok(r.find(x => x.id === 'q0')!.buzz != null);
+});
+
+test('조회분의 80% 이상이 언급 0이면 buzz 축이 꺼진다 — 분모는 조회분', () => {
+  const list: TrendInput[] = [];
+  for (let i = 0; i < 10; i++) {
+    list.push(inp(`z${i}`, 3, { blogQueried: true, blog: { weighted: 0 } }));
+  }
+  for (let i = 0; i < 2; i++) {
+    list.push(inp(`h${i}`, 3, { blogQueried: true, blog: { weighted: 8 } }));
+  }
+  for (let i = 0; i < 18; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  assert.ok(r.every(x => x.buzz == null));
+});
+
+test('조회분 일부만 신호가 와도 개수가 차면 buzz 축을 쓴다 — 비율이 아니라 개수 기준', () => {
+  const list: TrendInput[] = [];
+  // 6곳을 물었고 4곳만 신호가 왔다. 비율 기준(0.8)이면 꺼지지만, 표본이 작을 땐
+  // 개수가 맞는 기준이다 — 실측에서 이 경우 90일 48건짜리 신호가 버려졌다
+  for (let i = 0; i < 4; i++) {
+    list.push(inp(`o${i}`, 3, { blogQueried: true, blog: { weighted: 6 } }));
+  }
+  for (let i = 0; i < 2; i++) list.push(inp(`n${i}`, 3, { blogQueried: true }));
+  for (let i = 0; i < 24; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  assert.ok(r.find(x => x.id === 'o0')!.buzz != null, '신호가 살아있어야 한다');
+});
+
+test('신호가 최소 개수에 못 미치면 buzz 축이 꺼진다', () => {
+  const list: TrendInput[] = [];
+  // 6곳을 물었는데 2곳만 왔다 → 최소 3곳에 미달
+  for (let i = 0; i < 2; i++) {
+    list.push(inp(`o${i}`, 3, { blogQueried: true, blog: { weighted: 6 } }));
+  }
+  for (let i = 0; i < 4; i++) list.push(inp(`n${i}`, 3, { blogQueried: true }));
+  const r = scoreTrend(list);
+  assert.ok(r.every(x => x.buzz == null));
+});
+
+test('중앙값 위 후보는 추가시간이 더 걸려도 미조회 후보를 이기고, 중앙값 아래는 가라앉는다', () => {
+  // 실기기에서 본 순서를 그대로 고정한다 — 3.7★ 후보가 추가시간이 1분 더 긴데도
+  // 1위였다. 미조회 후보는 중앙값 자리에 서고, 그보다 낮게 측정된 후보만 밀린다.
+  const r = scoreTrend([
+    inp('above', -6, { google: { rating: 3.7, ratingCount: 3 } }),
+    inp('median', -7, { google: { rating: 2.0, ratingCount: 2 } }),
+    inp('below', -7, { google: { rating: 1.5, ratingCount: 2 } }),
+    inp('unknown1', -7),
+    inp('unknown2', -7),
+  ]);
+  assert.equal(r[0].id, 'above');
+  assert.equal(r[r.length - 1].id, 'below');
+  // 미조회 후보는 중앙값 후보와 같은 점수다 — 없는 축이 유리하지도 불리하지도 않다
+  const byId = new Map(r.map(x => [x.id, x.score]));
+  assert.equal(byId.get('unknown1'), byId.get('median'));
+  assert.ok(byId.get('above')! > byId.get('median')!);
+});

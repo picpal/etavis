@@ -16,7 +16,7 @@
  *
  * 부분 실패는 실패가 아니다. 블로그만 와도 200 이다.
  */
-import { parseEnrichRequest, type EnrichPlace } from './enrichSchema';
+import { parseBudgetMs, parseEnrichRequest, type EnrichPlace } from './enrichSchema';
 import { fetchNaverBlog } from './naverBlog';
 import { fetchGooglePlace } from './googlePlaces';
 import { prescore } from '../../src/lib/trendScore';
@@ -38,6 +38,71 @@ export type EnrichEnv = {
 export type EnrichDeps = { fetch: typeof fetch; now: Date };
 
 const BLOG_TTL_S = 24 * 60 * 60;      // 설계 §2.1.1 — 24시간을 넘기지 않는다
+/**
+ * 블로그에 물어볼 후보 수.
+ *
+ * 실측(2026-09-13, 콜드): 1곳 1.7초 · 6곳 1.7초 · 12곳 3.4초. 네이버 호출 하나가
+ * 1.7초쯤 걸리고, Workers 는 요청당 동시 바깥 연결이 6개라 7곳부터 회차가 나뉜다.
+ * 6곳이 한 회차에 들어가는 최대치다 — 7곳으로 올리면 시간이 두 배가 된다.
+ *
+ * 30곳을 다 덮으려면 장소마다 묻는 대신 '지역+업종'으로 2~3번 묻고 블로그 글
+ * 제목을 후보명과 맞추는 쪽으로 가야 한다. NEXT.md 에 이월했다.
+ */
+const BLOG_LOOKUP_MAX = 6;
+/**
+ * 그중 앞에서 그대로 가져가는 수. 나머지는 뒤쪽에서 고르게 뽑는다.
+ * 블로그를 부르기 전엔 인기를 모르므로 '인기 상위 N곳'은 원리적으로 불가능하다 —
+ * 회랑 거리순 상위만 뽑으면 이 기능이 '가까운 곳 추천'으로 바뀐다. 탐색용 타협이다.
+ */
+const BLOG_LOOKUP_HEAD = 4;
+/**
+ * 구글 단계에 남겨 두는 시간. 블로그가 예산을 다 먹으면 구글이 아예 안 불려
+ * 추천 카드에 평점이 영영 안 붙는다 — 지금 구조는 블로그가 전부 끝난 뒤에야
+ * 구글로 넘어가기 때문이다. 구글 호출도 콜드 기준 1회차 약 1.5초다.
+ */
+const GOOGLE_RESERVE_MS = 1_800;
+/** 예산이 작을 때도 블로그가 최소 이 비율은 갖는다 */
+const BLOG_MIN_SHARE = 0.5;
+/**
+ * 단계에 이보다 적게 남으면 그 단계를 통째로 건너뛴다.
+ * 특히 구글은 호출 '전에' 예산을 예약한다 — 끝날 수 없는 호출을 시작하면 결과는
+ * 버려지는데 과금과 카운터는 올라간다. 앞 단계나 KV 가 예상보다 오래 걸렸을 때
+ * 이 경로로 들어간다.
+ */
+const PHASE_MIN_MS = 800;
+
+/**
+ * 마감까지만 기다리고, 넘기면 fallback 으로 떨어진다.
+ * 버려진 호출의 캐시 쓰기는 응답 뒤에 취소될 수 있다 — 다음 요청이 다시 받으면 된다.
+ * 예산 카운터는 호출 '전에' 예약하므로 버려진 구글 호출도 지출로 남는다(실제로 나갔다).
+ */
+function withDeadline<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  if (ms <= 0) return Promise.resolve(fallback);
+  return new Promise<T>(resolve => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      v => { clearTimeout(timer); resolve(v); },
+      () => { clearTimeout(timer); resolve(fallback); },
+    );
+  });
+}
+
+/**
+ * 블로그에 물어볼 후보의 인덱스. 입력은 회랑 거리순이다.
+ * 앞 HEAD 곳 + 나머지 구간에서 고르게 뽑은 나머지.
+ */
+export function blogShortlist(total: number, take = BLOG_LOOKUP_MAX, head = BLOG_LOOKUP_HEAD): number[] {
+  if (total <= take) return Array.from({ length: total }, (_, i) => i);
+  const picked = Array.from({ length: head }, (_, i) => i);
+  const restCount = take - head;
+  const span = total - head;
+  for (let k = 0; k < restCount; k++) {
+    // 구간 중앙을 집어 양끝으로 치우치지 않게 한다
+    const idx = head + Math.floor(((k + 0.5) * span) / restCount);
+    picked.push(Math.min(total - 1, idx));
+  }
+  return [...new Set(picked)];
+}
 const GOOGLE_TTL_S = 14 * 24 * 60 * 60;
 const GOOGLE_MONTHLY_CAP = 900;        // 무료분 1,000 보다 낮게
 // 월 키(gbudget:YYYY-MM)는 매달 새로 시작하므로 정확도엔 영향이 없다 — TTL은 그저
@@ -81,18 +146,35 @@ export async function handleEnrich(
   const places = parseEnrichRequest(body);
   if (!places) return json({ error: 'bad request' }, 422);
 
+  // 마감은 벽시계로 잰다. deps.now 는 날짜 계산용 고정값이라 경과 시간에 못 쓴다.
+  const budgetMs = parseBudgetMs(body);
+  const startedMs = Date.now();
+  const googleCanRun = Boolean(env.GOOGLE_PLACES_KEY);
+  const blogShareMs = googleCanRun
+    ? Math.max(Math.round(budgetMs * BLOG_MIN_SHARE), budgetMs - GOOGLE_RESERVE_MS)
+    : budgetMs;
+  const blogDeadlineMs = startedMs + blogShareMs;
+  const overallDeadlineMs = startedMs + budgetMs;
+
   const todayYmd = ymdOf(deps.now);
   const todayDow = deps.now.getUTCDay();
   const fetchedAt = deps.now.toISOString();
 
-  // 1) 블로그 — 키가 있을 때만, 전부 병렬
+  // 1) 블로그 — 키가 있을 때만. shortlist 만 병렬로 묻는다
   const blogs = new Map<string, BlogSignal | null>();
-  if (env.NCP_API_KEY_ID && env.NCP_API_KEY) {
+  const blogQueried = new Set<string>();
+  if (env.NCP_API_KEY_ID && env.NCP_API_KEY && blogShareMs >= PHASE_MIN_MS) {
     const keyId = env.NCP_API_KEY_ID;
     const key = env.NCP_API_KEY;
-    await Promise.all(places.map(async p => {
-      const sig = await cached(env.CACHE, `blog:${p.id}`, BLOG_TTL_S,
-        () => fetchNaverBlog(p.name, keyId, key, deps.fetch, todayYmd));
+    const targets = blogShortlist(places.length).map(i => places[i]);
+    for (const p of targets) blogQueried.add(p.id);
+    await Promise.all(targets.map(async p => {
+      const sig = await withDeadline(
+        cached(env.CACHE, `blog:${p.id}`, BLOG_TTL_S,
+          () => fetchNaverBlog(p.name, keyId, key, deps.fetch, todayYmd)),
+        blogDeadlineMs - Date.now(),
+        null,
+      );
       blogs.set(p.id, sig);
     }));
   }
@@ -123,7 +205,9 @@ export async function handleEnrich(
   let finalUsed = used; // 응답 budget.googleUsed — 구글을 안 부르면 그대로 used
   const googles = new Map<string, GoogleSignal | null>();
 
-  if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP) {
+  // 남은 시간이 한 회차도 못 돌 만큼이면 시작하지 않는다 — 예약만 하고 버리는 꼴이 된다
+  const googleRoomMs = overallDeadlineMs - Date.now();
+  if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP && googleRoomMs >= PHASE_MIN_MS) {
     const apiKey = env.GOOGLE_PLACES_KEY;
     const wantedIds = prescore(places.map((p, i) => ({
       id: p.id,
@@ -157,10 +241,14 @@ export async function handleEnrich(
     // 완료 순서는 지출 계산과 무관하다 — spent는 캐시 미스(실제 호출)일 때만 늘어난다.
     // 순차였을 때는 슬롯 하나가 순차 보강(runPlan.ts)과 겹쳐 지연이 배로 쌓였다.
     await Promise.all(attempting.map(async p => {
-      const sig = await cached(env.CACHE, `gplace:${p.id}:${normalizeName(p.name)}`, GOOGLE_TTL_S, async () => {
-        spent++;
-        return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
-      });
+      const sig = await withDeadline(
+        cached(env.CACHE, `gplace:${p.id}:${normalizeName(p.name)}`, GOOGLE_TTL_S, async () => {
+          spent++;
+          return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
+        }),
+        overallDeadlineMs - Date.now(),
+        null,
+      );
       googles.set(p.id, sig);
     }));
 
@@ -197,6 +285,8 @@ export async function handleEnrich(
     const sig: PlaceSignals = { fetchedAt };
     const b = blogs.get(p.id);
     if (b) sig.blog = b;
+    // 물어봤다는 사실은 신호가 없어도 남긴다 — 앱의 buzz 커버리지 규칙이 이걸 분모로 쓴다
+    if (blogQueried.has(p.id)) sig.blogQueried = true;
     const g = googles.get(p.id);
     if (g) sig.google = g;
     results[p.id] = sig;

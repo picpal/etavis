@@ -227,8 +227,10 @@ test('room 이 원하는 후보 수보다 작으면 배열 순서가 아니라 p
     const url = String(typeof u === 'string' ? u : (u as Request).url ?? u);
     if (url.includes('naverapihub')) {
       const q = new URL(url).searchParams.get('query') ?? '';
-      // k10에만 최근 글을 몰아줘서 buzz로 prescore 순위를 역전시킨다(맨 뒤 인덱스인데도 상위권)
-      const boosted = q === '가게k10';
+      // k9에만 최근 글을 몰아줘서 buzz로 prescore 순위를 역전시킨다(뒤 인덱스인데도 상위권).
+      // k9 는 블로그 shortlist(앞 4곳 + 뒤에서 고르게 2곳)에 들어가는 후보다 —
+      // 안 물어본 후보는 buzz 가 0이라 애초에 역전할 수 없다.
+      const boosted = q === '가게k9';
       return new Response(JSON.stringify({
         total: 300,
         items: boosted ? Array.from({ length: 15 }, () => ({ postdate: '20260912' })) : [],
@@ -246,12 +248,11 @@ test('room 이 원하는 후보 수보다 작으면 배열 순서가 아니라 p
   const places = Array.from({ length: 11 }, (_, i) => place(`k${i}`));
   await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
 
-  // prescore 순위(적합도+buzz)는 k0,k1,k2,k3,k10,k4,k5,k6,k7,k8 순 — k9는 하위 10위 밖.
-  // room=5 라면 순위 상위 5곳(k0~k3, k10)을 물어야 한다. 배열 순서 그대로 앞 5개
-  // (k0~k4)를 자르면 k10 대신 k4가 뽑혀 버린다 — 예산이 부족한 상황일수록 정확해야
-  // 하는 지점이라 여기서 틀리면 안 된다.
+  // prescore 순위(적합도+buzz)는 k0,k1,k2,k9,k3,... 순이다. room=5 라면 순위 상위
+  // 5곳(k0~k3, k9)을 물어야 한다. 배열 순서 그대로 앞 5개(k0~k4)를 자르면 k9 대신
+  // k4가 뽑혀 버린다 — 예산이 부족한 상황일수록 정확해야 하는 지점이라 틀리면 안 된다.
   assert.equal(googleQueries.length, 5);
-  assert.deepEqual(new Set(googleQueries), new Set(['가게k0', '가게k1', '가게k2', '가게k3', '가게k10']));
+  assert.deepEqual(new Set(googleQueries), new Set(['가게k0', '가게k1', '가게k2', '가게k3', '가게k9']));
 });
 
 test('블로그 캐시는 24시간(86400초), 구글 캐시는 14일(1209600초) TTL로 저장된다', async () => {
@@ -317,27 +318,28 @@ test('캐시 쓰기가 실패해도 요청은 200 이고 예약분은 카운터�
 // 응답이 실제 store에 반영되지 않는다는 점이 드러났다. fix3-b가 실제 store에 값을
 // 써서 같은 시나리오를 물리적으로 더 정확하게 재현한다.)
 
-test('후보가 12곳을 넘으면 블로그는 12곳만 묻는다 — 앞 8곳은 반드시 포함', async () => {
+test('후보가 6곳을 넘으면 블로그는 6곳만 묻는다 — 앞 4곳은 반드시 포함', async () => {
   const kv = memKV();
   const { f, calls } = mockFetch();
   const places = Array.from({ length: 30 }, (_, i) => place(`p${i}`));
   const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
-  assert.equal(calls.naver, 12);
+  // 6곳이 Workers 동시 연결 한도 안에서 한 회차에 끝나는 최대치다. 7곳부터 두 배가 된다
+  assert.equal(calls.naver, 6);
   const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
-  // 회랑 거리순 앞 8곳은 전부 물어본다
-  for (let i = 0; i < 8; i++) assert.equal(body.results[`p${i}`].blogQueried, true, `p${i}`);
-  // 나머지 4곳은 뒤쪽에서 고르게 뽑는다 — 가까운 순으로만 몰리지 않는다
+  // 회랑 거리순 앞 4곳은 전부 물어본다
+  for (let i = 0; i < 4; i++) assert.equal(body.results[`p${i}`].blogQueried, true, `p${i}`);
+  // 나머지 2곳은 뒤쪽에서 고르게 뽑는다 — 가까운 순으로만 몰리지 않는다
   const queried = places.filter(p => body.results[p.id].blogQueried).map(p => p.id);
-  assert.equal(queried.length, 12);
+  assert.equal(queried.length, 6);
   assert.ok(queried.some(id => Number(id.slice(1)) >= 20), `뒤쪽 후보가 없다: ${queried}`);
 });
 
-test('후보가 12곳 이하면 전부 묻는다', async () => {
+test('후보가 6곳 이하면 전부 묻는다', async () => {
   const kv = memKV();
   const { f, calls } = mockFetch();
-  const places = Array.from({ length: 12 }, (_, i) => place(`p${i}`));
+  const places = Array.from({ length: 6 }, (_, i) => place(`p${i}`));
   const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
-  assert.equal(calls.naver, 12);
+  assert.equal(calls.naver, 6);
   const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
   for (const p of places) assert.equal(body.results[p.id].blogQueried, true);
 });
@@ -349,7 +351,7 @@ test('블로그를 안 물어본 후보는 blogQueried 가 없다', async () => 
   const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
   const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
   const notQueried = places.filter(p => !body.results[p.id].blogQueried);
-  assert.equal(notQueried.length, 18);
+  assert.equal(notQueried.length, 24);
 });
 
 /** 지정한 지연 뒤에 응답하는 목 — 마감 동작을 보려고 쓴다 */
@@ -375,10 +377,10 @@ test('budgetMs 마감을 넘긴 호출은 버리고 끝난 것만 돌려준다 �
   const { f } = slowFetch(3_000);
   const places = Array.from({ length: 30 }, (_, i) => place(`p${i}`));
   const t0 = Date.now();
-  const res = await handleEnrich({ places, budgetMs: 800 }, env(kv), { fetch: f, now: NOW });
+  const res = await handleEnrich({ places, budgetMs: 2_000 }, env(kv), { fetch: f, now: NOW });
   const elapsed = Date.now() - t0;
   assert.equal(res.status, 200);
-  assert.ok(elapsed < 1_500, `마감을 못 지켰다: ${elapsed}ms`);
+  assert.ok(elapsed < 2_800, `마감을 못 지켰다: ${elapsed}ms`);
   const body = await res.json() as {
     results: Record<string, { blog?: unknown; blogQueried?: boolean }>;
     budget: { googleUsed: number };
@@ -420,4 +422,29 @@ test('블로그가 마감을 다 써도 구글 몫은 남는다 — 단계별로
   const body = await res.json() as { results: Record<string, { google?: unknown }> };
   assert.ok(calls.google > 0, '구글이 굶었다');
   assert.ok(body.results.p0.google, '구글 신호가 와야 한다');
+});
+
+test('구글에 쓸 시간이 안 남으면 예약도 호출도 하지 않는다 — 버릴 결과에 과금하지 않는다', async () => {
+  // KV 가 느린 상황을 흉내낸다. 블로그가 제 몫을 다 쓰고 KV 읽기까지 겹치면
+  // 구글 차례엔 한 회차도 못 돌 시간만 남는다 — 그때 예약하면 과금만 나간다.
+  const kv = memKV();
+  const realGet = kv.get.bind(kv);
+  kv.get = (async (k: string) => { await new Promise(r => setTimeout(r, 700)); return realGet(k); }) as typeof kv.get;
+  const { f, calls } = mockFetch({ google: true });
+  const places = Array.from({ length: 3 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places, budgetMs: 2_000 }, env(kv), { fetch: f, now: NOW });
+  assert.equal(res.status, 200);
+  assert.equal(calls.google, 0, '시간이 없는데 구글을 불렀다');
+  // 예약조차 하지 않았으므로 카운터 키가 생기지 않는다
+  assert.equal(kv.store.get('gbudget:2026-09'), undefined);
+});
+
+test('블로그에 쓸 시간이 안 남으면 블로그 단계를 통째로 건너뛴다', async () => {
+  const kv = memKV();
+  const { f, calls } = mockFetch({ google: true });
+  // 최소 예산 500 → 블로그 몫 max(250, 500-1800) = 250 < 800 이라 건너뛴다
+  const res = await handleEnrich({ places: [place('p0')], budgetMs: 500 }, env(kv), { fetch: f, now: NOW });
+  assert.equal(calls.naver, 0);
+  const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
+  assert.equal(body.results.p0.blogQueried, undefined, '안 물어봤으면 표시도 없어야 한다');
 });

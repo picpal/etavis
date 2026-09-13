@@ -39,24 +39,37 @@ export type EnrichDeps = { fetch: typeof fetch; now: Date };
 
 const BLOG_TTL_S = 24 * 60 * 60;      // 설계 §2.1.1 — 24시간을 넘기지 않는다
 /**
- * 블로그에 물어볼 후보 수. Workers 는 요청당 동시 바깥 연결이 6개라, 30곳을
- * Promise.all 로 보내도 5회차로 나뉘어 나간다(실측 30곳 6.25초 / 12곳 4.03초).
- * 호출 수를 줄이는 것 말고 콜드를 단축할 방법이 없다.
+ * 블로그에 물어볼 후보 수.
+ *
+ * 실측(2026-09-13, 콜드): 1곳 1.7초 · 6곳 1.7초 · 12곳 3.4초. 네이버 호출 하나가
+ * 1.7초쯤 걸리고, Workers 는 요청당 동시 바깥 연결이 6개라 7곳부터 회차가 나뉜다.
+ * 6곳이 한 회차에 들어가는 최대치다 — 7곳으로 올리면 시간이 두 배가 된다.
+ *
+ * 30곳을 다 덮으려면 장소마다 묻는 대신 '지역+업종'으로 2~3번 묻고 블로그 글
+ * 제목을 후보명과 맞추는 쪽으로 가야 한다. NEXT.md 에 이월했다.
  */
-const BLOG_LOOKUP_MAX = 12;
+const BLOG_LOOKUP_MAX = 6;
 /**
  * 그중 앞에서 그대로 가져가는 수. 나머지는 뒤쪽에서 고르게 뽑는다.
- * 블로그를 부르기 전엔 인기를 모르므로 '인기 상위 12곳'은 원리적으로 불가능하다 —
+ * 블로그를 부르기 전엔 인기를 모르므로 '인기 상위 N곳'은 원리적으로 불가능하다 —
  * 회랑 거리순 상위만 뽑으면 이 기능이 '가까운 곳 추천'으로 바뀐다. 탐색용 타협이다.
  */
-const BLOG_LOOKUP_HEAD = 8;
+const BLOG_LOOKUP_HEAD = 4;
 /**
- * 예산 중 블로그 단계 몫. 나머지가 구글 몫이다.
- * 단계를 나누지 않으면 블로그가 예산을 다 먹고 구글이 아예 안 불린다 — 지금 구조는
- * 블로그가 전부 끝난 뒤에야 구글로 넘어가기 때문이다. 구글이 안 불리면 추천 카드에
- * 평점이 영영 안 붙는다. 구글을 부를 수 없는 요청(키 없음)에서는 블로그가 전부 쓴다.
+ * 구글 단계에 남겨 두는 시간. 블로그가 예산을 다 먹으면 구글이 아예 안 불려
+ * 추천 카드에 평점이 영영 안 붙는다 — 지금 구조는 블로그가 전부 끝난 뒤에야
+ * 구글로 넘어가기 때문이다. 구글 호출도 콜드 기준 1회차 약 1.5초다.
  */
-const BLOG_BUDGET_SHARE = 0.6;
+const GOOGLE_RESERVE_MS = 1_800;
+/** 예산이 작을 때도 블로그가 최소 이 비율은 갖는다 */
+const BLOG_MIN_SHARE = 0.5;
+/**
+ * 단계에 이보다 적게 남으면 그 단계를 통째로 건너뛴다.
+ * 특히 구글은 호출 '전에' 예산을 예약한다 — 끝날 수 없는 호출을 시작하면 결과는
+ * 버려지는데 과금과 카운터는 올라간다. 앞 단계나 KV 가 예상보다 오래 걸렸을 때
+ * 이 경로로 들어간다.
+ */
+const PHASE_MIN_MS = 800;
 
 /**
  * 마감까지만 기다리고, 넘기면 fallback 으로 떨어진다.
@@ -137,7 +150,10 @@ export async function handleEnrich(
   const budgetMs = parseBudgetMs(body);
   const startedMs = Date.now();
   const googleCanRun = Boolean(env.GOOGLE_PLACES_KEY);
-  const blogDeadlineMs = startedMs + Math.round(budgetMs * (googleCanRun ? BLOG_BUDGET_SHARE : 1));
+  const blogShareMs = googleCanRun
+    ? Math.max(Math.round(budgetMs * BLOG_MIN_SHARE), budgetMs - GOOGLE_RESERVE_MS)
+    : budgetMs;
+  const blogDeadlineMs = startedMs + blogShareMs;
   const overallDeadlineMs = startedMs + budgetMs;
 
   const todayYmd = ymdOf(deps.now);
@@ -147,7 +163,7 @@ export async function handleEnrich(
   // 1) 블로그 — 키가 있을 때만. shortlist 만 병렬로 묻는다
   const blogs = new Map<string, BlogSignal | null>();
   const blogQueried = new Set<string>();
-  if (env.NCP_API_KEY_ID && env.NCP_API_KEY) {
+  if (env.NCP_API_KEY_ID && env.NCP_API_KEY && blogShareMs >= PHASE_MIN_MS) {
     const keyId = env.NCP_API_KEY_ID;
     const key = env.NCP_API_KEY;
     const targets = blogShortlist(places.length).map(i => places[i]);
@@ -189,7 +205,9 @@ export async function handleEnrich(
   let finalUsed = used; // 응답 budget.googleUsed — 구글을 안 부르면 그대로 used
   const googles = new Map<string, GoogleSignal | null>();
 
-  if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP) {
+  // 남은 시간이 한 회차도 못 돌 만큼이면 시작하지 않는다 — 예약만 하고 버리는 꼴이 된다
+  const googleRoomMs = overallDeadlineMs - Date.now();
+  if (env.GOOGLE_PLACES_KEY && used < GOOGLE_MONTHLY_CAP && googleRoomMs >= PHASE_MIN_MS) {
     const apiKey = env.GOOGLE_PLACES_KEY;
     const wantedIds = prescore(places.map((p, i) => ({
       id: p.id,

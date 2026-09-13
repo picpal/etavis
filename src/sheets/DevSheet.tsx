@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const insets = useSafeAreaInsets();
-  const { state, setDataset, setFailNext, setDevAnyCongestion } = usePlan();
+  const { state, setDataset, setFailNext, setDevAnyCongestion, confirmPlan } = usePlan();
   const tracker = useTracker();
   const [logs, setLogs] = useState<{ name: string; bytes: number }[]>([]);
   const refreshLogs = () => {
@@ -163,6 +163,37 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
             <View style={{ width: 27, height: 27, borderRadius: 13.5, backgroundColor: '#fff' }} />
           </Pressable>
         </Card>
+
+        {/* 목 데이터셋은 로드만 되고 확정은 안 된다 — 진행중 탭은 확정된 계획만 보여준다.
+            확정은 경로 편집 화면(A6)에서 하는데, 거기는 새 계획 흐름(실제 검색 → 할 일 없음)이나
+            딥링크로만 닿는다. 실기기 점검표(할 일)를 보려면 여기서 바로 확정해야 한다. */}
+        <Pressable
+          onPress={() => {
+            haptic();
+            confirmPlan();
+            onClose();
+          }}
+          disabled={state.planConfirmed}
+          style={({ pressed }) => ({
+            minHeight: 48,
+            borderRadius: 12,
+            backgroundColor: state.planConfirmed ? color.bg : color.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.7 : 1,
+          })}
+        >
+          <Text
+            style={{
+              fontFamily: 'Pretendard-SemiBold',
+              fontSize: 15,
+              lineHeight: 15,
+              color: state.planConfirmed ? color.muted : '#fff',
+            }}
+          >
+            {state.planConfirmed ? '이 계획이 진행 중이에요' : '이 데이터셋으로 진행중 시작'}
+          </Text>
+        </Pressable>
 
         {/* 주행 시뮬레이션 — 판정 로직은 실제 좌표 계산으로 동작 */}
         <Text style={[type.label, { color: color.muted }]}>위치 추적</Text>

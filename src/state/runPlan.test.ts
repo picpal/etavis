@@ -390,12 +390,56 @@ test('보강이 응답 없이 걸려도(hang) 파이프라인은 12초 예산 �
       })),
       enrich: () => new Promise(() => {}), // 절대 안 끝나는 보강
       dispatch: a => actions.push(a),
-      timeoutMs: 30,
+      // 보강이 실제로 불릴 만큼은 남겨야 이 경로를 시험한다. 예산이 모자라면
+      // 보강을 건너뛰므로(아래 테스트) hang 자체에 닿지 않는다.
+      timeoutMs: 5_000,
     },
   );
   const last = actions[actions.length - 1];
   assert.equal(last.type, 'FAIL');
   assert.equal((last as { type: 'FAIL'; error: { kind: string } }).error.kind, 'timeout');
+});
+
+test('남은 시간이 플래너 몫에도 못 미치면 보강을 아예 건너뛴다', async () => {
+  const seen: unknown[] = [];
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    req([{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    {
+      provider: mockRouteProvider(),
+      search: async () => Array.from({ length: 6 }, (_, i) => ({
+        id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+      })),
+      enrich: async ps => { seen.push(ps); return {}; },
+      dispatch: a => actions.push(a),
+      timeoutMs: 4_000, // 플래너 예약 3.5초 + 여유 0.5초를 빼면 슬롯당 0 이 된다
+    },
+  );
+  assert.equal(seen.length, 0, '보강을 부르면 안 된다');
+  assert.ok(actions.some(a => a.type === 'RESULT'), '계획 자체는 나와야 한다');
+});
+
+test('슬롯이 여럿이면 보강 예산을 슬롯 수로 나눠 준다 — 합이 상한을 넘지 않는다', async () => {
+  const given: number[] = [];
+  await runPlan(
+    req([
+      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    ]),
+    {
+      provider: mockRouteProvider(),
+      search: async () => Array.from({ length: 6 }, (_, i) => ({
+        id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+      })),
+      enrich: async (_ps, opts) => { given.push(opts?.timeoutMs ?? -1); return {}; },
+      dispatch: () => {},
+      timeoutMs: 12_000,
+    },
+  );
+  assert.equal(given.length, 2);
+  // 12초 - 3.5초(플래너) - 0.5초(여유) = 8초지만 상한 5초에 걸리고, 둘로 나눠 2.5초씩
+  assert.deepEqual(given, [2_500, 2_500]);
+  assert.ok(given[0] + given[1] <= 5_000);
 });
 
 test('보강 최소 후보수 경계 — 정확히 4개면 보강을 부른다(> 아니라 >=)', async () => {

@@ -16,7 +16,7 @@
  *
  * 부분 실패는 실패가 아니다. 블로그만 와도 200 이다.
  */
-import { parseEnrichRequest, type EnrichPlace } from './enrichSchema';
+import { parseBudgetMs, parseEnrichRequest, type EnrichPlace } from './enrichSchema';
 import { fetchNaverBlog } from './naverBlog';
 import { fetchGooglePlace } from './googlePlaces';
 import { prescore } from '../../src/lib/trendScore';
@@ -50,6 +50,29 @@ const BLOG_LOOKUP_MAX = 12;
  * 회랑 거리순 상위만 뽑으면 이 기능이 '가까운 곳 추천'으로 바뀐다. 탐색용 타협이다.
  */
 const BLOG_LOOKUP_HEAD = 8;
+/**
+ * 예산 중 블로그 단계 몫. 나머지가 구글 몫이다.
+ * 단계를 나누지 않으면 블로그가 예산을 다 먹고 구글이 아예 안 불린다 — 지금 구조는
+ * 블로그가 전부 끝난 뒤에야 구글로 넘어가기 때문이다. 구글이 안 불리면 추천 카드에
+ * 평점이 영영 안 붙는다. 구글을 부를 수 없는 요청(키 없음)에서는 블로그가 전부 쓴다.
+ */
+const BLOG_BUDGET_SHARE = 0.6;
+
+/**
+ * 마감까지만 기다리고, 넘기면 fallback 으로 떨어진다.
+ * 버려진 호출의 캐시 쓰기는 응답 뒤에 취소될 수 있다 — 다음 요청이 다시 받으면 된다.
+ * 예산 카운터는 호출 '전에' 예약하므로 버려진 구글 호출도 지출로 남는다(실제로 나갔다).
+ */
+function withDeadline<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  if (ms <= 0) return Promise.resolve(fallback);
+  return new Promise<T>(resolve => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      v => { clearTimeout(timer); resolve(v); },
+      () => { clearTimeout(timer); resolve(fallback); },
+    );
+  });
+}
 
 /**
  * 블로그에 물어볼 후보의 인덱스. 입력은 회랑 거리순이다.
@@ -110,6 +133,13 @@ export async function handleEnrich(
   const places = parseEnrichRequest(body);
   if (!places) return json({ error: 'bad request' }, 422);
 
+  // 마감은 벽시계로 잰다. deps.now 는 날짜 계산용 고정값이라 경과 시간에 못 쓴다.
+  const budgetMs = parseBudgetMs(body);
+  const startedMs = Date.now();
+  const googleCanRun = Boolean(env.GOOGLE_PLACES_KEY);
+  const blogDeadlineMs = startedMs + Math.round(budgetMs * (googleCanRun ? BLOG_BUDGET_SHARE : 1));
+  const overallDeadlineMs = startedMs + budgetMs;
+
   const todayYmd = ymdOf(deps.now);
   const todayDow = deps.now.getUTCDay();
   const fetchedAt = deps.now.toISOString();
@@ -123,8 +153,12 @@ export async function handleEnrich(
     const targets = blogShortlist(places.length).map(i => places[i]);
     for (const p of targets) blogQueried.add(p.id);
     await Promise.all(targets.map(async p => {
-      const sig = await cached(env.CACHE, `blog:${p.id}`, BLOG_TTL_S,
-        () => fetchNaverBlog(p.name, keyId, key, deps.fetch, todayYmd));
+      const sig = await withDeadline(
+        cached(env.CACHE, `blog:${p.id}`, BLOG_TTL_S,
+          () => fetchNaverBlog(p.name, keyId, key, deps.fetch, todayYmd)),
+        blogDeadlineMs - Date.now(),
+        null,
+      );
       blogs.set(p.id, sig);
     }));
   }
@@ -189,10 +223,14 @@ export async function handleEnrich(
     // 완료 순서는 지출 계산과 무관하다 — spent는 캐시 미스(실제 호출)일 때만 늘어난다.
     // 순차였을 때는 슬롯 하나가 순차 보강(runPlan.ts)과 겹쳐 지연이 배로 쌓였다.
     await Promise.all(attempting.map(async p => {
-      const sig = await cached(env.CACHE, `gplace:${p.id}:${normalizeName(p.name)}`, GOOGLE_TTL_S, async () => {
-        spent++;
-        return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
-      });
+      const sig = await withDeadline(
+        cached(env.CACHE, `gplace:${p.id}:${normalizeName(p.name)}`, GOOGLE_TTL_S, async () => {
+          spent++;
+          return fetchGooglePlace({ name: p.name, lat: p.lat, lng: p.lng }, apiKey, deps.fetch, todayDow);
+        }),
+        overallDeadlineMs - Date.now(),
+        null,
+      );
       googles.set(p.id, sig);
     }));
 

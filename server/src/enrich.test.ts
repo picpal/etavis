@@ -283,7 +283,7 @@ test('구글 키가 없으면 구글을 부르지 않는다', async () => {
   assert.equal(body.results.k0.google, undefined);
 });
 
-test('루프 중간에 죽어도 예약분은 남는다 — 이미 만든 호출을 잊지 않는다', async () => {
+test('캐시 쓰기가 실패해도 요청은 200 이고 예약분은 카운터에 남는다', async () => {
   const kv = memKV();
   const { f } = mockFetch({ google: true });
   let gplacePuts = 0;
@@ -298,11 +298,16 @@ test('루프 중간에 죽어도 예약분은 남는다 — 이미 만든 호출
   }) as typeof kv.put;
 
   const places = Array.from({ length: 3 }, (_, i) => place(`k${i}`));
-  await assert.rejects(handleEnrich({ places }, env(kv), { fetch: f, now: NOW }));
+  // 마감 래퍼가 개별 호출의 실패를 '신호 없음'으로 흡수한다 — 부분 실패는 실패가 아니다.
+  // 예전엔 여기서 요청 전체가 죽었다(assert.rejects). 캐시 쓰기 한 번 실패했다고
+  // 나머지 두 후보의 신호까지 버릴 이유가 없다.
+  const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
+  assert.equal(res.status, 200);
+  const body = await res.json() as { results: Record<string, { google?: unknown }> };
+  assert.ok(body.results.k0.google, '쓰기가 성공한 후보의 신호는 살아있다');
 
-  // 루프는 두 번째 후보에서 죽었다(실제로는 최소 2회 호출이 이미 나갔다). 예약은
-  // 루프 시작 전에 attempting.length(3)만큼 이미 적혀 있으므로, 죽더라도 카운터가
-  // 0(아무것도 안 쓴 것처럼)으로 남지 않고 예약된 값을 유지해야 한다.
+  // 호출은 3회 다 나갔다(spent 3 == 예약 3). 쓰기가 실패한 후보의 몫도 실제로 과금됐으므로
+  // 카운터는 예약값 그대로 남아야 한다 — 지출을 잊으면 안 된다.
   const stored = Number(kv.store.get('gbudget:2026-09'));
   assert.equal(stored, 3);
 });
@@ -345,4 +350,74 @@ test('블로그를 안 물어본 후보는 blogQueried 가 없다', async () => 
   const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
   const notQueried = places.filter(p => !body.results[p.id].blogQueried);
   assert.equal(notQueried.length, 18);
+});
+
+/** 지정한 지연 뒤에 응답하는 목 — 마감 동작을 보려고 쓴다 */
+function slowFetch(delayMs: number) {
+  const calls = { naver: 0, google: 0 };
+  const f = (async (u: unknown) => {
+    const url = String(typeof u === 'string' ? u : (u as Request).url ?? u);
+    const isNaver = url.includes('naverapihub');
+    if (isNaver) calls.naver++; else calls.google++;
+    await new Promise(r => setTimeout(r, delayMs));
+    if (isNaver) {
+      return new Response(JSON.stringify({ total: 300, items: [{ postdate: '20260912' }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({
+      places: [{ displayName: { text: '가게p0' }, location: { latitude: 37.55, longitude: 126.92 }, rating: 4.4, userRatingCount: 120 }],
+    }), { status: 200 });
+  }) as unknown as typeof fetch;
+  return { f, calls };
+}
+
+test('budgetMs 마감을 넘긴 호출은 버리고 끝난 것만 돌려준다 — 전부 아니면 전무가 아니다', async () => {
+  const kv = memKV();
+  const { f } = slowFetch(3_000);
+  const places = Array.from({ length: 30 }, (_, i) => place(`p${i}`));
+  const t0 = Date.now();
+  const res = await handleEnrich({ places, budgetMs: 800 }, env(kv), { fetch: f, now: NOW });
+  const elapsed = Date.now() - t0;
+  assert.equal(res.status, 200);
+  assert.ok(elapsed < 1_500, `마감을 못 지켰다: ${elapsed}ms`);
+  const body = await res.json() as {
+    results: Record<string, { blog?: unknown; blogQueried?: boolean }>;
+    budget: { googleUsed: number };
+  };
+  // 물어본 사실은 남고, 마감에 걸린 신호는 빠진다
+  assert.equal(body.results.p0.blogQueried, true);
+  assert.equal(body.results.p0.blog, undefined);
+  assert.ok(typeof body.budget.googleUsed === 'number');
+});
+
+test('budgetMs 가 넉넉하면 느린 응답도 기다린다', async () => {
+  const kv = memKV();
+  const { f } = slowFetch(200);
+  const places = Array.from({ length: 4 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places, budgetMs: 4_000 }, env(kv), { fetch: f, now: NOW });
+  const body = await res.json() as { results: Record<string, { blog?: unknown }> };
+  assert.ok(body.results.p0.blog, '신호가 와야 한다');
+});
+
+test('블로그가 마감을 다 써도 구글 몫은 남는다 — 단계별로 예산을 나눈다', async () => {
+  const kv = memKV();
+  // 블로그는 마감을 넘기고(1초), 구글은 빠르다. 단계가 나뉘어 있지 않으면
+  // 블로그가 예산을 다 먹어 구글이 아예 안 불린다
+  const calls = { naver: 0, google: 0 };
+  const f = (async (u: unknown) => {
+    const url = String(typeof u === 'string' ? u : (u as Request).url ?? u);
+    if (url.includes('naverapihub')) {
+      calls.naver++;
+      await new Promise(r => setTimeout(r, 1_000));
+      return new Response(JSON.stringify({ total: 300, items: [{ postdate: '20260912' }] }), { status: 200 });
+    }
+    calls.google++;
+    return new Response(JSON.stringify({
+      places: [{ displayName: { text: '가게p0' }, location: { latitude: 37.55, longitude: 126.92 }, rating: 4.4, userRatingCount: 120 }],
+    }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const places = Array.from({ length: 6 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places, budgetMs: 900 }, env(kv), { fetch: f, now: NOW });
+  const body = await res.json() as { results: Record<string, { google?: unknown }> };
+  assert.ok(calls.google > 0, '구글이 굶었다');
+  assert.ok(body.results.p0.google, '구글 신호가 와야 한다');
 });

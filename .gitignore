@@ -56,3 +56,6 @@ server/llm-results.json
 node_modules
 .superpowers/
 .claude/worktrees/
+
+# wrangler 로컬 시크릿 — 절대 커밋하지 않는다
+server/.dev.vars

@@ -37,7 +37,7 @@ const json = (body: unknown, status = 200) =>
 
 /** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다.
     /route는 계획 하나에 5~9회가 나가므로(설계 문서 호출 수 표) 더 넉넉하다 */
-const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10 };
+const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/spike/blog': 120 };
 
 /** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
 const DEFAULT_MODEL = 'gpt-5.6-sol';
@@ -87,13 +87,30 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
-    const known = ['/extract', '/route', '/enrich'];
+    const known = ['/extract', '/route', '/enrich', '/spike/blog'];
     if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
     if (gated instanceof Response) return gated;
     if (url.pathname === '/route') return handleRoute(gated.body, env);
     if (url.pathname === '/enrich') return handleEnrich(gated.body, env, { fetch, now: new Date() });
+    // 임시 — 지역+업종 질의 스파이크(server/spike-area-query.mjs)용 네이버 프록시.
+    // 키가 Cloudflare 시크릿에만 있어 로컬에서 못 부른다. 스파이크가 끝나면 뗀다.
+    if (url.pathname === '/spike/blog') {
+      const b = (gated.body ?? {}) as { q?: string; start?: number; display?: number };
+      const q = String(b.q ?? '').slice(0, 100);
+      if (!q.trim() || !env.NCP_API_KEY_ID || !env.NCP_API_KEY) return json({ error: 'bad request' }, 400);
+      const u = new URL('https://naverapihub.apigw.ntruss.com/search/v1/blog');
+      u.searchParams.set('query', q); u.searchParams.set('sort', 'date');
+      u.searchParams.set('display', String(Math.max(1, Math.min(100, Number(b.display) || 100))));
+      u.searchParams.set('start', String(Math.max(1, Math.min(1000, Number(b.start) || 1))));
+      const t0 = Date.now();
+      const r = await fetch(u, { headers: { 'X-NCP-APIGW-API-KEY-ID': env.NCP_API_KEY_ID, 'X-NCP-APIGW-API-KEY': env.NCP_API_KEY } });
+      if (!r.ok) return json({ error: 'upstream', status: r.status }, 502);
+      const j = (await r.json()) as { total?: number; items?: { title?: string; description?: string; postdate?: string }[] };
+      return json({ total: j.total ?? 0, ms: Date.now() - t0,
+        items: (j.items ?? []).map(it => ({ title: it.title ?? '', description: it.description ?? '', postdate: it.postdate ?? '' })) });
+    }
 
     const body = (gated.body ?? {}) as { text?: string; context?: unknown };
     const text = (body.text ?? '').slice(0, 500);

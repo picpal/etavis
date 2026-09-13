@@ -24,6 +24,7 @@ import { buildPolyline, crossTrack, offsetPerpendicular, pointAtProgress, polyli
 import { toMin, usePlan } from './plan';
 import { initialArrivalState, profileFor, stepArrival, type ArrivalState, type Fix, type Point } from '../lib/arrival';
 import { flushTrackLog, logTrack } from '../lib/trackLog';
+import { shouldLogFix, shouldLogGeofence, type FixMark, type GeofenceMark } from '../lib/trackLogFormat';
 import { usePlanFlow } from './planFlowProvider';
 
 /** 위치 공급원 — live는 실제 GPS, 나머지는 개발용 시뮬레이션 */
@@ -190,11 +191,19 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
    * 시뮬레이션 틱과 실제 GPS 콜백이 이 함수를 공유한다.
    */
   const arrivalRef = useRef<ArrivalState>(initialArrivalState);
+  /** 마지막으로 로그에 남긴 위치·판정 — 소음 필터의 기준점 */
+  const lastFixMarkRef = useRef<FixMark | null>(null);
+  const lastGeofenceMarkRef = useRef<GeofenceMark | null>(null);
 
   const detectRef = useRef<(fix: Fix, src: 'fg' | 'bg' | 'sim', simStuck?: boolean) => void>(() => {});
   detectRef.current = (fix: Fix, src, simStuck = false) => {
     const position: LatLng = { latitude: fix.latitude, longitude: fix.longitude };
-    logTrack({ k: 'fix', lat: fix.latitude, lng: fix.longitude, acc: fix.accuracyM ?? null, spd: fix.speedMps ?? null, src });
+    // 5초/20m 간격 그대로 남기면 30분 주행이 360줄이라, 판정을 설명하는 줄이 그 안에 묻힌다
+    const fixMark: FixMark = { lat: fix.latitude, lng: fix.longitude, atMs: Date.now() };
+    if (shouldLogFix(lastFixMarkRef.current, fixMark)) {
+      lastFixMarkRef.current = fixMark;
+      logTrack({ k: 'fix', lat: fix.latitude, lng: fix.longitude, acc: fix.accuracyM ?? null, spd: fix.speedMps ?? null, src });
+    }
 
     // 도착·출발 — 순수 판정에 넘기고 이벤트만 옮긴다
     const { stops, passedCount, atStop, arrivedAtDest } = planRef.current;
@@ -216,18 +225,23 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     });
     arrivalRef.current = step.state;
     if (step.ignored == null && target) {
-      logTrack({
-        k: 'geofence',
-        target: target.id,
-        next: next?.id ?? null,
-        dTarget: step.distToTargetM,
-        dNext: step.distToNextM,
-        arriveR: step.arriveR,
-        departR: step.departR,
-        ignored: null,
-        events: step.events.map(e => `${e.kind}:${e.id}`),
-        atStop,
-      });
+      // 판정이 일어난 순간(events)·대상이 바뀐 순간은 반드시 남기고, 그 외엔 heartbeat 만
+      const gMark: GeofenceMark = { target: target.id, atStop, hasEvents: step.events.length > 0, atMs: Date.now() };
+      if (shouldLogGeofence(lastGeofenceMarkRef.current, gMark)) {
+        lastGeofenceMarkRef.current = gMark;
+        logTrack({
+          k: 'geofence',
+          target: target.id,
+          next: next?.id ?? null,
+          dTarget: step.distToTargetM,
+          dNext: step.distToNextM,
+          arriveR: step.arriveR,
+          departR: step.departR,
+          ignored: null,
+          events: step.events.map(e => `${e.kind}:${e.id}`),
+          atStop,
+        });
+      }
     }
     // 전환 순간에만 알린다 — 상시 갱신을 알림으로 흉내내면 계속 울려서 방해가 된다
     for (const ev of step.events) {

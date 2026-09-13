@@ -6,14 +6,21 @@
  *
  *   node scripts/tracklog-timeline.mjs track-export.jsonl
  *
- * plan 줄에서 지점 이름을 익히고 geofence·track·mode·notify를 시각순으로 한 줄씩 찍는다.
+ * plan 줄에서 지점 이름을 익히고 act·net·geofence·track·mode·notify를 시각순으로 찍는다.
  * fix는 접어서 이벤트 사이 샘플 수·정확도 범위만 요약한다.
+ *
+ * 계획이 여러 번이면 r(runId)로 갈린다 — --run <id> 로 하나만 볼 수 있다.
  */
 import { readFileSync } from 'node:fs';
 
-const path = process.argv[2];
+const args = process.argv.slice(2);
+const runIdx = args.indexOf('--run');
+const onlyRun = runIdx >= 0 ? args[runIdx + 1] : null;
+// --run 이 없으면 runIdx 가 -1 이라, runIdx+1 을 그냥 빼면 첫 인자가 사라진다
+const skip = runIdx >= 0 ? runIdx + 1 : -1;
+const path = args.find((a, i) => !a.startsWith('--') && i !== skip);
 if (!path) {
-  console.error('usage: node scripts/tracklog-timeline.mjs <file.jsonl>');
+  console.error('usage: node scripts/tracklog-timeline.mjs <file.jsonl> [--run <runId>]');
   process.exit(1);
 }
 
@@ -28,7 +35,20 @@ const rows = readFileSync(path, 'utf8')
     }
   })
   .filter(Boolean)
+  .filter(r => !onlyRun || r.r === onlyRun)
   .sort((a, b) => (a.t < b.t ? -1 : 1));
+
+if (rows.length === 0) {
+  console.error(onlyRun ? `run ${onlyRun} 에 해당하는 줄이 없다` : '읽을 줄이 없다');
+  process.exit(1);
+}
+
+/** 한 겹 상세를 'k=v · k=v' 로 — 빈 값은 지운다 */
+const detail = d =>
+  !d ? '' : Object.entries(d)
+    .filter(([, v]) => v !== null && v !== '' && v !== false)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(' · ');
 
 const names = new Map();
 const name = id => (id == null ? '-' : (names.get(id) ?? id));
@@ -53,13 +73,27 @@ for (const r of rows) {
   flushFixes();
   const t = hm(r.t);
   switch (r.k) {
-    case 'plan':
+    case 'plan': {
       names.set('D', '목적지');
-      for (const s of r.stops) names.set(s.id, s.name);
-      console.log(`${t} PLAN  ${r.mode} · ${r.source} · 경유 ${r.stops.map(s => s.name).join(' → ')} → 목적지`);
+      const stops = r.stops ?? [];
+      for (const s of stops) names.set(s.id, s.name);
+      const via = stops.length ? `경유 ${stops.map(s => s.name).join(' → ')} → ` : '';
+      console.log(`${t} PLAN  ${r.mode} · ${r.source} · ${via}목적지`);
       break;
+    }
+    case 'act': {
+      const d = detail(r.d);
+      console.log(`${t} ACT   ${r.a}${d ? `  ${d}` : ''}`);
+      break;
+    }
+    case 'net': {
+      const d = detail(r.d);
+      console.log(`${t} NET   ${r.ep} ${r.ok ? '' : '실패 '}${r.ms}ms${d ? `  ${d}` : ''}`);
+      break;
+    }
     case 'geofence': {
-      const ev = r.events.length ? `  ⇒ ${r.events.join(', ')}` : '';
+      // events 가 없는 줄에서 죽던 것 — 옛 파일·부분 기록도 읽혀야 한다
+      const ev = r.events?.length ? `  ⇒ ${r.events.join(', ')}` : '';
       const ig = r.ignored ? `  (무시: ${r.ignored})` : '';
       console.log(`${t} GEO   ${name(r.target)} ${m(r.dTarget)}/${m(r.arriveR)} ${r.atStop ? '체류' : '접근'} · next ${name(r.next)} ${m(r.dNext)} · 출발R ${m(r.departR)}${ig}${ev}`);
       break;

@@ -38,10 +38,16 @@ const ENRICH_SAFETY_MS = 500;
 /** 보강 단계 전체 상한. 남은 시간이 아무리 많아도 이보다 오래 쓰지 않는다 */
 const ENRICH_CAP_MS = 5_000;
 /**
- * 슬롯당 이보다 적게 남으면 보강을 통째로 건너뛴다. 서버가 부분 결과를 주긴 하지만,
- * 너무 짧으면 한 건도 못 받고 카카오·네이버 쿼터만 태운다.
+ * 슬롯 하나가 쓸 만한 결과를 받으려면 최소 이만큼은 있어야 한다.
+ *
+ * 유도(2026-09-13 실측): 서버는 받은 예산에서 구글 몫 1.8초를 떼고 나머지를 블로그에
+ * 준다. 네이버 호출 하나가 1.7초이므로 블로그 몫이 1.9초는 돼야 한 회차가 끝난다
+ * → 서버 예산 ≥ 3.7초. 여기에 서버 오버헤드 여유(SERVER_MARGIN_MS 0.7초)를 더해 4.4초다.
+ *
+ * 이보다 적게 주면 한 건도 못 받는다 — 예전 값(0.8초)으로는 업종 슬롯이 2개일 때
+ * 슬롯당 2.5초씩 나눠 갖고 **둘 다 빈 결과**였다(로그: budgetMs=2500 results=0).
  */
-const ENRICH_MIN_SLOT_MS = 800;
+const ENRICH_MIN_SLOT_MS = 4_400;
 
 /** 체류시간 기본값 — 할 일이 생기면 A9에서 바뀐다. 목 데이터와 같은 수준 */
 const DWELL: [RegExp, number][] = [
@@ -124,16 +130,25 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
       // 그대로 곱해져 12초 예산을 넘긴다 — 슬롯 3개 × 8초면 24초다.
       const remainMs = timeoutMs - (Date.now() - startedMs);
       const enrichBudgetMs = Math.min(ENRICH_CAP_MS, remainMs - PLANNER_RESERVE_MS - ENRICH_SAFETY_MS);
-      const perSlotMs = need.length > 0 ? Math.floor(enrichBudgetMs / need.length) : 0;
-      if (need.length > 0 && perSlotMs >= ENRICH_MIN_SLOT_MS) {
+      // 예산을 슬롯 수로 미리 나누지 않는다. 나누면 어느 슬롯도 한 건을 못 끝낸다 —
+      // 실측(2026-09-13)에서 슬롯 2개가 각 2.5초를 받고 둘 다 빈 결과였다.
+      // 대신 슬롯마다 '그 시점에 남은 예산 전부'를 준다. 캐시가 더워 빨리 끝나면
+      // 다음 슬롯이 나머지를 쓰고, 콜드라 다 쓰면 다음 슬롯은 건너뛴다.
+      // 전부 빈 결과를 받느니 앞 슬롯 하나라도 신호가 붙는 게 낫다.
+      const enrichDeadlineMs = Date.now() + enrichBudgetMs;
+      if (need.length > 0 && enrichBudgetMs >= ENRICH_MIN_SLOT_MS) {
         try {
           await race((async () => {
             for (const s of need) {
+              // 남은 시간으로 한 건도 못 끝낼 바에는 부르지 않는다 — 결과는 버려지는데
+              // 네이버·구글 쿼터만 나간다
+              const leftMs = enrichDeadlineMs - Date.now();
+              if (leftMs < ENRICH_MIN_SLOT_MS) break;
               try {
                 const m = await deps.enrich!(s.candidates.map(c => ({
                   id: c.id, name: c.name, address: c.address ?? '',
                   lat: c.coord.latitude, lng: c.coord.longitude,
-                })), { timeoutMs: perSlotMs });
+                })), { timeoutMs: leftMs });
                 s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
               } catch {
                 // 이 슬롯만 신호 없이 남는다 — 나머지 슬롯은 계속 진행한다

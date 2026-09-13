@@ -392,7 +392,8 @@ test('보강이 응답 없이 걸려도(hang) 파이프라인은 12초 예산 �
       dispatch: a => actions.push(a),
       // 보강이 실제로 불릴 만큼은 남겨야 이 경로를 시험한다. 예산이 모자라면
       // 보강을 건너뛰므로(아래 테스트) hang 자체에 닿지 않는다.
-      timeoutMs: 5_000,
+      // 플래너 예약 3.5초 + 여유 0.5초를 빼고도 슬롯 최소치 4.4초가 남아야 한다.
+      timeoutMs: 8_500,
     },
   );
   const last = actions[actions.length - 1];
@@ -419,27 +420,52 @@ test('남은 시간이 플래너 몫에도 못 미치면 보강을 아예 건너
   assert.ok(actions.some(a => a.type === 'RESULT'), '계획 자체는 나와야 한다');
 });
 
-test('슬롯이 여럿이면 보강 예산을 슬롯 수로 나눠 준다 — 합이 상한을 넘지 않는다', async () => {
+const sixCandidates: SearchFn = async () =>
+  Array.from({ length: 6 }, (_, i) => ({
+    id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+  }));
+
+const twoCategorySlots = () =>
+  req([
+    { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+  ]);
+
+test('슬롯마다 그 시점에 남은 예산 전부를 준다 — 나눠 주면 어느 슬롯도 한 건을 못 끝낸다', async () => {
+  // 예산을 미리 쪼개면 슬롯당 2.5초가 되는데, 네이버 호출 하나가 1.7초라 서버가
+  // 한 건도 못 끝낸다. 실측에서 슬롯 2개가 둘 다 빈 결과였다(budgetMs=2500 results=0).
   const given: number[] = [];
-  await runPlan(
-    req([
-      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-    ]),
-    {
-      provider: mockRouteProvider(),
-      search: async () => Array.from({ length: 6 }, (_, i) => ({
-        id: `c${i}`, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
-      })),
-      enrich: async (_ps, opts) => { given.push(opts?.timeoutMs ?? -1); return {}; },
-      dispatch: () => {},
-      timeoutMs: 12_000,
-    },
-  );
+  await runPlan(twoCategorySlots(), {
+    provider: mockRouteProvider(),
+    search: sixCandidates,
+    enrich: async (_ps, opts) => { given.push(opts?.timeoutMs ?? -1); return {}; },
+    dispatch: () => {},
+    timeoutMs: 12_000,
+  });
+  // 목 보강은 즉시 끝나므로 두 슬롯 다 불린다. 첫 슬롯이 상한(5초)에 가까운 값을 받고,
+  // 두 번째도 거의 그대로 받는다 — 나눠 준 2.5초가 아니다
   assert.equal(given.length, 2);
-  // 12초 - 3.5초(플래너) - 0.5초(여유) = 8초지만 상한 5초에 걸리고, 둘로 나눠 2.5초씩
-  assert.deepEqual(given, [2_500, 2_500]);
-  assert.ok(given[0] + given[1] <= 5_000);
+  assert.ok(given[0] > 4_000, `첫 슬롯이 ${given[0]}ms 만 받았다`);
+  assert.ok(given[1] > 4_000, `두 번째 슬롯이 ${given[1]}ms 만 받았다`);
+  assert.ok(given[0] <= 5_000 && given[1] <= 5_000, '상한 5초를 넘으면 안 된다');
+});
+
+test('첫 슬롯이 예산을 다 쓰면 다음 슬롯은 건너뛴다 — 결과가 버려질 호출에 쿼터를 안 쓴다', async () => {
+  const given: number[] = [];
+  await runPlan(twoCategorySlots(), {
+    provider: mockRouteProvider(),
+    search: sixCandidates,
+    enrich: async (_ps, opts) => {
+      given.push(opts?.timeoutMs ?? -1);
+      // 콜드처럼 예산을 써서, 남은 시간이 슬롯 최소치(4.4초) 아래로 떨어지게 한다.
+      // 전액을 다 쓰지 않아도 남은 몫이 한 건을 못 끝낼 만큼이면 건너뛰어야 한다
+      await new Promise(r => setTimeout(r, 800));
+      return {};
+    },
+    dispatch: () => {},
+    timeoutMs: 12_000,
+  });
+  assert.equal(given.length, 1, '두 번째 슬롯을 부르면 안 된다');
 });
 
 test('보강 최소 후보수 경계 — 정확히 4개면 보강을 부른다(> 아니라 >=)', async () => {

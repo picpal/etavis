@@ -30,8 +30,12 @@ const DEFAULT_TIMEOUT_MS = 4_000;
 /**
  * 서버 마감을 클라이언트 abort 보다 이만큼 앞당긴다. 서버가 먼저 정리하고 부분
  * 결과를 돌려줘야 한다 — abort 가 먼저 터지면 다 끝난 신호까지 통째로 버린다.
+ *
+ * 300ms 였는데 실측 서버 오버헤드가 그보다 컸다(예산 2.5초 요청에 3.55초 소요).
+ * 그래서 서버가 만든 부분 결과를 클라이언트가 버리고 있었다 — 로그에 2522ms 만에
+ * results=0 으로 남았다. 실측 오버헤드 0.2~1.0초의 위쪽을 잡아 0.7초로 둔다.
  */
-const SERVER_MARGIN_MS = 300;
+const SERVER_MARGIN_MS = 700;
 
 export function serverEnrichFn(opts: {
   baseUrl: string;

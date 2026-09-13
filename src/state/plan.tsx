@@ -3,11 +3,13 @@
  * 로드 시에는 mockData 수치를 그대로 쓰고, 사용자가 경로를 바꾼 뒤에는
  * LEGS 테이블 기반 체인 재계산으로 도착 시각·총시간·직행 대비를 다시 만든다.
  */
-import React, { createContext, useContext, useMemo, useReducer, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef } from 'react';
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
+import { logTrack } from '../lib/trackLog';
+import { describePlanAction } from './actionLog';
 import {
   Candidate,
   Dataset,
@@ -666,9 +668,22 @@ const PlanContext = createContext<PlanApi | null>(null);
 const RECALC_DELAY = 600;
 
 export function PlanProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, datasets[0], initState);
+  const [state, rawDispatch] = useReducer(reducer, datasets[0], initState);
   const here = useCurrentPlace();
   const recalcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /**
+   * 리듀서가 아니라 dispatch 를 감싼다 — 리듀서는 순수해야 하고, StrictMode 가 개발 중
+   * 두 번 부르므로 안에서 로그를 남기면 줄이 두 배가 된다. 액션은 전부 여기를 지나므로
+   * 화면이 늘어도 로그가 빠지지 않는다.
+   */
+  const dispatch = useCallback((action: PlanAction) => {
+    const log = describePlanAction(action, stateRef.current);
+    if (log) logTrack({ k: 'act', a: log.a, d: log.d });
+    rawDispatch(action);
+  }, []);
 
   const api = useMemo<PlanApi>(() => {
     const scheduleRecalc = () => {

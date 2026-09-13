@@ -10,6 +10,23 @@ import { fileNameFor, isTrackFile, overCap, pruneList, serialize, type TrackEven
 
 const FLUSH_MS = 500;
 
+/**
+ * 계획 한 번을 묶는 id. 이후 모든 줄에 r 로 붙는다 — 하루에 계획을 두 번 세우면
+ * 어느 줄이 어느 계획 소속인지 이게 없으면 못 가른다.
+ * 순수 함수(trackLogFormat)에 전역을 넣지 않으려고 여기 둔다.
+ */
+let runId: string | null = null;
+
+/** 계획을 시작할 때 부른다. 짧아도 된다 — 한 파일(하루) 안에서만 구분되면 된다 */
+export function newRunId(): string {
+  runId = Math.random().toString(36).slice(2, 8);
+  return runId;
+}
+
+export function currentRunId(): string | null {
+  return runId;
+}
+
 let queue: string[] = [];
 let timer: ReturnType<typeof setTimeout> | null = null;
 /** 오늘 파일명 — 날짜가 바뀌면 보관 정리를 다시 돈다 */
@@ -21,7 +38,7 @@ const dir = () => new Directory(Paths.document, 'tracklog');
 
 export function logTrack(e: TrackEvent): void {
   try {
-    queue.push(serialize(e, new Date()));
+    queue.push(serialize(e, new Date(), runId));
     if (!timer) timer = setTimeout(flush, FLUSH_MS);
   } catch {
     // 직렬화 실패는 버린다
@@ -114,4 +131,5 @@ export async function clearTrackLogs(): Promise<void> {
   } catch {}
   dayName = '';
   capped = false;
+  runId = null;
 }

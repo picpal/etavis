@@ -240,3 +240,21 @@ test('신호가 최소 개수에 못 미치면 buzz 축이 꺼진다', () => {
   const r = scoreTrend(list);
   assert.ok(r.every(x => x.buzz == null));
 });
+
+test('중앙값 위 후보는 추가시간이 더 걸려도 미조회 후보를 이기고, 중앙값 아래는 가라앉는다', () => {
+  // 실기기에서 본 순서를 그대로 고정한다 — 3.7★ 후보가 추가시간이 1분 더 긴데도
+  // 1위였다. 미조회 후보는 중앙값 자리에 서고, 그보다 낮게 측정된 후보만 밀린다.
+  const r = scoreTrend([
+    inp('above', -6, { google: { rating: 3.7, ratingCount: 3 } }),
+    inp('median', -7, { google: { rating: 2.0, ratingCount: 2 } }),
+    inp('below', -7, { google: { rating: 1.5, ratingCount: 2 } }),
+    inp('unknown1', -7),
+    inp('unknown2', -7),
+  ]);
+  assert.equal(r[0].id, 'above');
+  assert.equal(r[r.length - 1].id, 'below');
+  // 미조회 후보는 중앙값 후보와 같은 점수다 — 없는 축이 유리하지도 불리하지도 않다
+  const byId = new Map(r.map(x => [x.id, x.score]));
+  assert.equal(byId.get('unknown1'), byId.get('median'));
+  assert.ok(byId.get('above')! > byId.get('median')!);
+});

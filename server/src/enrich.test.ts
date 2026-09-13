@@ -311,3 +311,38 @@ test('루프 중간에 죽어도 예약분은 남는다 — 이미 만든 호출
 // 대체됐다 — Math.max 버전을 검증하던 테스트라 조건부 쓰기로 바뀌면서 페이크 get()
 // 응답이 실제 store에 반영되지 않는다는 점이 드러났다. fix3-b가 실제 store에 값을
 // 써서 같은 시나리오를 물리적으로 더 정확하게 재현한다.)
+
+test('후보가 12곳을 넘으면 블로그는 12곳만 묻는다 — 앞 8곳은 반드시 포함', async () => {
+  const kv = memKV();
+  const { f, calls } = mockFetch();
+  const places = Array.from({ length: 30 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
+  assert.equal(calls.naver, 12);
+  const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
+  // 회랑 거리순 앞 8곳은 전부 물어본다
+  for (let i = 0; i < 8; i++) assert.equal(body.results[`p${i}`].blogQueried, true, `p${i}`);
+  // 나머지 4곳은 뒤쪽에서 고르게 뽑는다 — 가까운 순으로만 몰리지 않는다
+  const queried = places.filter(p => body.results[p.id].blogQueried).map(p => p.id);
+  assert.equal(queried.length, 12);
+  assert.ok(queried.some(id => Number(id.slice(1)) >= 20), `뒤쪽 후보가 없다: ${queried}`);
+});
+
+test('후보가 12곳 이하면 전부 묻는다', async () => {
+  const kv = memKV();
+  const { f, calls } = mockFetch();
+  const places = Array.from({ length: 12 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
+  assert.equal(calls.naver, 12);
+  const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
+  for (const p of places) assert.equal(body.results[p.id].blogQueried, true);
+});
+
+test('블로그를 안 물어본 후보는 blogQueried 가 없다', async () => {
+  const kv = memKV();
+  const { f } = mockFetch();
+  const places = Array.from({ length: 30 }, (_, i) => place(`p${i}`));
+  const res = await handleEnrich({ places }, env(kv), { fetch: f, now: NOW });
+  const body = await res.json() as { results: Record<string, { blogQueried?: boolean }> };
+  const notQueried = places.filter(p => !body.results[p.id].blogQueried);
+  assert.equal(notQueried.length, 18);
+});

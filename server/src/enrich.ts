@@ -38,6 +38,35 @@ export type EnrichEnv = {
 export type EnrichDeps = { fetch: typeof fetch; now: Date };
 
 const BLOG_TTL_S = 24 * 60 * 60;      // 설계 §2.1.1 — 24시간을 넘기지 않는다
+/**
+ * 블로그에 물어볼 후보 수. Workers 는 요청당 동시 바깥 연결이 6개라, 30곳을
+ * Promise.all 로 보내도 5회차로 나뉘어 나간다(실측 30곳 6.25초 / 12곳 4.03초).
+ * 호출 수를 줄이는 것 말고 콜드를 단축할 방법이 없다.
+ */
+const BLOG_LOOKUP_MAX = 12;
+/**
+ * 그중 앞에서 그대로 가져가는 수. 나머지는 뒤쪽에서 고르게 뽑는다.
+ * 블로그를 부르기 전엔 인기를 모르므로 '인기 상위 12곳'은 원리적으로 불가능하다 —
+ * 회랑 거리순 상위만 뽑으면 이 기능이 '가까운 곳 추천'으로 바뀐다. 탐색용 타협이다.
+ */
+const BLOG_LOOKUP_HEAD = 8;
+
+/**
+ * 블로그에 물어볼 후보의 인덱스. 입력은 회랑 거리순이다.
+ * 앞 HEAD 곳 + 나머지 구간에서 고르게 뽑은 나머지.
+ */
+export function blogShortlist(total: number, take = BLOG_LOOKUP_MAX, head = BLOG_LOOKUP_HEAD): number[] {
+  if (total <= take) return Array.from({ length: total }, (_, i) => i);
+  const picked = Array.from({ length: head }, (_, i) => i);
+  const restCount = take - head;
+  const span = total - head;
+  for (let k = 0; k < restCount; k++) {
+    // 구간 중앙을 집어 양끝으로 치우치지 않게 한다
+    const idx = head + Math.floor(((k + 0.5) * span) / restCount);
+    picked.push(Math.min(total - 1, idx));
+  }
+  return [...new Set(picked)];
+}
 const GOOGLE_TTL_S = 14 * 24 * 60 * 60;
 const GOOGLE_MONTHLY_CAP = 900;        // 무료분 1,000 보다 낮게
 // 월 키(gbudget:YYYY-MM)는 매달 새로 시작하므로 정확도엔 영향이 없다 — TTL은 그저
@@ -85,12 +114,15 @@ export async function handleEnrich(
   const todayDow = deps.now.getUTCDay();
   const fetchedAt = deps.now.toISOString();
 
-  // 1) 블로그 — 키가 있을 때만, 전부 병렬
+  // 1) 블로그 — 키가 있을 때만. shortlist 만 병렬로 묻는다
   const blogs = new Map<string, BlogSignal | null>();
+  const blogQueried = new Set<string>();
   if (env.NCP_API_KEY_ID && env.NCP_API_KEY) {
     const keyId = env.NCP_API_KEY_ID;
     const key = env.NCP_API_KEY;
-    await Promise.all(places.map(async p => {
+    const targets = blogShortlist(places.length).map(i => places[i]);
+    for (const p of targets) blogQueried.add(p.id);
+    await Promise.all(targets.map(async p => {
       const sig = await cached(env.CACHE, `blog:${p.id}`, BLOG_TTL_S,
         () => fetchNaverBlog(p.name, keyId, key, deps.fetch, todayYmd));
       blogs.set(p.id, sig);
@@ -197,6 +229,8 @@ export async function handleEnrich(
     const sig: PlaceSignals = { fetchedAt };
     const b = blogs.get(p.id);
     if (b) sig.blog = b;
+    // 물어봤다는 사실은 신호가 없어도 남긴다 — 앱의 buzz 커버리지 규칙이 이걸 분모로 쓴다
+    if (blogQueried.has(p.id)) sig.blogQueried = true;
     const g = googles.get(p.id);
     if (g) sig.google = g;
     results[p.id] = sig;

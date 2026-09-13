@@ -217,10 +217,23 @@ test('조회분의 80% 이상이 언급 0이면 buzz 축이 꺼진다 — 분모
   assert.ok(r.every(x => x.buzz == null));
 });
 
-test('조회했는데 신호를 못 받은 후보가 많으면(전국 브랜드) 커버리지 미달로 buzz 축이 꺼진다', () => {
+test('조회분 일부만 신호가 와도 개수가 차면 buzz 축을 쓴다 — 비율이 아니라 개수 기준', () => {
   const list: TrendInput[] = [];
-  // 12곳을 물었지만 8곳만 신호가 왔다 → 커버리지 0.67 < 0.8
-  for (let i = 0; i < 8; i++) {
+  // 6곳을 물었고 4곳만 신호가 왔다. 비율 기준(0.8)이면 꺼지지만, 표본이 작을 땐
+  // 개수가 맞는 기준이다 — 실측에서 이 경우 90일 48건짜리 신호가 버려졌다
+  for (let i = 0; i < 4; i++) {
+    list.push(inp(`o${i}`, 3, { blogQueried: true, blog: { weighted: 6 } }));
+  }
+  for (let i = 0; i < 2; i++) list.push(inp(`n${i}`, 3, { blogQueried: true }));
+  for (let i = 0; i < 24; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  assert.ok(r.find(x => x.id === 'o0')!.buzz != null, '신호가 살아있어야 한다');
+});
+
+test('신호가 최소 개수에 못 미치면 buzz 축이 꺼진다', () => {
+  const list: TrendInput[] = [];
+  // 6곳을 물었는데 2곳만 왔다 → 최소 3곳에 미달
+  for (let i = 0; i < 2; i++) {
     list.push(inp(`o${i}`, 3, { blogQueried: true, blog: { weighted: 6 } }));
   }
   for (let i = 0; i < 4; i++) list.push(inp(`n${i}`, 3, { blogQueried: true }));

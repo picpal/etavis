@@ -53,8 +53,16 @@ const REVIEW_SATURATION = 200;
 const BUZZ_SATURATION = 10;
 /** 조회분 중 이 비율 이상이 언급 0이면 색인 공백으로 보고 축을 버린다 */
 const BUZZ_BLIND_RATIO = 0.8;
-/** 조회분 중 신호가 온 비율이 이보다 낮으면 축을 믿지 않는다 */
-const BUZZ_MIN_COVERAGE = 0.8;
+/**
+ * 신호가 이만큼은 와야 buzz 축을 쓴다.
+ *
+ * 비율(커버리지)이 아니라 개수다. 서버가 6곳만 묻는데 비율 80%를 걸면 5곳이
+ * 필요하고, 전국 브랜드 두 곳이 섞이는 것만으로 축이 통째로 꺼진다 — 실측에서
+ * 연남동 6곳 중 4곳이 왔고 그중 하나가 90일 48건이었는데 그 신호가 버려졌다.
+ * 표본이 작을 땐 개수가 맞는 기준이다. 관측 못 한 후보는 중앙값으로 채워지므로
+ * 몇 곳이 빠지는 것 자체는 순위를 왜곡하지 않는다.
+ */
+const BUZZ_MIN_OBSERVED = 3;
 const HOT_BUZZ = 0.6;
 const HOT_RANK = 3;
 
@@ -98,12 +106,13 @@ export function scoreTrend(inputs: readonly TrendInput[]): TrendScored[] {
   const anyQueriedFlag = inputs.some(i => i.blogQueried);
   const queried = anyQueriedFlag ? inputs.filter(i => i.blogQueried) : inputs.filter(i => i.blog);
   const observed = queried.filter(i => i.blog);
-  const coverage = queried.length > 0 ? observed.length / queried.length : 0;
+  // 후보가 관측 최소치보다 적으면(작은 슬롯) 관측된 만큼으로 판단한다
+  const minObserved = Math.min(BUZZ_MIN_OBSERVED, queried.length);
   const zeroRate = observed.length > 0
     ? observed.filter(i => i.blog!.weighted === 0).length / observed.length
     : 1;
   const buzzBlind = observed.length === 0
-    || coverage < BUZZ_MIN_COVERAGE
+    || observed.length < minObserved
     || zeroRate >= BUZZ_BLIND_RATIO;
 
   // 축을 켤지 끌지는 슬롯 전체를 보고 한 번 정한다. 켜면 미관측 후보는 중앙값으로 채운다

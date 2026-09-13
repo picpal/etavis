@@ -43,7 +43,8 @@ function timedRoute(provider: RouteProvider): RouteProvider {
       const t0 = Date.now();
       try {
         const r = await provider.route(points, departAtMin, mode);
-        logTrack({ k: 'net', ep: '/route', ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: r.durationMin } });
+        // 소수점 열두 자리는 읽는 데 방해만 된다 — 로그는 사람이 먼저 읽는다
+        logTrack({ k: 'net', ep: '/route', ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: Math.round(r.durationMin * 10) / 10 } });
         return r;
       } catch (e) {
         logTrack({ k: 'net', ep: '/route', ms: Date.now() - t0, ok: false, d: { points: points.length, mode, err: String(e).slice(0, 120) } });

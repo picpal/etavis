@@ -342,7 +342,8 @@ export function getOptionView(state: PlanState, option: RouteOption, originLabel
   };
 }
 
-type Action =
+/** 액션 이름을 밖에서도 쓴다 — actionLog.ts 가 이걸 로그 한 줄로 옮긴다 */
+export type PlanAction =
   | { type: 'SET_DATASET'; key: string }
   | { type: 'SET_MODE'; mode: PlanState['mode'] }
   | { type: 'SET_ARRIVE_BY'; min: number | null }
@@ -374,7 +375,7 @@ type Action =
   | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'PUSH_CHAT'; text: string };
 
-function reducer(state: PlanState, action: Action): PlanState {
+function reducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case 'SET_DATASET': {
       const ds = datasets.find(d => d.key === action.key) ?? datasets[0];

@@ -20,6 +20,12 @@ export type TrendInput = {
   /** 플래너 추정 — 이 후보로 바꿨을 때 늘어나는 분 */
   addedMin: number;
   blog?: { weighted: number };
+  /**
+   * 블로그를 실제로 물어봤는가. 물어봤는데 신호가 없는 것(전국 브랜드라 전국 집계로
+   * 뭉개짐)과 아예 안 물어본 것을 구분한다 — 미조회를 '언급 0'으로 세면 buzz 축이
+   * 엉뚱하게 꺼진다. 서버가 이 값을 안 보내면 blog 가 있는 후보만 조회분으로 본다.
+   */
+  blogQueried?: boolean;
   google?: { rating: number; ratingCount: number };
 };
 
@@ -45,8 +51,10 @@ const FIT_FLOOR_MIN = 10;
 const REVIEW_SATURATION = 200;
 /** 90일 가중 언급이 이만큼이면 buzz 만점. 실측 분포(0~35) 기준 */
 const BUZZ_SATURATION = 10;
-/** 후보 중 이 비율 이상이 언급 0이면 색인 공백으로 보고 축을 버린다 */
+/** 조회분 중 이 비율 이상이 언급 0이면 색인 공백으로 보고 축을 버린다 */
 const BUZZ_BLIND_RATIO = 0.8;
+/** 조회분 중 신호가 온 비율이 이보다 낮으면 축을 믿지 않는다 */
+const BUZZ_MIN_COVERAGE = 0.8;
 const HOT_BUZZ = 0.6;
 const HOT_RANK = 3;
 
@@ -84,11 +92,19 @@ export function scoreTrend(inputs: readonly TrendInput[]): TrendScored[] {
 
   const maxAdded = Math.max(FIT_FLOOR_MIN, ...inputs.map(i => i.addedMin));
 
-  // 블로그 신호를 가진 후보 중 0이 너무 많으면 색인 공백이다.
-  // 없는 걸 '인기 없음'으로 읽으면 순위가 거꾸로 간다.
-  const withBlog = inputs.filter(i => i.blog);
-  const zeros = withBlog.filter(i => i.blog!.weighted === 0).length;
-  const buzzBlind = withBlog.length === 0 || zeros / withBlog.length >= BUZZ_BLIND_RATIO;
+  // 조회분 중 0이 너무 많거나, 조회했는데 신호가 온 비율이 낮으면 색인 공백이다.
+  // 없는 걸 '인기 없음'으로 읽으면 순위가 거꾸로 간다. 분모는 후보 전체가 아니라
+  // 실제로 물어본 후보다 — 서버가 30곳 중 12곳만 묻기 때문이다.
+  const anyQueriedFlag = inputs.some(i => i.blogQueried);
+  const queried = anyQueriedFlag ? inputs.filter(i => i.blogQueried) : inputs.filter(i => i.blog);
+  const observed = queried.filter(i => i.blog);
+  const coverage = queried.length > 0 ? observed.length / queried.length : 0;
+  const zeroRate = observed.length > 0
+    ? observed.filter(i => i.blog!.weighted === 0).length / observed.length
+    : 1;
+  const buzzBlind = observed.length === 0
+    || coverage < BUZZ_MIN_COVERAGE
+    || zeroRate >= BUZZ_BLIND_RATIO;
 
   // 축을 켤지 끌지는 슬롯 전체를 보고 한 번 정한다. 켜면 미관측 후보는 중앙값으로 채운다
   const observedQuality = inputs.map(i => (i.google ? qualityOf(i.google) : null))

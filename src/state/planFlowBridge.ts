@@ -194,6 +194,7 @@ export function slotCandidates(
       id: c.id,
       addedMin: c.addedMin,
       blog: src?.signals?.blog ? { weighted: src.signals.blog.weighted } : undefined,
+      blogQueried: src?.signals?.blogQueried,
       google: src?.signals?.google
         ? { rating: src.signals.google.rating, ratingCount: src.signals.google.ratingCount }
         : undefined,

@@ -177,6 +177,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
               id: c.id,
               addedMin: t.totalMin - baseTiming.totalMin,
               blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
+              blogQueried: c.signals?.blogQueried,
               google: c.signals?.google
                 ? { rating: c.signals.google.rating, ratingCount: c.signals.google.ratingCount }
                 : undefined,

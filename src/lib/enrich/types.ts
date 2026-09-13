@@ -21,6 +21,11 @@ export type GoogleSignal = {
 
 export type PlaceSignals = {
   blog?: BlogSignal;
+  /**
+   * 블로그를 실제로 물어봤는가. 서버는 후보 전부가 아니라 일부만 묻는다(§2.1) —
+   * 안 물어본 것과 물어봤는데 신호가 없는 것을 점수 모듈이 구분해야 한다.
+   */
+  blogQueried?: boolean;
   google?: GoogleSignal;
   /** ISO. 캐시 적중 여부를 개발 메뉴에서 보려고 남긴다 */
   fetchedAt: string;

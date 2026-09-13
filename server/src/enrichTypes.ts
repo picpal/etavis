@@ -14,4 +14,10 @@ export type GoogleSignal = {
   hours: { openMin: number; closeMin: number } | null;
   matchedName: string;
 };
-export type PlaceSignals = { blog?: BlogSignal; google?: GoogleSignal; fetchedAt: string };
+export type PlaceSignals = {
+  blog?: BlogSignal;
+  /** 블로그를 실제로 물어봤는가 — 미조회와 '언급 0'을 점수 모듈이 구분하려면 필요하다 */
+  blogQueried?: boolean;
+  google?: GoogleSignal;
+  fetchedAt: string;
+};

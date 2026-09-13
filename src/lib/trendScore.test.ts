@@ -191,3 +191,39 @@ test('아무도 관측 안 된 축은 모든 후보에게 똑같이 꺼진다 �
   const r = scoreTrend([inp('a', 9), inp('b', 2), inp('c', 5)]);
   assert.deepEqual(ids(r), ['b', 'c', 'a']);
 });
+
+test('조회한 후보만 커버리지 분모다 — 미조회 18곳이 buzz 축을 죽이지 않는다', () => {
+  const list: TrendInput[] = [];
+  for (let i = 0; i < 12; i++) {
+    list.push(inp(`q${i}`, 3, { blogQueried: true, blog: { weighted: 5 } }));
+  }
+  for (let i = 0; i < 18; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  // 조회분 12곳 전부 언급이 있으니 축이 살아있다. 미조회 18곳을 '언급 0'으로
+  // 세면 30곳 중 18곳(60%)이 0이 되어 예전 규칙으로는 위태로웠다
+  assert.ok(r.find(x => x.id === 'q0')!.buzz != null);
+});
+
+test('조회분의 80% 이상이 언급 0이면 buzz 축이 꺼진다 — 분모는 조회분', () => {
+  const list: TrendInput[] = [];
+  for (let i = 0; i < 10; i++) {
+    list.push(inp(`z${i}`, 3, { blogQueried: true, blog: { weighted: 0 } }));
+  }
+  for (let i = 0; i < 2; i++) {
+    list.push(inp(`h${i}`, 3, { blogQueried: true, blog: { weighted: 8 } }));
+  }
+  for (let i = 0; i < 18; i++) list.push(inp(`u${i}`, 3));
+  const r = scoreTrend(list);
+  assert.ok(r.every(x => x.buzz == null));
+});
+
+test('조회했는데 신호를 못 받은 후보가 많으면(전국 브랜드) 커버리지 미달로 buzz 축이 꺼진다', () => {
+  const list: TrendInput[] = [];
+  // 12곳을 물었지만 8곳만 신호가 왔다 → 커버리지 0.67 < 0.8
+  for (let i = 0; i < 8; i++) {
+    list.push(inp(`o${i}`, 3, { blogQueried: true, blog: { weighted: 6 } }));
+  }
+  for (let i = 0; i < 4; i++) list.push(inp(`n${i}`, 3, { blogQueried: true }));
+  const r = scoreTrend(list);
+  assert.ok(r.every(x => x.buzz == null));
+});

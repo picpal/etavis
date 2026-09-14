@@ -294,3 +294,24 @@ test('재클럭해도 체인은 여전히 timing 과 맞는다 — 시계만 옮
   const p = toLegacyPlan({ flow: s, departMin: 480 + 25 });
   assert.equal(rechain(p, 480 + 25).totalMin, timing.totalMin);
 });
+
+/* 하이브리드 공급자 — 서버는 자동차만 받는다. 나머지를 던지면 계획 전체가 죽는다. */
+
+test('자동차는 서버로, 도보·대중교통은 목으로 간다 — 던지지 않는다', async () => {
+  const calls: string[] = [];
+  const mk = (tag: string) => ({
+    route: async (_p: unknown, _d: number, mode: string) => {
+      calls.push(`${tag}:${mode}`);
+      if (tag === 'server' && mode !== 'car') throw new Error(`server route: ${mode} 미지원`);
+      return { durationMin: 10, distanceKm: 5, sections: [], polyline: [] } as never;
+    },
+  });
+  const hybrid = {
+    route: (points: never, departAtMin: number, mode: 'car' | 'walk' | 'transit') =>
+      (mode === 'car' ? mk('server') : mk('mock')).route(points, departAtMin, mode),
+  };
+  for (const m of ['car', 'walk', 'transit'] as const) {
+    await hybrid.route([] as never, 480, m); // 던지면 여기서 테스트가 죽는다
+  }
+  assert.deepEqual(calls, ['server:car', 'mock:walk', 'mock:transit']);
+});

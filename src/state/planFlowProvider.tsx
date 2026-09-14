@@ -82,6 +82,24 @@ function timedEnrich(enrich: EnrichFn): EnrichFn {
   };
 }
 
+/**
+ * 서버는 **자동차만** 받는다(`serverProvider.route`가 나머지는 던진다).
+ * 그런데 `runPlan`의 0단계 직행은 그 예외를 그대로 `FAIL`로 만들기 때문에,
+ * 도보·대중교통을 고르면 **계획 전체가 죽는다.**
+ *
+ * 키가 없던 시절에는 목 공급자가 모든 모드를 추정으로 처리해 드러나지 않았고,
+ * 서버를 붙인 뒤 실기기에서 터졌다(2026-09-15).
+ *
+ * 그래서 모드로 갈라 준다 — 자동차는 실측, 나머지는 추정.
+ * 추정이라는 사실은 화면이 말한다(A5의 "약" 표기).
+ */
+function hybridProvider(server: RouteProvider, mock: RouteProvider): RouteProvider {
+  return {
+    route: (points, departAtMin, mode) =>
+      (mode === 'car' ? server : mock).route(points, departAtMin, mode),
+  };
+}
+
 function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich: EnrichFn; extract: ExtractFn } {
   const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
   const baseUrl = extra.serverUrl?.trim();
@@ -89,7 +107,7 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
   if (baseUrl && appToken) {
     const deviceId = Constants.sessionId ?? 'unknown';
     return {
-      provider: serverRouteProvider({ baseUrl, appToken, deviceId }),
+      provider: hybridProvider(serverRouteProvider({ baseUrl, appToken, deviceId }), mockRouteProvider()),
       usingServer: true,
       enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
       extract: serverExtractFn({ baseUrl, appToken, deviceId }),

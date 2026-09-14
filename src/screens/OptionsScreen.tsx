@@ -126,7 +126,10 @@ export function OptionsScreen({ navigation }: Props) {
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
   const late = slack != null && slack < 0;
-  const approx = current.timing.estimated || !flow.usingServer ? '약 ' : '';
+  /* 서버는 자동차만 실측한다. 도보·대중교통은 추정이므로 "약"을 붙여야 한다 —
+     usingServer 만 보면 대중교통 추정치를 실측인 양 말하게 된다 */
+  const measured = flow.usingServer && req.mode === 'car';
+  const approx = current.timing.estimated || !measured ? '약 ' : '';
   const stale = request ? flow.isStale(request) : false;
 
   // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
@@ -174,7 +177,7 @@ export function OptionsScreen({ navigation }: Props) {
             directMin={result.directMin}
             totalMin={current.timing.totalMin}
             arriveByMin={req.arriveByMin}
-            estimated={current.timing.estimated || !flow.usingServer}
+            estimated={current.timing.estimated || !measured}
           />
         </View>
 

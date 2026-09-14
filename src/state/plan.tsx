@@ -188,10 +188,18 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
   };
 }
 
-function initState(ds: Dataset): PlanState {
+/**
+ * @param seed 데이터셋의 예시 대화를 채팅·칩으로 미리 깔지 여부.
+ *
+ * **앱을 켰을 때는 깔지 않는다.** 사용자가 한 적 없는 말이 자기 말풍선으로 떠 있고
+ * 칩까지 붙어 있으면, 그건 데모가 아니라 남의 계획이다. 실기기에서 이게 그대로
+ * 보였다(2026-09-15).
+ *
+ * 개발 메뉴에서 데이터셋을 고를 때만 깐다 — 그때는 예시를 보려는 것이 목적이다.
+ */
+function initState(ds: Dataset, seed = false): PlanState {
   const departMin = nowMin();
-  // 첫 메시지도 사용자가 한 말이다 — 알아들은 걸 칩으로 보여준다
-  const seeded = extractIntent(ds.userMessage, { currentStops: [] });
+  const seeded = seed ? extractIntent(ds.userMessage, { currentStops: [] }) : { stops: [] as never[] };
   const seedChips: IntentChip[] = seeded.stops.map(st => ({
     id: `s-${chipSeq++}`,
     kind: 'stop' as const,
@@ -216,9 +224,9 @@ function initState(ds: Dataset): PlanState {
     options: ds.options,
     selectedOptionId: (ds.options.find(o => o.recommended) ?? ds.options[0]).id,
     optionOverrides: {},
-    chat: [ds.userMessage],
+    chat: seed ? [ds.userMessage] : [],
     failNext: false,
-    devAnyCongestion: true,
+    devAnyCongestion: false, // 개발 토글. 실사용 기본값은 꺼짐(docs/NEXT.md)
     recalcPending: false,
     planConfirmed: false,
     congestionReport: null,
@@ -400,7 +408,7 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case 'SET_DATASET': {
       const ds = datasets.find(d => d.key === action.key) ?? datasets[0];
-      return initState(ds);
+      return initState(ds, true); // 개발 메뉴에서 고른 것이므로 예시를 깐다
     }
     case 'SET_MODE':
       return { ...state, mode: action.mode };

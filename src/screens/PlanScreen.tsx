@@ -233,7 +233,7 @@ export function PlanScreen({ navigation }: Props) {
               </Text>
             </AssistantShell>
           ) : (
-            state.chat.length > 1 && (
+            state.chat.length > 0 && (
               <AssistantShell>
                 <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
                   {reply ?? '이렇게 알아들었어요. 틀린 건 지워주세요.'}

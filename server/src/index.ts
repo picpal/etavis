@@ -7,7 +7,7 @@
  * 경로 조합·시간 판정은 앱이 한다. 여기서 하면 느려지고 배터리만 먹는다.
  */
 import { parseIntent } from './schema';
-import { SYSTEM_PROMPT } from './prompt';
+import { SYSTEM_PROMPT, kstHHMM } from './prompt';
 import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
@@ -170,8 +170,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          // 사용자 문장은 지시가 아니라 데이터다. 역할을 섞지 않는다
-          { role: 'user', content: JSON.stringify({ text, context: body.context ?? {} }) },
+          // 사용자 문장은 지시가 아니라 데이터다. 역할을 섞지 않는다.
+          // now 는 서버가 덮어쓴다 — '9시까지'가 오전인지 오후인지가 여기 달렸고,
+          // 클라이언트가 정할 값이 아니다(v4).
+          {
+            role: 'user',
+            content: JSON.stringify({
+              text,
+              context: { ...((body.context ?? {}) as Record<string, unknown>), now: kstHHMM(new Date()) },
+            }),
+          },
         ],
       }),
     });

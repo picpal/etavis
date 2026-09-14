@@ -181,7 +181,16 @@ async function handle(req: Request, env: Env): Promise<Response> {
       return json({ error: 'upstream', status: res.status, detail: await upstreamDetail(res) }, 502);
     }
 
-    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const data = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+    /* 토큰을 로그로 남긴다 — 응답 모양은 건드리지 않는다(앱이 읽는 건 Intent 뿐이다).
+       `npx wrangler tail` 로 본다. 케이스 러너를 돌릴 때 비용을 추정이 아니라
+       실측으로 말할 수 있어야 한다. */
+    if (data.usage) {
+      console.log(`[extract] tokens in=${data.usage.prompt_tokens} out=${data.usage.completion_tokens} total=${data.usage.total_tokens} model=${env.OPENAI_MODEL ?? DEFAULT_MODEL}`);
+    }
     let raw: unknown;
     try {
       raw = JSON.parse(data.choices?.[0]?.message?.content ?? '');

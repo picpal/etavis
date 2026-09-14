@@ -17,9 +17,19 @@ export type ExtractSource = 'server' | 'local';
 export type ExtractOutcome = { intent: Intent; source: ExtractSource };
 export type ExtractFn = (text: string, ctx: IntentContext) => Promise<ExtractOutcome>;
 
-/** LLM 왕복이라 라우팅(4초)보다 길다. 그래도 사용자가 전송하고 기다리는 시간이라
-    무한정 줄 수 없다 — 넘기면 목이 즉시 답한다 */
-const DEFAULT_TIMEOUT_MS = 6000;
+/**
+ * LLM 왕복이라 라우팅(4초)보다 길다.
+ *
+ * 실측 (2026-09-15, gpt-5.6-sol):
+ *   짧은 문장 "올리브영 들르고 빵도"        4.05 · 4.26 · 4.46 · 5.71초
+ *   긴 문장  "…문 연 약국도 두 곳 들러야 해"  8.20초
+ *
+ * 처음에 6초로 뒀다가 **정작 흥미로운 문장이 전부 목으로 떨어지는** 걸 봤다.
+ * 짧은 문장은 어차피 5초 안에 끝나므로 이 상한은 느린 꼬리에만 걸린다 —
+ * 거기서는 기다리는 편이 틀린 답보다 낫다. 넘기면 목이 즉시 답하고,
+ * 화면이 "간단한 규칙으로 알아들었어요"라고 말한다.
+ */
+const DEFAULT_TIMEOUT_MS = 12000;
 
 /** 서버가 좁힌 뒤라 필수 필드의 존재만 본다. 값 검증은 `server/src/schema.ts`의 몫 */
 function looksLikeIntent(v: unknown): v is Intent {

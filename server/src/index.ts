@@ -35,6 +35,26 @@ export interface Env {
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
+
+/**
+ * 바깥 API가 실패한 이유를 한 줄로 옮긴다.
+ *
+ * 예전엔 상태 코드만 넘겨서 `{"error":"upstream","status":400}` 만 보였고,
+ * 그게 인증 문제인지 모델 이름 문제인지 알 수 없었다 — 2026-09-15 에 그걸로 한 번 헤맸다.
+ * 앱은 이 필드를 읽지 않는다(실패면 목으로 떨어질 뿐이다). 운영자가 보라고 남긴다.
+ *
+ * 토큰으로 막힌 엔드포인트라 노출 범위가 좁고, 그래도 길이는 자른다 —
+ * 바깥 서비스가 무엇을 담아 보낼지 우리가 정하지 않는다.
+ */
+async function upstreamDetail(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.clone().json()) as { error?: { message?: string } | string };
+    const msg = typeof body.error === 'string' ? body.error : body.error?.message;
+    return typeof msg === 'string' ? msg.slice(0, 200) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
@@ -84,7 +104,7 @@ async function handleRoute(body: unknown, env: Env): Promise<Response> {
   const res = await fetch(kakaoDirectionsUrl(parsed), {
     headers: { authorization: `KakaoAK ${env.KAKAO_MOBILITY_KEY}` },
   });
-  if (!res.ok) return json({ error: 'upstream', status: res.status }, 502);
+  if (!res.ok) return json({ error: 'upstream', status: res.status, detail: await upstreamDetail(res) }, 502);
   let raw: unknown;
   try {
     raw = await res.json();
@@ -142,7 +162,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
       },
       body: JSON.stringify({
         model: env.OPENAI_MODEL ?? DEFAULT_MODEL,
-        temperature: 0,
+        /* temperature 를 보내지 않는다. 이 모델은 기본값(1)만 받는다 —
+           0 을 실으면 400 "does not support 0 with this model" 이 돌아온다.
+           docs/NEXT.md 가 "temperature=0 으로 낮췄다" 고 적어 둔 건 실제로는
+           적용된 적이 없다는 뜻이다. 비결정성의 실질 방어는 칩 UI 다 —
+           사용자가 무엇을 알아들었는지 보고 고칠 수 있으면 치명상이 되지 않는다. */
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -154,7 +178,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
 
     if (!res.ok) {
       // 앱은 이걸 받으면 로컬 목으로 떨어진다 — 서버가 죽어도 계획은 세워진다
-      return json({ error: 'upstream', status: res.status }, 502);
+      return json({ error: 'upstream', status: res.status, detail: await upstreamDetail(res) }, 502);
     }
 
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };

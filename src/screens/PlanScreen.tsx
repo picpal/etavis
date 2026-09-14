@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } fro
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { toHHMM, usePlan } from '../state/plan';
-import { extractIntent } from '../lib/intent';
+import { RECENT_DESTINATIONS } from '../data/mockData';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { DottedLineH } from '../components/primitives';
@@ -163,15 +163,34 @@ export function PlanScreen({ navigation }: Props) {
   // 슬롯 id는 칩 id와 같다(runPlan이 그렇게 낸다) — 마지막 실측 결과의 판정을 칩에 바로 되돌린다
   const statusOf = (chipId: string): SlotStatus | undefined => flow.state.result?.slotStatus[chipId];
 
-  /* 채팅 → 의도 추출. 지금은 로컬 목이고, 서버가 생기면 이 호출만 바뀐다.
+  /* 채팅 → 의도 추출. 서버(LLM)를 부르고, 닿지 않으면 로컬 목으로 떨어진다.
      추출 결과는 아래 칩으로 그대로 드러난다 — 잘못 잡힌 걸 사용자가 봐야 한다 */
   const [reply, setReply] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
+  const [fellBack, setFellBack] = useState(false);
+  /* 연속 전송이면 늦게 시작한 요청이 먼저 도착할 수 있다. 마지막 것만 반영한다 —
+     계산 흐름의 runId 세대 가드와 같은 문제다(docs/NEXT.md) */
+  const seqRef = useRef(0);
+
   const applyChat = (text: string) => {
     pushChat(text);
-    const intent = extractIntent(text, { currentStops: state.stops.map(s => s.name) });
-    applyIntent(intent);
-    flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
-    setReply(intent.reject?.say ?? intent.ambiguous[0]?.question ?? null);
+    const seq = (seqRef.current += 1);
+    setPending(true);
+    void flow
+      .extract(text, {
+        currentStops: state.stops.map(s => s.name),
+        // 좌표를 아는 곳만 넘긴다 — 목적지 변경은 그 안에서만 적용된다(plan.tsx APPLY_INTENT)
+        knownPlaces: RECENT_DESTINATIONS.map(r => r.name),
+      })
+      .then(({ intent, source }) => {
+        if (seq !== seqRef.current) return; // 지나간 요청의 답은 버린다
+        applyIntent(intent);
+        flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
+        setReply(intent.reject?.say ?? intent.ambiguous[0]?.question ?? null);
+        setFellBack(source === 'local');
+        setPending(false);
+      });
   };
 
   const startSearch = () => {
@@ -206,12 +225,27 @@ export function PlanScreen({ navigation }: Props) {
           {state.chat.map((msg, i) => (
             <Bubble key={i}>{msg}</Bubble>
           ))}
-          {state.chat.length > 1 && (
+          {pending ? (
+            /* 서버 왕복이 1~3초다. 빈 화면으로 두면 먹통으로 읽힌다 */
             <AssistantShell>
-              <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
-                {reply ?? '이렇게 알아들었어요. 틀린 건 지워주세요.'}
+              <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.muted }}>
+                알아듣는 중이에요…
               </Text>
             </AssistantShell>
+          ) : (
+            state.chat.length > 1 && (
+              <AssistantShell>
+                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
+                  {reply ?? '이렇게 알아들었어요. 틀린 건 지워주세요.'}
+                </Text>
+                {fellBack && (
+                  /* A5의 '서버 없이 추정한 값이에요'와 같은 약속 — 추정이면 추정이라고 말한다 */
+                  <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
+                    서버에 닿지 못해 간단한 규칙으로 알아들었어요
+                  </Text>
+                )}
+              </AssistantShell>
+            )
           )}
 
           {/* 알아들은 것을 그대로 보여준다 — 이게 없으면 잘못 잡혀도 경로 3개가

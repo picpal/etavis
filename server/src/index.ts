@@ -11,7 +11,7 @@ import { SYSTEM_PROMPT } from './prompt';
 import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
-import { dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
+import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -30,6 +30,8 @@ export interface Env {
   /** 바깥 응답 캐시. RATE 와 별개 — 용도가 섞이면 TTL 을 못 나눈다 */
   CACHE: KVNamespace;
   RATE: KVNamespace;
+  /** 웹 데모 오리진 허용 목록(콤마 구분). 비어 있으면 CORS 헤더를 안 붙인다 = 네이티브 전용 */
+  ALLOWED_ORIGINS?: string;
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -99,6 +101,17 @@ async function handleRoute(body: unknown, env: Env): Promise<Response> {
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
+    const cors = corsHeaders(req.headers.get('origin'), env.ALLOWED_ORIGINS);
+    // preflight 는 문지기를 타지 않는다 — 브라우저가 토큰 없이 보내는 요청이다
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    const res = await handle(req, env);
+    for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+    return res;
+  },
+};
+
+async function handle(req: Request, env: Env): Promise<Response> {
+  {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
@@ -158,5 +171,5 @@ export default {
     if (!intent) return json({ error: 'schema' }, 502);
 
     return json(intent);
-  },
-};
+  }
+}

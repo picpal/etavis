@@ -113,3 +113,25 @@ export function routeCacheKey(req: RouteRequest): string {
   const depart = req.departAt ? `${req.departAt.slice(0, 11)}0` : 'now';
   return `route:${pts}:${depart}:${req.polyline ? 'p' : 'n'}`;
 }
+
+/**
+ * 웹 데모는 브라우저에서 돈다. preflight(OPTIONS)에 답하지 않으면 모든 호출이
+ * CORS로 막힌다 — 네이티브 앱에는 CORS가 없어서 여기까지 드러나지 않았다.
+ *
+ * **와일드카드로 열지 않는다.** `APP_TOKEN`이 브라우저 네트워크 탭에 그대로
+ * 보이는 마당에, 오리진 제한이 남은 문지기다. 목록에 없는 오리진에는 헤더를
+ * 붙이지 않고 — 브라우저가 알아서 막는다.
+ */
+export function corsHeaders(origin: string | null, allowedCsv: string | undefined): Record<string, string> {
+  if (!origin) return {}; // 네이티브 앱은 Origin을 보내지 않는다
+  const allowed = (allowedCsv ?? '').split(',').map(o => o.trim()).filter(Boolean);
+  if (!allowed.includes(origin)) return {};
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-headers': 'content-type,x-app-token,x-device-id',
+    'access-control-allow-methods': 'POST,OPTIONS',
+    'access-control-max-age': '86400',
+    // 오리진마다 응답이 다르므로 캐시가 섞이면 안 된다
+    vary: 'Origin',
+  };
+}

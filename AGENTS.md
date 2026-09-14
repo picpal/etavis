@@ -7,12 +7,26 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 채팅 → 경유지 추출(`src/lib/intent.ts`, `server/`)을 고칠 때는 반드시 케이스를 돌린다.
 
 ```bash
-node server/run-cases.mjs                          # 147개 · 27개 범주
+node server/run-cases.mjs                          # 147개 · 27개 범주 (목)
 node server/run-cases.mjs --json > server/results.json && python3 server/make-xlsx.py
 ```
 
 **LLM 실측은 codex로 한다** — 서버·API 키 없이 실제 모델 응답을 받을 수 있다.
 `codex exec -m <model> "<prompt>" -s read-only --json`
+
+## 검증 순서 — API는 마지막에 한 번
+
+돈이 나가는 순서로 정렬한다. 앞 단계에서 답이 나오면 뒤로 가지 않는다.
+
+| 단계 | 명령 | 비용 |
+|---|---|---|
+| 1. 목 기준선 | `node server/run-cases.mjs` | 0 |
+| 2. 모델 시뮬레이션 | `node server/run-llm.mjs` (codex 구독제) | 0 |
+| 3. **확신 검증** | `node server/run-server-cases.mjs` — 그룹당 1개 = 27개 | API 과금 |
+
+3번은 **배선을 바꾼 뒤 살아 있는지 확인하는 용도**다. 모델 품질은 2번에서 재고,
+3번을 `--all`로 돌리는 건 정말 필요할 때만. 채점은 세 단계가 `case-score.mjs`를
+공유한다 — 자가 다르면 숫자를 나란히 놓는 의미가 없다.
 
 ## 지켜야 할 것
 
@@ -39,5 +53,9 @@ node server/run-cases.mjs --json > server/results.json && python3 server/make-xl
 | `server/prompts/extract-intent.md` | 프롬프트 원본(v3). 코드 사본은 `server/src/prompt.ts` |
 | `server/prompts/cases.jsonl` | 케이스. 새 케이스는 여기 한 줄 |
 | `src/lib/intent.ts` | 로컬 목. 서버가 죽으면 앱이 여기로 fallback |
+| `src/lib/intentClient.ts` | 서버 `/extract` 호출 + 폴백. 화면은 `source`만 본다 |
 | `server/src/schema.ts` | LLM 응답 검증 |
+| `server/src/guard.ts` | 과금 방어선(기기·IP·일일 상한). 상한값은 `PER_DAY` 한 곳 |
+| `server/case-score.mjs` | 채점 규칙. 목·codex·서버 러너가 공유한다 |
+| `server/run-server-cases.mjs` | 서버 실측 러너 (과금) |
 | `docs/채팅-추출-시뮬레이션.xlsx` | 케이스 시트는 스크립트가 만든다. **개선 이력만 손으로** |

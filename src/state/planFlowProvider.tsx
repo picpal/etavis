@@ -10,6 +10,7 @@ import { mockRouteProvider } from '../lib/routePlan/mockProvider';
 import { serverRouteProvider } from '../lib/routePlan/serverProvider';
 import type { RouteProvider } from '../lib/routePlan/types';
 import { serverEnrichFn, type EnrichFn } from '../lib/enrich/enrichClient';
+import { localExtractFn, serverExtractFn, type ExtractFn } from '../lib/intentClient';
 import { mockEnrichFn } from '../lib/enrich/mockEnrich';
 import { initialPlanFlow, isBusy, planFlowReducer, requestKey, type PlanFlowAction, type PlanFlowState, type PlanRequest } from './planFlow';
 import { runPlan } from './runPlan';
@@ -26,6 +27,8 @@ type PlanFlowApi = {
   isStale: (request: PlanRequest) => boolean;
   /** 실측인가 추정인가 — 화면 문구용 */
   usingServer: boolean;
+  /** 채팅 문장 → 의도. 서버가 없거나 죽으면 로컬 목으로 떨어진다(source로 알 수 있다) */
+  extract: ExtractFn;
 };
 
 const Ctx = createContext<PlanFlowApi | null>(null);
@@ -79,7 +82,7 @@ function timedEnrich(enrich: EnrichFn): EnrichFn {
   };
 }
 
-function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich: EnrichFn } {
+function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich: EnrichFn; extract: ExtractFn } {
   const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
   const baseUrl = extra.serverUrl?.trim();
   const appToken = extra.appToken?.trim();
@@ -89,9 +92,10 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
       provider: serverRouteProvider({ baseUrl, appToken, deviceId }),
       usingServer: true,
       enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
+      extract: serverExtractFn({ baseUrl, appToken, deviceId }),
     };
   }
-  return { provider: mockRouteProvider(), usingServer: false, enrich: mockEnrichFn() };
+  return { provider: mockRouteProvider(), usingServer: false, enrich: mockEnrichFn(), extract: localExtractFn() };
 }
 
 export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
@@ -133,6 +137,7 @@ export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
     reset: () => dispatch({ type: 'RESET' }),
     isStale: request => !!state.request && requestKey(state.request) !== requestKey(request),
     usingServer: deps.usingServer,
+    extract: deps.extract,
   }), [state, deps]);
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

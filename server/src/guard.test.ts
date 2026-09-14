@@ -6,6 +6,7 @@ import {
   overDailyCap,
   rateLimited,
   routeCacheKey,
+  corsHeaders,
   PER_DAY,
   type KVLike,
 } from './guard';
@@ -143,4 +144,39 @@ test('경유지 순서가 다르면 다른 경로다', () => {
     routeCacheKey(req({ points: [base[0], mid1, mid2, base[1]] })),
     routeCacheKey(req({ points: [base[0], mid2, mid1, base[1]] })),
   );
+});
+
+/* CORS — 웹 데모에서만 필요하고, 네이티브에는 영향이 없어야 한다 */
+
+test('Origin 이 없으면 헤더를 안 붙인다 — 네이티브 앱은 CORS 자체가 없다', () => {
+  assert.deepEqual(corsHeaders(null, 'https://demo.test'), {});
+});
+
+test('허용 목록에 있는 오리진만 통과한다', () => {
+  const h = corsHeaders('https://demo.test', 'https://demo.test,http://localhost:8080');
+  assert.equal(h['access-control-allow-origin'], 'https://demo.test');
+  assert.equal(h.vary, 'Origin', '오리진마다 응답이 다르므로 캐시가 섞이면 안 된다');
+});
+
+test('목록에 없는 오리진에는 헤더를 안 붙인다 — 브라우저가 알아서 막는다', () => {
+  assert.deepEqual(corsHeaders('https://evil.test', 'https://demo.test'), {});
+});
+
+test('허용 목록이 비어 있으면 아무도 통과하지 못한다 — 기본값이 열림이면 안 된다', () => {
+  assert.deepEqual(corsHeaders('https://demo.test', undefined), {});
+  assert.deepEqual(corsHeaders('https://demo.test', ''), {});
+});
+
+test('목록의 공백은 무시한다 — wrangler.toml 에 사람이 쓰는 값이다', () => {
+  const h = corsHeaders('http://localhost:8080', ' https://demo.test , http://localhost:8080 ');
+  assert.equal(h['access-control-allow-origin'], 'http://localhost:8080');
+});
+
+test('preflight 에 필요한 헤더를 전부 허용한다 — 하나라도 빠지면 브라우저가 막는다', () => {
+  const h = corsHeaders('https://demo.test', 'https://demo.test');
+  const allowed = h['access-control-allow-headers'].split(',');
+  for (const need of ['content-type', 'x-app-token', 'x-device-id']) {
+    assert.ok(allowed.includes(need), `${need} 가 빠졌다`);
+  }
+  assert.ok(h['access-control-allow-methods'].includes('OPTIONS'));
 });

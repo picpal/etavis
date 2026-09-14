@@ -7,6 +7,7 @@
  * SLOT_STATUS_TEXT/HELP — 슬롯 status 표시 문구. 화면 여러 곳(추천 카드·교체 시트)이 같이 쓴다
  */
 import { formatDistanceM } from '../lib/geo';
+import { toHHMM } from '../lib/clock';
 import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
 import { isOpenAt } from '../lib/routePlan/score';
 import { scoreTrend } from '../lib/trendScore';
@@ -28,11 +29,6 @@ export const SLOT_STATUS_HELP: Partial<Record<SlotStatus, string>> = {
   short: '말한 개수만큼 못 찾았어요.',
 };
 
-// 반올림을 먼저 한다 — 시는 내림, 분은 반올림하면 599.7이 "9:00"(10:00이어야 한다)이 된다
-const toHHMM = (min: number) => {
-  const m = Math.round(min);
-  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
-};
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
@@ -216,23 +212,37 @@ export function slotCandidates(
   });
 }
 
+/**
+ * 계획 결과를 기존 스토어 형식으로 옮긴다.
+ *
+ * `departMin`은 **화면에 쓸 출발 시각**이다. 계산이 기준으로 삼은 시각
+ * (`request.departAtMin`)과 다를 수 있다 — 사용자가 A5에서 오래 머물다 확정하면
+ * 계산 시작 시각은 이미 과거다. 구간 소요시간은 차이값이라 시계를 옮겨도
+ * 그대로 쓸 수 있으므로, 여기서 새 시계에 다시 건다.
+ *
+ * (교통 상황까지 다시 반영하려면 재계산이 필요하다. 그건 A5의 `isStale` 배너가 맡는다.)
+ */
 export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departMin: number }): ApplyLivePayload {
   const { result, request, slots } = flow;
   if (!result || !request) throw new Error('toLegacyPlan: 결과가 없다');
   const { visits, timing } = effectiveVisits(result, slots, flow.selectedOptionIdx, flow.overrides);
   const queryOf = (slotId: string) => slots.find(s => s.id === slotId)?.query ?? '';
+  /** timing.arrivals 가 기준으로 삼은 시각. 구간을 차이로 뽑을 때 이걸 써야 한다 */
+  const timingBase = request.departAtMin;
+  /** 화면 시계와 계산 시계의 차이. 재클럭은 전 구간을 같은 폭으로 민다 */
+  const shift = departMin - timingBase;
 
   // stops — 방문 순서대로. leg는 timing(effectiveVisits의 rescore)의 도착시각·legsKm에서 그대로
-  let clock = departMin;
+  let clock = timingBase;
   const stops: StopState[] = visits.map((v, i) => {
     const arrive = timing.arrivals[i];
-    const legMin = Math.round(arrive - clock);
+    const legMin = arrive - clock;
     const legKm = round1(timing.legsKm[i] ?? 0);
     clock = arrive + v.dwellMin;
-    const openState = openStateOf(v.candidate, arrive);
+    const openState = openStateOf(v.candidate, arrive + shift);
     return {
       id: v.slotId, baseId: v.slotId, name: v.candidate.name, category: queryOf(v.slotId), coord: v.candidate.coord,
-      dwellMin: v.dwellMin, arriveAt: toHHMM(arrive), legMin, legKm, openState,
+      dwellMin: v.dwellMin, arriveAt: toHHMM(arrive + shift), legMin: Math.round(legMin), legKm, openState,
       openNote: `체류 ${v.dwellMin}분 · ${openNoteOf(openState)}`, tasks: [],
       replaceDeltaMin: 0, selectedCandidateId: v.candidate.id,
     };
@@ -240,20 +250,23 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
 
   // legs — 슬롯 id 기준 전체 쌍(재정렬 지원). result.legTable에 기대지 않고 rescore로 직접 낸다 —
   // 오버라이드로 옵션 밖 후보가 들어와도(legTable에 없는 후보) 빠지는 leg가 없다
+  /* **분을 반올림하지 않는다.** 이 표는 화면에 바로 나가는 값이 아니라 `computeChain`이
+     이어 붙이는 재료다. 구간마다 깎으면 누적 오차로 도착 시각이 밀린다 —
+     표기용 반올림은 `computeChain`이 마지막에 한 번만 한다. */
   const legs: NonNullable<Dataset['legs']> = {};
   for (const v of visits) {
     const single = result.rescore([v]);
-    legs[`origin>${v.slotId}`] = { min: Math.round(single.arrivals[0] - departMin), km: round1(single.legsKm[0] ?? 0) };
-    legs[`${v.slotId}>dest`] = { min: Math.round(single.arrivals[1] - (single.arrivals[0] + v.dwellMin)), km: round1(single.legsKm[1] ?? 0) };
+    legs[`origin>${v.slotId}`] = { min: single.arrivals[0] - timingBase, km: round1(single.legsKm[0] ?? 0) };
+    legs[`${v.slotId}>dest`] = { min: single.arrivals[1] - (single.arrivals[0] + v.dwellMin), km: round1(single.legsKm[1] ?? 0) };
   }
   for (const a of visits) {
     for (const b of visits) {
       if (a.slotId === b.slotId) continue;
       const pair = result.rescore([a, b]);
-      legs[`${a.slotId}>${b.slotId}`] = { min: Math.round(pair.arrivals[1] - (pair.arrivals[0] + a.dwellMin)), km: round1(pair.legsKm[1] ?? 0) };
+      legs[`${a.slotId}>${b.slotId}`] = { min: pair.arrivals[1] - (pair.arrivals[0] + a.dwellMin), km: round1(pair.legsKm[1] ?? 0) };
     }
   }
-  legs['origin>dest'] = { min: Math.round(result.directMin), km: round1(result.directKm) };
+  legs['origin>dest'] = { min: result.directMin, km: round1(result.directKm) };
 
   // candidates — A5 교체 시트와 같은 함수로 낸다. 화면과 확정본이 다른 목록을 보면 안 된다
   const candidates: Dataset['candidates'] = {};

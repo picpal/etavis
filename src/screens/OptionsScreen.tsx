@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
+import { nowMin } from '../lib/clock';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
 import { effectiveVisits, josa, slotCandidates, toLegacyPlan } from '../state/planFlowBridge';
@@ -138,7 +139,11 @@ export function OptionsScreen({ navigation }: Props) {
   };
 
   const confirm = () => {
-    applyLive(toLegacyPlan({ flow: state, departMin: req.departAtMin }));
+    /* 출발은 '지금'이다. 계산 시작 시각(req.departAtMin)을 그대로 쓰면 이 화면에서
+       머문 만큼 타임라인이 과거 기준이 된다 — 3안을 비교하다 보면 몇 분은 쉽게 지난다.
+       구간 소요시간은 차이값이라 시계만 옮기면 되고, 교통 상황까지 다시 보려면
+       재계산이 필요하다(그건 isStale 배너가 맡는다). */
+    applyLive(toLegacyPlan({ flow: state, departMin: nowMin() }));
     navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Today' }] });
   };
 

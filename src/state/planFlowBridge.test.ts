@@ -5,6 +5,7 @@ import { plan } from '../lib/routePlan/plan';
 import type { PlaceCandidate, Slot } from '../lib/routePlan/types';
 import { effectiveVisits, optionTitle, slotCandidates, toLegacyPlan } from './planFlowBridge';
 import { initialPlanFlow, planFlowReducer, type PlanFlowState, type PlanRequest } from './planFlow';
+import { toMin } from '../lib/clock';
 
 const O = { latitude: 37.5, longitude: 127.0 };
 const D = { latitude: 37.5, longitude: 127.1136 };
@@ -224,4 +225,72 @@ test('optionDiff — 1안은 best, 후보 다르면 swap(from·to)', async () =>
       assert.ok(d.kind === 'order' || d.kind === 'rank');
     }
   }
+});
+
+/* 도착 시각 일관성 — A5(원본 timing)와 타임라인(legs 재계산)이 같은 숫자를 말해야 한다.
+   예전엔 구간마다 Math.round 를 해서 1분씩 증발했다. */
+
+/** plan.tsx 의 computeChain 과 같은 방식으로 체인을 다시 잇는다 */
+function rechain(p: ReturnType<typeof toLegacyPlan>, departMin: number) {
+  const legOf = (a: string, b: string) =>
+    p.dataset.legs![`${a}>${b}`] ?? p.dataset.legs![`${b}>${a}`] ?? { min: 10, km: 5 };
+  let clock = departMin;
+  const arrivals: number[] = [];
+  p.stops.forEach((st, i) => {
+    clock += legOf(i === 0 ? 'origin' : p.stops[i - 1].baseId, st.baseId).min;
+    arrivals.push(clock);
+    clock += st.dwellMin;
+  });
+  clock += legOf(p.stops[p.stops.length - 1].baseId, 'dest').min;
+  return { arrivals, destArrive: clock, totalMin: clock - departMin };
+}
+
+test('legs 를 이어 붙인 총시간이 A5 의 timing 과 정확히 같다 — 구간별 반올림은 1분을 증발시킨다', async () => {
+  const s = await ready();
+  const { timing } = effectiveVisits(s.result!, slots, 0, {});
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  const chain = rechain(p, 480);
+
+  assert.equal(chain.totalMin, timing.totalMin, '총시간이 어긋나면 A5 와 타임라인이 다른 답을 말한다');
+  timing.arrivals.forEach((a, i) => {
+    if (i < chain.arrivals.length) assert.equal(chain.arrivals[i], a, `${i}번째 경유지 도착`);
+  });
+});
+
+test('legs 분은 반올림하지 않는다 — 화면에 나가는 값이 아니라 체인의 재료다', async () => {
+  const s = await ready();
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  const mins = Object.values(p.dataset.legs!).map(l => l.min);
+  assert.ok(mins.some(m => !Number.isInteger(m)), '전부 정수면 정밀도를 이미 버린 것이다');
+});
+
+test('stops 의 legMin 은 표시용이라 정수다 — 화면이 "이동 11.468분"을 보면 안 된다', async () => {
+  const s = await ready();
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  for (const st of p.stops) assert.ok(Number.isInteger(st.legMin), `${st.baseId} legMin=${st.legMin}`);
+});
+
+/* 재클럭 — A5 에 머문 시간만큼 시계를 민다 */
+
+test('departMin 을 옮기면 도착 시각이 같은 폭으로 밀린다 — 소요시간은 그대로다', async () => {
+  const s = await ready();
+  const base = toLegacyPlan({ flow: s, departMin: 480 });
+  const later = toLegacyPlan({ flow: s, departMin: 480 + 17 });
+
+  assert.deepEqual(
+    later.stops.map(st => st.legMin),
+    base.stops.map(st => st.legMin),
+    '구간 소요시간은 시계를 옮겨도 변하지 않는다',
+  );
+  base.stops.forEach((st, i) => {
+    assert.equal(toMin(later.stops[i].arriveAt) - toMin(st.arriveAt), 17, `${st.baseId} 도착이 17분 밀려야 한다`);
+  });
+  assert.equal(later.dataset.totals.totalMin, base.dataset.totals.totalMin, '총시간은 그대로');
+});
+
+test('재클럭해도 체인은 여전히 timing 과 맞는다 — 시계만 옮기고 소요시간은 안 건드린다', async () => {
+  const s = await ready();
+  const { timing } = effectiveVisits(s.result!, slots, 0, {});
+  const p = toLegacyPlan({ flow: s, departMin: 480 + 25 });
+  assert.equal(rechain(p, 480 + 25).totalMin, timing.totalMin);
 });

@@ -8,6 +8,7 @@ import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
+import { nowMin, toHHMM, toMin } from '../lib/clock';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import {
@@ -102,12 +103,9 @@ export type PlanState = {
   departMin: number;
 };
 
-export const toMin = (hhmm: string) => {
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
-};
-export const toHHMM = (min: number) =>
-  `${Math.floor(min / 60) % 24}:${String(min % 60).padStart(2, '0')}`;
+// 시각 표기는 lib/clock.ts 하나로 모았다 — 구현이 둘이면 화면마다 다른 시각을 말한다.
+// 화면들이 여기서 import 하고 있어 재수출로 남긴다.
+export { toHHMM, toMin } from '../lib/clock';
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -130,11 +128,6 @@ const legBetween = (a: string, b: string, ds?: Dataset) => {
   return table[`${a}>${b}`] ?? table[`${b}>${a}`] ?? { min: 10, km: 5.0 };
 };
 
-/** 지금 시각(자정 기준 분) — 출발은 목 데이터가 아니라 현재 시각에서 시작한다 */
-function nowMin(): number {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
 
 const MODE_TEXT = { car: '자동차', walk: '도보', transit: '대중교통' } as const;
 let chipSeq = 0;
@@ -155,6 +148,16 @@ function deriveFromDataset(ds: Dataset, departMin: number) {
 }
 
 /** 변경 후: LEGS 체인으로 전체 재계산 */
+/**
+ * 출발 시각부터 구간을 이어 붙여 도착 시각을 낸다.
+ *
+ * **클럭은 소수로 누적하고 표기할 때만 반올림한다.** 구간마다 반올림해서 더하면
+ * 오차가 쌓여 도착 시각이 통째로 밀린다 — 실측 `11.468 + 9.175 + 5.413 = 26.06분`이
+ * 구간별 반올림으로는 `11 + 9 + 5 = 25분`이 된다. 그래서 A5(원본 timing)와
+ * 타임라인(체인 재계산)이 서로 다른 시각을 말했다.
+ *
+ * 화면에 내보내는 `legMin`·`totalMin`만 정수로 깎는다.
+ */
 function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
   let clock = departMin;
   const out = stops.map((s, i) => {
@@ -163,10 +166,10 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
     const legMin = base.min + s.replaceDeltaMin;
     // base.min이 0이면 비율을 낼 수 없다 — 나눠 버리면 legKm이 NaN이 되어 화면에 "NaNkm"이 뜬다
     const legKm = round1(base.min > 0 ? base.km * (legMin / base.min) : base.km);
-    clock += legMin;
+    clock += legMin; // 정밀 누적
     const arriveAt = toHHMM(clock);
     clock += s.dwellMin;
-    return { ...s, legMin, legKm, arriveAt };
+    return { ...s, legMin: Math.round(legMin), legKm, arriveAt };
   });
   const lastKey = stops.length ? stops[stops.length - 1].baseId : 'origin';
   const fin = legBetween(lastKey, 'dest', ds);
@@ -174,10 +177,14 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
   const totalMin = clock - departMin;
   return {
     stops: out,
-    finalLegMin: fin.min,
+    finalLegMin: Math.round(fin.min),
     finalLegKm: fin.km,
     destArriveAt: toHHMM(clock),
-    totals: { totalMin, deltaMin: totalMin - ds.directMin, stopCount: out.length },
+    totals: {
+      totalMin: Math.round(totalMin),
+      deltaMin: Math.round(totalMin - ds.directMin),
+      stopCount: out.length,
+    },
   };
 }
 

@@ -11,6 +11,7 @@ import { SYSTEM_PROMPT } from './prompt';
 import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
+import { dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -35,26 +36,19 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
-/** 기기당 분당 호출 상한. 키를 서버로 옮겨도 문이 열려 있으면 옮긴 의미가 없다.
-    /route는 계획 하나에 5~9회가 나가므로(설계 문서 호출 수 표) 더 넉넉하다 */
-const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/spike/blog': 120 };
-
 /** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
 const DEFAULT_MODEL = 'gpt-5.6-sol';
 
-async function rateLimited(env: Env, path: string, deviceId: string): Promise<boolean> {
-  const key = `rl:${path}:${deviceId}:${Math.floor(Date.now() / 60000)}`;
-  const hit = Number((await env.RATE.get(key)) ?? 0) + 1;
-  await env.RATE.put(key, String(hit), { expirationTtl: 120 });
-  return hit > (PER_MIN[path] ?? 10);
-}
-
-/** 두 엔드포인트가 공유하는 문지기. 토큰 → rate limit → JSON 파싱 */
+/** 엔드포인트들이 공유하는 문지기. 토큰 → 분당 상한(기기·IP) → JSON 파싱.
+    전역 일일 상한은 여기서 보지 않는다 — /route 는 요청을 파싱해야 버킷이 정해진다 */
 async function gate(req: Request, env: Env, path: string): Promise<{ body: unknown } | Response> {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   if (req.headers.get('x-app-token') !== env.APP_TOKEN) return json({ error: 'unauthorized' }, 401);
   const deviceId = req.headers.get('x-device-id') ?? 'unknown';
-  if (await rateLimited(env, path, deviceId)) return json({ error: 'rate limited' }, 429);
+  const ip = req.headers.get('cf-connecting-ip');
+  if (await rateLimited(env.RATE, path, deviceId, ip, new Date())) {
+    return json({ error: 'rate limited' }, 429);
+  }
   try {
     return { body: await req.json() };
   } catch {
@@ -66,6 +60,25 @@ async function gate(req: Request, env: Env, path: string): Promise<{ body: unkno
 async function handleRoute(body: unknown, env: Env): Promise<Response> {
   const parsed = parseRouteRequest(body);
   if (!parsed) return json({ error: 'bad request' }, 400);
+
+  // 지금 출발과 미래운행은 무료분이 다르다(10,000 / 5,000)
+  const bucket = dailyBucket('/route', parsed.departAt);
+  if (await overDailyCap(env.RATE, bucket, new Date())) {
+    return json({ error: 'daily cap', bucket }, 429);
+  }
+
+  /* 캐시는 상한 뒤에 본다 — 히트는 과금이 아니지만, 카운터가 실제 부하를 보여야
+     상한값을 조정할 때 쓸 수 있는 숫자가 된다 */
+  const cacheKey = routeCacheKey(parsed);
+  const hit = await env.CACHE.get(cacheKey);
+  if (hit !== null) {
+    try {
+      return json(JSON.parse(hit));
+    } catch {
+      /* 캐시가 깨졌으면 새로 받는다 */
+    }
+  }
+
   const res = await fetch(kakaoDirectionsUrl(parsed), {
     headers: { authorization: `KakaoAK ${env.KAKAO_MOBILITY_KEY}` },
   });
@@ -79,6 +92,8 @@ async function handleRoute(body: unknown, env: Env): Promise<Response> {
   const norm = normalizeKakao(raw, parsed.polyline);
   // result_code≠0(예: 104 출발·도착 5m 이내)은 앱이 사용자에게 설명할 수 있게 코드를 넘긴다
   if (!norm.ok) return json({ error: 'route', code: norm.code, msg: norm.msg }, 422);
+  // 성공만 캐시한다. 실패를 캐시하면 일시적 장애가 TTL 내내 굳는다
+  await env.CACHE.put(cacheKey, JSON.stringify(norm.route), { expirationTtl: ROUTE_TTL_S });
   return json(norm.route);
 }
 
@@ -87,29 +102,19 @@ export default {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
-    const known = ['/extract', '/route', '/enrich', '/spike/blog'];
+    const known = ['/extract', '/route', '/enrich'];
     if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
     if (gated instanceof Response) return gated;
     if (url.pathname === '/route') return handleRoute(gated.body, env);
-    if (url.pathname === '/enrich') return handleEnrich(gated.body, env, { fetch, now: new Date() });
-    // 임시 — 지역+업종 질의 스파이크(server/spike-area-query.mjs)용 네이버 프록시.
-    // 키가 Cloudflare 시크릿에만 있어 로컬에서 못 부른다. 스파이크가 끝나면 뗀다.
-    if (url.pathname === '/spike/blog') {
-      const b = (gated.body ?? {}) as { q?: string; start?: number; display?: number };
-      const q = String(b.q ?? '').slice(0, 100);
-      if (!q.trim() || !env.NCP_API_KEY_ID || !env.NCP_API_KEY) return json({ error: 'bad request' }, 400);
-      const u = new URL('https://naverapihub.apigw.ntruss.com/search/v1/blog');
-      u.searchParams.set('query', q); u.searchParams.set('sort', 'date');
-      u.searchParams.set('display', String(Math.max(1, Math.min(100, Number(b.display) || 100))));
-      u.searchParams.set('start', String(Math.max(1, Math.min(1000, Number(b.start) || 1))));
-      const t0 = Date.now();
-      const r = await fetch(u, { headers: { 'X-NCP-APIGW-API-KEY-ID': env.NCP_API_KEY_ID, 'X-NCP-APIGW-API-KEY': env.NCP_API_KEY } });
-      if (!r.ok) return json({ error: 'upstream', status: r.status }, 502);
-      const j = (await r.json()) as { total?: number; items?: { title?: string; description?: string; postdate?: string }[] };
-      return json({ total: j.total ?? 0, ms: Date.now() - t0,
-        items: (j.items ?? []).map(it => ({ title: it.title ?? '', description: it.description ?? '', postdate: it.postdate ?? '' })) });
+    if (url.pathname === '/enrich') {
+      if (await overDailyCap(env.RATE, '/enrich', new Date())) return json({ error: 'daily cap' }, 429);
+      return handleEnrich(gated.body, env, { fetch, now: new Date() });
+    }
+    if (await overDailyCap(env.RATE, '/extract', new Date())) {
+      // 앱은 429도 실패로 보고 로컬 목으로 떨어진다
+      return json({ error: 'daily cap' }, 429);
     }
 
     const body = (gated.body ?? {}) as { text?: string; context?: unknown };

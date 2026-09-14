@@ -26,7 +26,7 @@
 
 | 엔드포인트 | 역할 |
 |---|---|
-| `/extract` | LLM 경유지 추출. 앱 토큰 + 기기당 분당 10회. **앱에는 아직 배선 안 함**(의도적 — LLM 토큰 절약) |
+| `/extract` | LLM 경유지 추출. 앱 토큰 + 기기당 분당 10회. **앱 배선 완료**(`src/lib/intentClient.ts`). `OPENAI_API_KEY` 미등록이라 현재는 항상 목으로 폴백 |
 | `/route` | 카카오모빌리티 자동차 길찾기. 경유지 ≤ 5, 미래운행(`departAt`) |
 | `/enrich` | 후보 보강 — 네이버 블로그 + 구글 Places |
 
@@ -313,3 +313,65 @@ node scripts/tracklog-timeline.mjs track-export.jsonl [--run <id>]
 좌표는 카카오 로컬 실제 값, 구간 시간은 `/route` 실측. 점검표는 각 경유지의 할 일.
 빌드 산출물의 Hermes 번들에 새 데이터셋·행동 로그 코드가 들어 있는지 바이트 검색으로 확인했다
 (`Info.plist` 타임스탬프는 증분 빌드라 옛 날짜로 남는다 — `main.jsbundle` 을 봐야 한다).
+
+---
+
+## 도착 시각 일관성 (2026-09-15)
+
+**무엇을** — 같은 계획이 화면마다 다른 시각을 말하던 것을 하나로 맞췄다.
+A5 17:52 / 진행중 "17:50경" / 타임라인 17:49 → 전부 같은 값.
+
+**기전** — 구간마다 반올림해서 더한 것. 실측 `arrivals`가 `[491.468, 510.643, 521.056]`인데
+`toLegacyPlan`이 leg마다 `Math.round`로 깎아 표를 만들고 `computeChain`이 그 정수들을 다시 더했다.
+`11.468 + 9.175 + 5.413 = 26.06`이 `11 + 9 + 5 = 25`가 된다.
+**각 구간을 반올림한 뒤 합한 값은 합을 반올림한 값과 다르다.**
+
+**어디에**
+- `src/state/planFlowBridge.ts` — `legs.min`을 깎지 않는다. 화면에 바로 나가는 값이 아니라
+  `computeChain`이 이어 붙이는 재료다
+- `src/state/plan.tsx` `computeChain` — 클럭을 소수로 누적하고, 내보내는 `legMin`·`totalMin`만
+  정수로 깎는다. 표시 지점은 하나도 안 건드렸다
+- `src/lib/clock.ts` — `toHHMM`이 `plan.tsx`와 `planFlowBridge.ts`에 **둘** 있었고 동작이 달랐다.
+  게다가 `plan.tsx`의 것은 소수를 받으면 `8:30.643`을 낸다. 하나로 모았다
+
+**어떻게 확인했나** — 드리프트 1분 → 0. A5 총시간과 체인이 `41.0557`로 정확히 일치.
+회귀 테스트: 체인 합 ≡ `timing`, legs 소수 유지, `legMin` 정수, `toHHMM(599.7) === '10:00'`.
+
+## 확정 시각 재클럭 (2026-09-15)
+
+**무엇을** — A5에서 3안을 비교하는 동안 타임라인이 과거 기준이 되던 것.
+
+**어디에** — `toLegacyPlan`이 `timing`의 기준 시각(`request.departAtMin`)과 화면에 쓸 출발
+시각을 분리한다. `OptionsScreen`의 확정이 `nowMin()`을 넘긴다. 구간 소요시간은 차이값이라
+시계만 옮기면 된다. 교통 상황까지 다시 보려면 재계산이고 그건 `isStale` 배너가 맡는다.
+
+**어떻게 확인했나** — `departMin`을 17분 옮기면 전 구간 도착이 정확히 17분 밀리고
+소요시간·총시간은 그대로인 것을 테스트로 고정.
+
+## 진행중 탭 구간 값 — 이미 실측이었다 (2026-09-15 확인)
+
+`NEXT.md`에 "목 표 값"으로 남아 있던 항목. **확인해 보니 이미 해결돼 있었다.**
+`toLegacyPlan`이 `result.rescore`로 실측 leg를 전 쌍(`origin>slot`·`slot>dest`·`slot>slot`)
+만들고, `APPLY_LIVE`가 `dataset`을 통째로 교체한다. `baseId: v.slotId`라 `computeChain`의
+조회 키와도 맞는다. 후보도 A5 교체 시트와 **같은 함수**(`slotCandidates`)로 낸다.
+
+목이 보이는 건 **확정을 거치지 않은 상태**뿐이다 — 앱 첫 실행의 `datasets[0]`,
+또는 개발 메뉴로 목 데이터셋을 직접 띄운 경우.
+
+## `/extract` 앱 배선 (2026-09-15)
+
+**어디에** — `src/lib/intentClient.ts`. 실패 넷(네트워크·429 일일 상한·502 OpenAI·모양
+불일치)을 전부 로컬 목으로 떨구고 화면은 `source`만 본다. `PlanScreen`의 `applyChat`이
+async가 되면서 대기 버블과 seq 가드가 따라왔다. 목으로 떨어지면 채팅에
+"서버에 닿지 못해 간단한 규칙으로 알아들었어요"를 붙인다.
+
+`knownPlaces`를 이제 넘긴다 — 안 넘기면 `endpoints`(목적지 변경)가 적용될 수 없었다.
+
+**남은 것** — `OPENAI_API_KEY`가 서버에 등록된 적이 없다. 배선은 끝났고 키가 없어
+현재는 항상 목으로 떨어진다.
+
+## 과금 방어선 (2026-09-15)
+
+`server/src/guard.ts` — 기기당 분당 / IP당 분당 / 전역 일일 3층. `/route` 응답 캐시.
+`/spike/blog` 제거. 웹 데모용 CORS(허용 오리진 목록). **배포해야 적용된다.**
+콘솔에서 직접 걸어야 하는 것은 `server/README.md` 체크리스트.

@@ -30,7 +30,17 @@ export function departAtString(departAtMin: number, now: Date): string | undefin
 
 export function serverRouteProvider(opts: ServerProviderOptions): RouteProvider {
   const fetchFn = opts.fetchFn ?? fetch;
-  const timeoutMs = opts.timeoutMs ?? 4000;
+  /* 4초였는데 실기기·시뮬레이터에서 직행 계산이 그대로 죽었다(2026-09-15).
+     서버 로그에는 요청이 Ok 로 찍혀 있었다 — 앱이 먼저 abort 하고 서버는 정상 완료한 것이다.
+
+     캐시 미스 /route 실측: 2.20 · 2.94 · 3.09 · 3.30 · 3.33초 (맥·와이파이).
+     4초는 최악값 대비 여유가 0.7초뿐이라 여유가 아니다. 기기의 셀룰러·콜드 TLS 면 쉽게 넘긴다.
+
+     직행은 계획의 0단계라 여기서 죽으면 전부 죽는다. 플래너의 나머지 호출은
+     하나가 빠져도 나머지로 계획을 세우므로, 이 상한을 올리는 위험이 작다.
+     진짜 천장은 runPlan 의 전체 예산(12초)이고, 거기 걸리면 '시간이 오래 걸려요'라고
+     제대로 말한다. */
+  const timeoutMs = opts.timeoutMs ?? 8000;
   const now = opts.now ?? (() => new Date());
   return {
     async route(points: LatLng[], departAtMin: number, mode: Mode): Promise<RouteResult> {

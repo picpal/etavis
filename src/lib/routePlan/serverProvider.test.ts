@@ -56,3 +56,22 @@ test('자동차 외 모드는 거절', async () => {
   const p = serverRouteProvider({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'd', fetchFn: fn, now });
   await assert.rejects(p.route([at(37.5, 127), at(37.6, 127.1)], 480, 'walk'), /미지원/);
 });
+
+test('기본 타임아웃은 8초 — 캐시 미스 /route 가 3.3초까지 걸린다(2026-09-15 실측)', async () => {
+  let seenSignalAbortedAt: number | null = null;
+  const start = Date.now();
+  const provider = serverRouteProvider({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: ((_u: string, init: RequestInit) =>
+      new Promise((_res, rej) => {
+        (init.signal as AbortSignal).addEventListener('abort', () => {
+          seenSignalAbortedAt = Date.now() - start;
+          rej(new Error('aborted'));
+        });
+      })) as unknown as typeof fetch,
+  });
+  await assert.rejects(provider.route(
+    [{ latitude: 37.5, longitude: 127 }, { latitude: 37.6, longitude: 127.1 }], 480, 'car'));
+  assert.ok(seenSignalAbortedAt !== null, 'abort 가 걸려야 한다');
+  assert.ok(seenSignalAbortedAt! > 5000, `4초대에 끊기면 안 된다 (실제 ${seenSignalAbortedAt}ms)`);
+});

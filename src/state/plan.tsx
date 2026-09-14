@@ -9,6 +9,7 @@ import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
+import { syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import {
@@ -410,10 +411,20 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
       const ds = datasets.find(d => d.key === action.key) ?? datasets[0];
       return initState(ds, true); // 개발 메뉴에서 고른 것이므로 예시를 깐다
     }
+    /* 스칼라만 바꾸면 A2 의 칩이 옛 값을 말한다 — 헤더는 '대중교통', 칩은 '자동차'.
+       이 앱은 알아들은 것을 칩으로 드러내는 게 원칙이라 칩이 틀리면 원칙이 무너진다 */
     case 'SET_MODE':
-      return { ...state, mode: action.mode };
+      return {
+        ...state,
+        mode: action.mode,
+        chips: syncConditionChips(state.chips, { mode: action.mode, arriveByMin: state.arriveByMin }, k => `${k}-${chipSeq++}`),
+      };
     case 'SET_ARRIVE_BY':
-      return { ...state, arriveByMin: action.min };
+      return {
+        ...state,
+        arriveByMin: action.min,
+        chips: syncConditionChips(state.chips, { mode: state.mode, arriveByMin: action.min }, k => `${k}-${chipSeq++}`),
+      };
     case 'SET_DESTINATION':
       return { ...state, destinationName: action.name, destinationCoord: action.coord };
     case 'SET_ORIGIN':

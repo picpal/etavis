@@ -6,7 +6,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NavigationAction } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
-import { MODE_TEXT, toHHMM, usePlan } from '../state/plan';
+import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
 import { RECENT_DESTINATIONS } from '../data/mockData';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
@@ -332,11 +332,10 @@ export function PlanScreen({ navigation }: Props) {
         {/* 조건 요약 — 이동수단은 여기서 바로 바꾼다. 계산은 '경로 찾기'부터라 되돌아갈 이유가 없다 */}
         <ConditionBar
           mode={state.mode}
-          arriveText={
-            state.arriveByMin == null
-              ? '도착 시각 상관없음'
-              : `오늘 ${toHHMM(state.arriveByMin).padStart(5, '0')}까지 도착`
-          }
+          /* 표기는 arriveByText 하나로 — 여기서 '오늘'을 직접 붙이던 때는 A1 시트가
+             '내일 03:00까지'라고 고른 마감을 이 헤더가 '오늘 03:00까지'라고 했다
+             (2026-09-15 시뮬레이터). 자정을 넘긴 값은 1440 이상으로 들어온다 */
+          arriveText={state.arriveByMin == null ? '도착 시각 상관없음' : `${arriveByText(state.arriveByMin)} 도착`}
           onPressMode={() => setModeOpen(true)}
         />
       </NavHeader>

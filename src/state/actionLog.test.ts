@@ -58,7 +58,7 @@ test('추출 결과는 개수로 요약된다 — 원문과 무엇을 알아들�
         arriveBy: 1080,
         mode: null,
         reject: null,
-        ambiguous: [{ field: 'time', question: '몇 시요?' }],
+        ambiguous: [{ field: 'time', question: '몇 시요?', options: [] }],
       },
     } as PlanAction,
     planState(),

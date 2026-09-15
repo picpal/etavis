@@ -12,6 +12,17 @@ test('ambiguous options — 문자열만, 최대 4개, 각 20자', () => {
   assert.deepEqual(i!.ambiguous[0].options, ['파리바게뜨', '뚜레쥬르', '동네 빵집', '상관없어요']);
 });
 
+test('ambiguous options — 20자 넘으면 자른다', () => {
+  const long = '가'.repeat(30);
+  const i = parseIntent({
+    stops: [], endpoints: {}, ambiguous: [
+      { field: 'stop:빵집', question: '어떤 빵집으로 할까요?', options: [long] },
+    ],
+  });
+  assert.equal(i!.ambiguous[0].options[0].length, 20);
+  assert.equal(i!.ambiguous[0].options[0], long.slice(0, 20));
+});
+
 test('ambiguous options — 없거나 이상하면 빈 배열', () => {
   const none = parseIntent({ stops: [], endpoints: {}, ambiguous: [{ field: 'mode', question: '어떤 이동수단으로 갈까요?' }] });
   assert.deepEqual(none!.ambiguous[0].options, []);

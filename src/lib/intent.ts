@@ -250,7 +250,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   // 넓은 업종이면 좁힐 선택지를 낸다. 좁은 질의(브랜드·특정 지점)는 묻지 않는다
   for (const st of stops) {
     if (st.kind !== 'category') continue;
-    const hit = NARROW.find(n => n.keys.some(k => st.queries[0].includes(k) || text.includes(k)));
+    const hit = NARROW.find(n => n.keys.some(k => st.queries.some(q => q.includes(k))));
     if (!hit) continue;
     base.ambiguous.push({
       field: `stop:${st.queries[0]}`,

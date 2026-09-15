@@ -151,7 +151,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop } = usePlan();
   const flow = usePlanFlow();
   const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
@@ -167,6 +167,8 @@ export function PlanScreen({ navigation }: Props) {
   /* 채팅 → 의도 추출. 서버(LLM)를 부르고, 닿지 않으면 로컬 목으로 떨어진다.
      추출 결과는 아래 칩으로 그대로 드러난다 — 잘못 잡힌 걸 사용자가 봐야 한다 */
   const [reply, setReply] = useState<string | null>(null);
+  /** 업종을 좁히는 되묻기. 고르거나 경유지가 바뀌면 사라진다 */
+  const [narrowAsks, setNarrowAsks] = useState<{ field: string; question: string; options: string[] }[]>([]);
   const [pending, setPending] = useState(false);
   /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
   const [fellBack, setFellBack] = useState(false);
@@ -189,6 +191,11 @@ export function PlanScreen({ navigation }: Props) {
         applyIntent(intent);
         flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
         setReply(intent.reject?.say ?? intent.ambiguous[0]?.question ?? null);
+        // options 를 방어적으로 읽는다 — intentClient.ts 는 서버 응답을 Intent로 그대로
+        // 캐스팅하고, looksLikeIntent 도 ambiguous 원소별로는 들여다보지 않는다. Task 1의
+        // 스키마가 아직 없는 배포된 Worker가 옛 모양({field, question})을 돌려주면
+        // a.options 가 undefined라 .length 에서 던진다
+        setNarrowAsks(intent.ambiguous.filter(a => a.field.startsWith('stop:') && (a.options ?? []).length > 0));
         setFellBack(source === 'local');
         setPending(false);
       });
@@ -196,6 +203,12 @@ export function PlanScreen({ navigation }: Props) {
 
   const startSearch = () => {
     navigation.navigate('Calculating');
+  };
+
+  // 되묻기의 field 는 `stop:<검색어>` 이므로, 그 검색어로 경유지 칩을 되찾는다
+  const chipFor = (field: string) => {
+    const q = field.slice('stop:'.length);
+    return state.chips.find(c => c.kind === 'stop' && c.queries.includes(q));
   };
 
   return (
@@ -303,6 +316,55 @@ export function PlanScreen({ navigation }: Props) {
               ))}
             </View>
           )}
+
+          {/* 업종 되묻기 — 정거장 칩과 헷갈리지 않게 ✕ 없는 중립색 칩을 쓴다.
+              탭 = 고르기이지 지우기가 아니다 */}
+          {narrowAsks.map(ask => {
+            const chip = chipFor(ask.field);
+            if (!chip) return null; // 이미 지운 경유지면 되묻기도 그리지 않는다
+            return (
+              <View key={ask.field} style={{ gap: 8, alignSelf: 'flex-start' }}>
+                <AssistantShell>
+                  <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
+                    {ask.question}
+                  </Text>
+                </AssistantShell>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 4 }}>
+                  {ask.options.map(option => (
+                    <Pressable
+                      key={option}
+                      onPress={() => {
+                        haptic();
+                        if (option === '상관없어요') {
+                          // 검색어는 그대로 둔다 — 로그도, 재계산도 없다
+                          setNarrowAsks(prev => prev.filter(a => a.field !== ask.field));
+                          return;
+                        }
+                        narrowStop(chip.id, option);
+                        flow.reset(); // 검색어가 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
+                        setNarrowAsks(prev => prev.filter(a => a.field !== ask.field));
+                      }}
+                      style={({ pressed }) => ({
+                        minHeight: 38,
+                        paddingVertical: 8,
+                        paddingHorizontal: 14,
+                        borderRadius: 14,
+                        backgroundColor: color.track,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: pressed ? 0.7 : 1,
+                      })}
+                    >
+                      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: color.body }}>
+                        {option}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            );
+          })}
+
           {promptVisible && (
             <CalculatePrompt onYes={startSearch} onNo={() => setDismissedAt(state.chat.length)} />
           )}

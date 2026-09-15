@@ -130,6 +130,15 @@ test('모양이 Intent 가 아니면 목으로 떨어진다 — stops 가 배열
   assert.equal((await fn('t', CTX)).source, 'local');
 });
 
+test('ambiguous 가 없으면 목으로 떨어진다 — Task 1 스키마가 아직 없는 배포된 Worker가 이 모양을 돌려준다', async () => {
+  const { ambiguous: _omit, ...withoutAmbiguous } = SERVER_INTENT;
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply(withoutAmbiguous), fallback,
+  });
+  assert.equal((await fn('t', CTX)).source, 'local');
+});
+
 test('arriveBy 가 null 인 정상 응답은 통과한다 — null 은 "마감 없음"이지 결함이 아니다', async () => {
   const fn = serverExtractFn({
     baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',

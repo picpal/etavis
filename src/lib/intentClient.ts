@@ -40,7 +40,8 @@ function looksLikeIntent(v: unknown): v is Intent {
     typeof r.order === 'string' &&
     (r.arriveBy === null || typeof r.arriveBy === 'number') &&
     !!r.endpoints &&
-    typeof r.endpoints === 'object'
+    typeof r.endpoints === 'object' &&
+    Array.isArray(r.ambiguous)
   );
 }
 

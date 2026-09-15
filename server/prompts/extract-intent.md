@@ -133,7 +133,7 @@ LLM이 숫자를 지어내면 이 앱의 존재 이유(시간 타당성 판단)�
 
 ## 테스트 케이스
 
-`cases.jsonl`에 147개, 27개 범주. 러너로 돌린다:
+`cases.jsonl`에 150개, 28개 범주. 러너로 돌린다:
 
 ```bash
 node server/run-cases.mjs          # 전체
@@ -144,4 +144,4 @@ node server/run-cases.mjs inject   # 한 범주만
 자동 통과를 통과로 세면 합격률이 부풀려진다.
 
 지금 재는 건 로컬 목(`src/lib/intent.ts`)이지 LLM이 아니다.
-OpenAI를 붙인 뒤 같은 147개를 돌려 이 기준선과 비교한다.
+OpenAI를 붙인 뒤 같은 150개를 돌려 이 기준선과 비교한다.

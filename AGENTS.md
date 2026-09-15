@@ -7,7 +7,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
 채팅 → 경유지 추출(`src/lib/intent.ts`, `server/`)을 고칠 때는 반드시 케이스를 돌린다.
 
 ```bash
-node server/run-cases.mjs                          # 147개 · 27개 범주 (목)
+node server/run-cases.mjs                          # 150개 · 28개 범주 (목)
 node server/run-cases.mjs --json > server/results.json && python3 server/make-xlsx.py
 ```
 

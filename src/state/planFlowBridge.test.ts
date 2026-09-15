@@ -315,3 +315,14 @@ test('자동차는 서버로, 도보·대중교통은 목으로 간다 — 던�
   }
   assert.deepEqual(calls, ['server:car', 'mock:walk', 'mock:transit']);
 });
+
+test('toLegacyPlan — timingSource 를 확정본에 싣고, 1안 근거는 출처에 맞게', async () => {
+  const s = await ready(); // mockRouteProvider → estimate
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  assert.equal(p.dataset.timingSource, 'estimate');
+  assert.equal(p.dataset.options[0].rationale, '추정으로 계산한 경로예요 · 실측 전');
+  const stamped = { ...s, result: { ...s.result!, timingSource: 'provider' as const } };
+  const q = toLegacyPlan({ flow: stamped, departMin: 480 });
+  assert.equal(q.dataset.timingSource, 'provider');
+  assert.match(q.dataset.options[0].rationale, /^실측 \d+회로 확인한 경로예요\.$/);
+});

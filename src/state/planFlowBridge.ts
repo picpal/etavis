@@ -9,6 +9,7 @@
 import { formatDistanceM } from '../lib/geo';
 import { toHHMM } from '../lib/clock';
 import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
+import { rationaleCopy } from '../lib/timingCopy';
 import { isOpenAt } from '../lib/routePlan/score';
 import { scoreTrend } from '../lib/trendScore';
 import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, Visit } from '../lib/routePlan/types';
@@ -281,7 +282,7 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     totalMin: Math.round(o.totalMin),
     deltaMin: Math.round(o.deltaMin),
     stopNames: [request.originName, ...o.visits.map(v => v.candidate.name), request.destinationName],
-    rationale: i === 0 ? `실측 ${result.measuredCount}회로 확인한 경로예요.` : optionTitle(result, i),
+    rationale: i === 0 ? rationaleCopy(result.timingSource, result.measuredCount) : optionTitle(result, i),
     recommended: i === 0,
   }));
 
@@ -299,6 +300,7 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     stops: stops.map(({ baseId: _b, replaceDeltaMin: _r, selectedCandidateId: _s, ...rest }) => rest),
     candidates,
     totals: { totalMin, deltaMin: totalMin - Math.round(result.directMin), stopCount: stops.length },
+    timingSource: result.timingSource,
     legs,
   };
 

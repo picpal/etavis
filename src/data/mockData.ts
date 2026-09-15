@@ -4,6 +4,8 @@
  * 좌표는 실제 평창/원주 일대 근사값 (지도 폴리라인 확인용).
  */
 
+import type { TimingSource } from '../lib/routePlan/types';
+
 export type LatLng = { latitude: number; longitude: number };
 
 export type Task = { id: string; text: string; done: boolean; required?: boolean };
@@ -67,6 +69,8 @@ export type Dataset = {
   stops: Stop[];
   candidates: Record<string, Candidate[]>;   // stopId → 후보
   totals: { totalMin: number; stopCount: number; deltaMin: number };
+  /** 시간의 출처. 없으면 추정(목 데이터셋). 확정본은 planFlowBridge 가 채운다 */
+  timingSource?: TimingSource;
   /**
    * 구간 이동시간 테이블 — 재정렬·삭제 후 재계산에 쓴다.
    * 키는 `origin>s1` 형식. 없으면 평창 데이터셋 기본값을 쓴다.

@@ -26,7 +26,9 @@ export type Intent = {
   arriveBy: number | null;
   mode: 'car' | 'walk' | 'transit' | null;
   reject: { say: string } | null;
-  ambiguous: { field: string; question: string }[];
+  /** 되묻기. options 가 있으면 화면이 자유 입력 대신 칩으로 그린다.
+      field 가 `stop:<검색어>` 면 그 경유지를 좁히는 질문이다 */
+  ambiguous: { field: string; question: string; options: string[] }[];
 };
 
 /** 폭주 방어 — LLM이 100개를 뱉어도 여기서 잘린다 */
@@ -99,7 +101,16 @@ export function parseIntent(raw: unknown): Intent | null {
       .slice(0, 4)
       .map(a => {
         const x = (a ?? {}) as Record<string, unknown>;
-        return { field: clampText(x.field, 'text'), question: clampText(x.question) };
+        return {
+          field: clampText(x.field, 'text'),
+          question: clampText(x.question),
+          // 선택지는 그대로 화면의 탭 대상이 된다 — 길이와 개수를 여기서 자른다.
+          // 프롬프트 규칙은 1차선일 뿐이고, 앱에 닿는 건 이 필터를 통과한 것뿐이다
+          options: (Array.isArray(x.options) ? x.options : [])
+            .filter(isStr)
+            .map(o => o.slice(0, 20))
+            .slice(0, 4),
+        };
       })
       .filter(a => a.question),
   };

@@ -39,7 +39,9 @@ export type Intent = {
   mode: 'car' | 'walk' | 'transit' | null;
   /** 길찾기와 무관한 요청 */
   reject: { say: string } | null;
-  ambiguous: { field: string; question: string }[];
+  /** 되묻기. options 가 있으면 화면이 자유 입력 대신 칩으로 그린다.
+      field 가 `stop:<검색어>` 면 그 경유지를 좁히는 질문이다 */
+  ambiguous: { field: string; question: string; options: string[] }[];
 };
 
 export type IntentContext = {
@@ -64,6 +66,17 @@ const CATEGORIES: { keys: string[]; queries: string[]; why: string }[] = [
   { keys: ['치킨'], queries: ['교촌', '치킨'], why: '치킨 포장' },
   { keys: ['화장품', '선크림'], queries: ['올리브영'], why: '화장품 사기' },
   { keys: ['기름', '주유', '휘발유'], queries: ['주유소'], why: '주유' },
+];
+
+/**
+ * 되물어 좁힐 값어치가 있는 업종. 답이 **검색어를 바꿀 때만** 넣는다 —
+ * 물어놓고 결과가 같으면 사용자 시간만 쓴 것이다.
+ * '상관없어요'는 항상 마지막에 붙는다: 고르지 않을 길이 없으면 되묻기가 강요가 된다.
+ */
+const NARROW: { keys: string[]; question: string; options: string[] }[] = [
+  { keys: ['빵', '베이커리', '제과'], question: '어떤 빵집으로 할까요?', options: ['파리바게뜨', '뚜레쥬르', '동네 빵집'] },
+  { keys: ['마트', '장보'], question: '어떤 마트로 할까요?', options: ['대형마트', '동네 마트', '편의점'] },
+  { keys: ['카페', '커피'], question: '어떤 카페로 할까요?', options: ['스타벅스', '동네 카페'] },
 ];
 
 /** 길찾기와 무관한 요청 */
@@ -149,7 +162,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   };
 
   if (modes.length > 1) {
-    base.ambiguous.push({ field: 'mode', question: '어떤 이동수단으로 갈까요?' });
+    base.ambiguous.push({ field: 'mode', question: '어떤 이동수단으로 갈까요?', options: [] });
   }
 
   // 길찾기와 무관하면 경유지를 억지로 만들지 않는다
@@ -171,7 +184,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
       return {
         ...base,
         endpoints,
-        ambiguous: [{ field: 'endpoints', question: `'${name}'이 어디인지 검색해서 골라주세요.` }],
+        ambiguous: [{ field: 'endpoints', question: `'${name}'이 어디인지 검색해서 골라주세요.`, options: [] }],
       };
     }
     return { ...base, endpoints };
@@ -214,11 +227,11 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
 
   // 사람은 장소가 아니다 — 어디서 태울지 모르면 되묻는다
   if (/픽업|태우|태워|데리러|모시러/.test(text)) {
-    base.ambiguous.push({ field: 'stops', question: '어디서 태우면 될까요?' });
+    base.ambiguous.push({ field: 'stops', question: '어디서 태우면 될까요?', options: [] });
   }
   // '동생 집', '친구 집' — 사람 이름이 붙은 장소는 좌표를 모른다
   if (/(동생|친구|엄마|아빠|형|누나|언니|오빠)\s*집/.test(text)) {
-    base.ambiguous.push({ field: 'stops', question: '그곳 주소를 검색해서 골라주세요.' });
+    base.ambiguous.push({ field: 'stops', question: '그곳 주소를 검색해서 골라주세요.', options: [] });
   }
 
   /* 부정 — 통째로 비우면 '커피는 됐고 은행만'의 은행까지 날아간다.
@@ -228,11 +241,23 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   if (NEG.test(text)) {
     scope = text.split(NEG).pop() ?? '';
     if (/딴 ?데|다른 ?데|다른 ?곳/.test(text)) {
-      base.ambiguous.push({ field: 'stops', question: '어떤 곳으로 바꿀까요?' });
+      base.ambiguous.push({ field: 'stops', question: '어떤 곳으로 바꿀까요?', options: [] });
     }
   }
 
   const stops = extractStops(scope, openNow, count);
+
+  // 넓은 업종이면 좁힐 선택지를 낸다. 좁은 질의(브랜드·특정 지점)는 묻지 않는다
+  for (const st of stops) {
+    if (st.kind !== 'category') continue;
+    const hit = NARROW.find(n => n.keys.some(k => st.queries[0].includes(k) || text.includes(k)));
+    if (!hit) continue;
+    base.ambiguous.push({
+      field: `stop:${st.queries[0]}`,
+      question: hit.question,
+      options: [...hit.options, '상관없어요'],
+    });
+  }
 
   /* 아무것도 못 뽑았는데 문장이 '부탁'처럼 보이면 침묵하지 않는다.
      오타·줄임말·영문·다국어가 여기로 떨어진다 — 조용히 비면 인사와 구별이 안 된다 */
@@ -247,7 +272,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     !base.resetStops &&
     base.ambiguous.length === 0;
   if (nothingFound && looksLikeRequest) {
-    base.ambiguous.push({ field: 'text', question: '어디를 들르실지 다시 말씀해 주세요.' });
+    base.ambiguous.push({ field: 'text', question: '어디를 들르실지 다시 말씀해 주세요.', options: [] });
   }
 
   return { ...base, stops };

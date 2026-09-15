@@ -403,6 +403,7 @@ export type PlanAction =
   | { type: 'SET_STOP_COUNT'; count: number }
   | { type: 'APPLY_INTENT'; intent: Intent }
   | { type: 'REMOVE_CHIP'; id: string }
+  | { type: 'NARROW_STOP'; chipId: string; query: string }
   | { type: 'PUSH_CHAT'; text: string };
 
 function reducer(state: PlanState, action: PlanAction): PlanState {
@@ -619,6 +620,30 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }
+    case 'NARROW_STOP': {
+      // 고른 값 하나로 줄인다 — requestStopsFromChips 가 queries[0] 을 쓰므로
+      // 검색어가 그대로 좁혀진다. '상관없어요'면 원래대로 두고 질문만 닫는다(화면 몫)
+      //
+      // stopKind 를 'brand' 로 올리는 이유: 사용자가 고른 값은 더 이상 업종이 아니라
+      // 지정이다. 'category' 로 남기면 보강·트렌드 스왑이 계속 이 칩에 돈다 — 이미
+      // 좁힌 값을 다시 업종 취급해 흔드는 꼴이라 여기서 그 경로를 빼야 한다.
+      const chips = state.chips.map(c =>
+        c.kind === 'stop' && c.id === action.chipId
+          ? { ...c, label: action.query, queries: [action.query], stopKind: 'brand' as const }
+          : c,
+      );
+      // chips 를 바꾸는 것만으로 끝나지 않는다 — stopsForChips(dataset, chips) 가
+      // chip.queries 로 데이터셋 경유지를 다시 매칭하므로, queries 를 좁히면 매칭되는
+      // 경유지 자체가 바뀐다. REMOVE_CHIP 과 같은 모양으로 stops·체인을 다시 계산한다.
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      const stops = stopsForChips(state.dataset, chips);
+      return {
+        ...state,
+        chips,
+        stopCount: stops.length,
+        ...computeChain(stops, state.dataset, state.departMin),
+      };
+    }
     case 'REMOVE_CHIP': {
       const chip = state.chips.find(c => c.id === action.id);
       if (!chip) return state;
@@ -700,6 +725,8 @@ type PlanApi = {
   setStopCount: (count: number) => void;
   applyIntent: (intent: Intent) => void;
   removeChip: (id: string) => void;
+  /** 되묻기 선택지를 골랐을 때 — 그 경유지의 검색어를 고른 값 하나로 좁힌다 */
+  narrowStop: (chipId: string, query: string) => void;
   pushChat: (text: string) => void;
   arriveByLabel: string;
 };
@@ -801,6 +828,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setStopCount: count => dispatch({ type: 'SET_STOP_COUNT', count }),
       applyIntent: intent => dispatch({ type: 'APPLY_INTENT', intent }),
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
+      narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),

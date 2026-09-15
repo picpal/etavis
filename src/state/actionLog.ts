@@ -62,6 +62,12 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
       const chip = before.chips.find(c => c.id === action.id);
       return { a: 'chip.remove', d: { kind: chip?.kind ?? '?', label: chip?.label ?? action.id } };
     }
+    case 'NARROW_STOP': {
+      // stopName 은 before.stops(데이터셋 id)에서 찾는다 — chipId 는 칩 id(s-1/ch-1)라
+      // stopName 을 쓰면 못 찾고 id 를 그대로 돌려준다. REMOVE_CHIP 처럼 chips 에서 라벨을 읽는다.
+      const from = before.chips.find(c => c.id === action.chipId)?.label ?? action.chipId;
+      return { a: 'stop.narrow', d: { from, to: action.query } };
+    }
 
     case 'SELECT_OPTION':
       return { a: 'option.select', d: { id: action.id } };

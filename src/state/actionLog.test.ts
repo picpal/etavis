@@ -82,6 +82,16 @@ test('경유지 빼기는 이름을 남긴다', () => {
   assert.equal(log?.d?.name, '올리브영 신정점');
 });
 
+test('stop.narrow — 무엇을 무엇으로 좁혔는지 남긴다', () => {
+  const before = planState();
+  const log = describePlanAction({ type: 'NARROW_STOP', chipId: 'ch-1', query: '파리바게뜨' } as never, before);
+  assert.equal(log?.a, 'stop.narrow');
+  // chipId('ch-1')로 chips 에서 찾은 라벨('빵집')이어야 한다 — stopName(before.stops)으로
+  // 잘못 찾으면 매칭이 안 돼 칩 id 를 그대로 돌려준다. to 만 보면 이 버그를 놓친다.
+  assert.equal(log?.d?.from, '빵집');
+  assert.equal(log?.d?.to, '파리바게뜨');
+});
+
 test('개발 메뉴 토글도 남긴다 — 이상한 로그의 이유가 될 수 있다', () => {
   const log = describePlanAction({ type: 'SET_DEV_ANY_CONGESTION', value: true } as PlanAction, planState());
   assert.equal(log?.a, 'dev.anyCongestion');

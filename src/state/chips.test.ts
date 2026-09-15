@@ -94,3 +94,10 @@ test('narrowStopChips — count>1 로 칩이 복제됐어도 같은 queries 의 
   assert.equal(nb.kind === 'stop' ? nb.narrowed : null, true);
   assert.equal(out[2], c, '다른 스톱(마트) 칩은 같은 객체여야 한다');
 });
+
+test('narrowStopChips — 이미 좁힌 칩을 다시 좁히려 하면 같은 배열을 그대로 돌려준다', () => {
+  const chips: IntentChip[] = [
+    { id: 's-1', kind: 'stop', label: '파리바게뜨', queries: ['파리바게뜨'], stopKind: 'category', openNow: false, flexible: true, narrowed: true },
+  ];
+  assert.equal(narrowStopChips(chips, 's-1', '뚜레쥬르'), chips, '참조가 같아야 재계산을 건너뛴다');
+});

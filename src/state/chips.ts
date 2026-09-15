@@ -75,7 +75,9 @@ export function syncConditionChips(
  */
 export function narrowStopChips(chips: IntentChip[], chipId: string, query: string): IntentChip[] {
   const hit = chips.find(c => c.kind === 'stop' && c.id === chipId);
-  if (!hit || hit.kind !== 'stop') return chips;
+  // 이미 답한 칩은 다시 좁히지 않는다. 화면(`chipFor`)도 막지만 방어가 거기 한 곳뿐이면,
+  // 리듀서를 직접 부르는 호출부가 생겼을 때 사용자가 고정한 값을 조용히 덮는다
+  if (!hit || hit.kind !== 'stop' || hit.narrowed) return chips;
   const targetQueries = hit.queries;
   const sameQueries = (a: string[]) => a.length === targetQueries.length && a.every((v, i) => v === targetQueries[i]);
   return chips.map(c =>

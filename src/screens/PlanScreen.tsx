@@ -10,6 +10,7 @@ import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
 import { RECENT_DESTINATIONS } from '../data/mockData';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
+import { calcPromptVisible } from '../state/chatPrompt';
 import { Chevron, DottedLineH } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NavHeader } from '../components/NavHeader';
@@ -193,7 +194,6 @@ export function PlanScreen({ navigation }: Props) {
   const [modeOpen, setModeOpen] = useState(false);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
   const [dismissedAt, setDismissedAt] = useState(-1);
-  const promptVisible = state.chat.length > dismissedAt;
   // 탭한 정거장 칩 — 액션 시트(빼기/그대로 두기)를 띄운다
   const [chipMenu, setChipMenu] = useState<string | null>(null);
 
@@ -206,6 +206,7 @@ export function PlanScreen({ navigation }: Props) {
   /** 업종을 좁히는 되묻기. 고르거나 경유지가 바뀌면 사라진다 */
   const [narrowAsks, setNarrowAsks] = useState<{ field: string; question: string; options: string[] }[]>([]);
   const [pending, setPending] = useState(false);
+  const promptVisible = calcPromptVisible({ pending, chatLength: state.chat.length, dismissedAt });
   /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
   const [fellBack, setFellBack] = useState(false);
   /* 연속 전송이면 늦게 시작한 요청이 먼저 도착할 수 있다. 마지막 것만 반영한다 —
@@ -243,6 +244,9 @@ export function PlanScreen({ navigation }: Props) {
   };
 
   const startSearch = () => {
+    /* 프롬프트를 숨기는 것만으로는 부족하다 — 방어가 화면 한 곳뿐이면, 이 핸들러를
+       부르는 다른 호출부가 생겼을 때 추출 중인 칩으로 계산이 시작된다 */
+    if (pending) return;
     navigation.navigate('Calculating');
   };
 

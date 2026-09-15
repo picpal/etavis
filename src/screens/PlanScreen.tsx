@@ -205,10 +205,11 @@ export function PlanScreen({ navigation }: Props) {
     navigation.navigate('Calculating');
   };
 
-  // 되묻기의 field 는 `stop:<검색어>` 이므로, 그 검색어로 경유지 칩을 되찾는다
+  /* 좁히기 질문은 아직 업종인 경유지만 가리킬 수 있다. 이미 좁혀진 칩(stopKind:'brand')을
+     후보에서 빼지 않으면, 두 경유지가 같은 값으로 좁혀졌을 때 나중 질문이 엉뚱한 쪽을 집는다 */
   const chipFor = (field: string) => {
     const q = field.slice('stop:'.length);
-    return state.chips.find(c => c.kind === 'stop' && c.queries.includes(q));
+    return state.chips.find(c => c.kind === 'stop' && c.stopKind === 'category' && c.queries.includes(q));
   };
 
   return (

@@ -73,6 +73,7 @@ export async function plan(
   const measured: Scored[] = [];
   if (V === 0) measured.push(scorePlan([], ctx)); // 직행이 곧 계획. 이미 실측됐다
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];
+  let seedEstimated = false; // 시드 중 하나라도 추정이면 true
   const measure = async (visits: Visit[]) => {
     const est = scorePlan(visits, ctx); // 실측 전 추정 — 오차 계산용
     let route;
@@ -81,6 +82,7 @@ export async function plan(
     } catch {
       return; // 시드 하나 실패는 그 안만 버린다. 직행은 위에서 이미 성공했다
     }
+    if (route.source !== 'provider') seedEstimated = true;
     const ids = [ORIGIN_ID, ...visits.map(v => v.candidate.id), DEST_ID];
     learnLegs(legs, ids, route, input.departAtMin, visits.map(v => v.dwellMin), input.mode);
     route.sections.forEach((sec, i) => {
@@ -176,6 +178,8 @@ export async function plan(
     }
   }
 
-  const timingSource: PlanResult['timingSource'] = direct.source === 'provider' ? 'provider' : 'estimate';
+  // 직행이 공급자여도 시드가 추정이면 도착 시각의 대부분이 추정이다 — 그걸 provider 라 부르면 화면이 거짓말한다
+  const timingSource: PlanResult['timingSource'] =
+    direct.source !== 'provider' ? 'estimate' : seedEstimated ? 'provider_direct_only' : 'provider';
   return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
 }

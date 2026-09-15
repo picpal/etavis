@@ -162,3 +162,16 @@ test('timingSource — 목이면 estimate, 공급자가 provider 를 찍으면 p
   const prov = await plan(base([slot('a', [on, near])]), stamped);
   assert.equal(prov.timingSource, 'provider');
 });
+
+test('timingSource — 직행만 provider 고 시드가 estimate 면 provider_direct_only', async () => {
+  const mock = mockRouteProvider();
+  const directOnly = { route: async (...args: Parameters<typeof mock.route>) => {
+    const r = await mock.route(...args);
+    return args[0].length === 2 ? { ...r, source: 'provider' as const } : r; // 3점 이상은 mock 그대로(estimate)
+  } };
+  const r = await plan(base([slot('a', [on, near])]), directOnly);
+  assert.equal(r.timingSource, 'provider_direct_only');
+  // 경유지가 없으면 직행이 곧 계획 — provider
+  const r0 = await plan(base([]), directOnly);
+  assert.equal(r0.timingSource, 'provider');
+});

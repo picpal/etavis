@@ -11,7 +11,7 @@
 import Constants from 'expo-constants';
 import { LatLng } from '../data/mockData';
 import { haversineM } from './geo';
-import { kakaoCategoryFor } from './placeCategory';
+import { keepByCategoryName, planSearch } from './placeQuery';
 import type { PlaceCandidate } from './routePlan/types';
 
 export type Place = {
@@ -163,15 +163,19 @@ async function kakaoFetch(kind: 'keyword' | 'address', params: URLSearchParams) 
 const kakaoProvider: PlaceSearchProvider = {
   key: 'kakao',
   async search(query, near, radiusM) {
-    const keywordParams = new URLSearchParams({ query, size: '15' });
     /*
       카카오는 이름만 매칭한다 — "국민은행"에 "국민은행앞1 공영노상주차장"(PK6)과
       "현대그린푸드국민은행 여의도전산센터"(FD6)가 같이 온다. 2026-09-15 시뮬레이터에서
       그 주차장이 1순위 추천이 됐다. 아는 업종이면 코드로 서버에서 거른다.
       모르는 업종(올리브영 같은 브랜드)은 코드 자체가 없어서 찍으면 0건이 된다 — 그래서 null.
+
+      코드로 못 거르는 업종이 더 많다(문구점·꽃집·세탁소·동네 마트는 코드가 빈 값이다).
+      그건 응답의 category_name 으로 거른다. '동네 빵집' 처럼 검색어로는 0건인 말도
+      여기서 실제 검색어로 옮긴다 — planSearch 가 둘 다 정한다.
     */
-    const categoryCode = kakaoCategoryFor(query);
-    if (categoryCode) keywordParams.set('category_group_code', categoryCode);
+    const plan = planSearch(query);
+    const keywordParams = new URLSearchParams({ query: plan.query, size: '15' });
+    if (plan.categoryCode) keywordParams.set('category_group_code', plan.categoryCode);
     // 기준 좌표를 주면 카카오가 가까운 순으로 정렬해 준다.
     // 국내 좌표일 때만 넘긴다 — 해외에 있으면서 한국 장소를 찾는 경우 거리순이 무의미하다
     if (near && isInKorea(near)) {
@@ -188,16 +192,21 @@ const kakaoProvider: PlaceSearchProvider = {
       순수 주소(주택가·펜션 등)는 못 찾는다. 주소 검색이 그 구멍을 메운다.
       대신 표시는 항상 장소명 우선 — 주소 결과도 building_name이 있으면 그걸 쓴다.
     */
+    // 업종을 물었으면 주소 결과는 부르지 않는다 — 카테고리로 거른 것을 뒷문으로 다시 들인다.
+    // 주소 검색은 POI 가 없는 순수 주소를 메우는 보조라, 업종 질의에는 쓸모가 없다.
+    const isCategoryQuery = plan.categoryCode != null || plan.pathAny.length > 0;
+
     const [keyword, address] = await Promise.all([
       kakaoFetch('keyword', keywordParams),
-      // 업종을 물었으면 주소 결과는 부르지 않는다 — 카테고리로 거른 것을 뒷문으로 다시 들인다.
-      // 주소 검색은 POI 가 없는 순수 주소를 메우는 보조라, 업종 질의에는 쓸모가 없다.
-      categoryCode
+      isCategoryQuery
         ? Promise.resolve({ documents: [] })
-        : kakaoFetch('address', new URLSearchParams({ query, size: '5' })).catch(() => ({ documents: [] })),
+        : kakaoFetch('address', new URLSearchParams({ query: plan.query, size: '5' })).catch(() => ({ documents: [] })),
     ]);
 
-    const places: Place[] = ((keyword.documents ?? []) as KakaoKeywordDoc[]).map(d => ({
+    const kept = ((keyword.documents ?? []) as KakaoKeywordDoc[]).filter(d =>
+      keepByCategoryName(d.category_name, plan),
+    );
+    const places: Place[] = kept.map(d => ({
       id: `kakao-${d.id}`,
       name: d.place_name,
       address: d.road_address_name || d.address_name,

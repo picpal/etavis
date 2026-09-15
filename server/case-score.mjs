@@ -11,7 +11,7 @@
 /** `expect`에 이 키가 하나라도 있어야 '검증됨'이다. note만 있으면 미검증 — 통과가 아니다 */
 export const CHECKED_KEYS = [
   'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
-  'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops',
+  'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops', 'ambopt',
 ];
 
 /**
@@ -51,6 +51,22 @@ export function scoreCase(c, got) {
   if (e.amb && got.ambiguous.length === 0) fails.push('되묻지 않음');
   // 가장 중요한 축 — 쓰레기 입력에 경유지를 지어내지 않는가
   if (e.nostop && got.stops.length > 0) fails.push(`환각: ${flat.join(',')}`);
+
+  // 업종 되묻기 — 넓은 업종은 선택지를 함께 내고, 이미 좁은 질의는 묻지 않아야 한다.
+  // 양방향을 다 세야 한다: Task 1 리뷰에서 "묻지 말아야 할 스톱에 되묻기가 붙는" 버그가
+  // 나왔는데, '묻지 않음'만 실패로 세는 기존 e.amb 로는 절대 안 드러났다.
+  if (e.ambopt != null) {
+    const asks = got.ambiguous.filter(a => typeof a.field === 'string' && a.field.startsWith('stop:'));
+    if (asks.length !== e.ambopt) fails.push(`stop되묻기=${asks.length}≠${e.ambopt}`);
+    for (const a of asks) {
+      const o = a.options ?? [];
+      if (o.length < 2) fails.push(`선택지 ${o.length}개: ${a.field}`);
+      else if (o[o.length - 1] !== '상관없어요') fails.push(`끝이 '상관없어요' 아님: ${o.join('/')}`);
+      const q = a.field.slice('stop:'.length);
+      if (!got.stops.some(s => s.op !== 'remove' && s.queries.includes(q)))
+        fails.push(`없는 경유지를 가리킨다: ${a.field}`);
+    }
+  }
 
   /* note만 있고 검증 조건이 없는 케이스는 '통과'가 아니라 '미검증'이다.
      자동 통과를 통과로 세면 합격률이 부풀려진다 */

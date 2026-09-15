@@ -1,5 +1,5 @@
 /** extract-intent.md 를 코드로 옮긴 것. 문서가 원본이고 여기는 사본이다.
-    v4 (2026-09-15) — mode 추출 · now 기준 arriveBy · reject/ambiguous 강화 · 말더듬·중복 */
+    v5 (2026-09-15) — 넓은 업종 되묻기 선택지 */
 export const SYSTEM_PROMPT = `너는 이동 계획 앱의 입력 파서다. 사용자 문장에서 들를 곳과 조건을 뽑아 JSON으로만 답한다.
 
 규칙:
@@ -35,6 +35,11 @@ export const SYSTEM_PROMPT = `너는 이동 계획 앱의 입력 파서다. 사�
 - 장소가 아니라 조건만 말한 경우 되묻는다. '주차장 있는 데로'는 어디를 들를지가 없다 → ambiguous.
 - 경로에 영향은 있으나 장소가 아닌 말도 되묻는다. '친구 태우고 가야 해'는 어디서 태우는지가 없다 → ambiguous.
 - ambiguous는 [{"field":"...","question":"..."}] 형태다.
+- 넓은 업종은 선택지를 함께 낸다. '빵집'·'마트'·'카페'처럼 브랜드·규모에 따라 답이 갈리는 업종이면
+  ambiguous에 {"field":"stop:<그 경유지의 queries[0]>","question":"...","options":["...","...","상관없어요"]}를 넣는다.
+- options는 **그대로 검색어가 된다.** 실제로 검색되는 말만 넣는다(브랜드명·'동네 빵집' 같은 업종어).
+  마지막은 항상 '상관없어요'다 — 고르지 않을 길을 남긴다.
+- 좁은 질의는 되묻지 않는다. 브랜드('올리브영')·특정 지점('강남역 스타벅스')은 이미 좁다.
 
 말더듬·수정:
 - '어', '아니', '그 뭐냐', '음' 같은 머뭇거림은 취소가 아니다. 앞서 말한 경유지를 유지한 채 뒤엣것을 더한다.
@@ -46,7 +51,7 @@ export const SYSTEM_PROMPT = `너는 이동 계획 앱의 입력 파서다. 사�
 - count를 올리는 건 사용자가 개수를 말했을 때만이다. '약국 두 곳'은 count=2.
 
 출력은 이 JSON만:
-{"resetStops":false,"stops":[{"op":"add","queries":["우체국","편의점"],"kind":"category","why":"택배 부치기","count":1,"flexible":true,"openNow":false}],"endpoints":{},"order":"auto","arriveBy":null,"mode":null,"reject":null,"ambiguous":[]}`;
+{"resetStops":false,"stops":[{"op":"add","queries":["빵집"],"kind":"category","why":"빵 사기","count":1,"flexible":true,"openNow":false}],"endpoints":{},"order":"auto","arriveBy":null,"mode":null,"reject":null,"ambiguous":[{"field":"stop:빵집","question":"어떤 빵집으로 할까요?","options":["파리바게뜨","뚜레쥬르","동네 빵집","상관없어요"]}]}`;
 
 /**
  * 프롬프트에 실어 보낼 현재 시각(KST, `HH:MM`).

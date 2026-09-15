@@ -145,3 +145,6 @@
 {"g":"voice","text":"구시까지 도착","expect":{"at":540,"note":"음성인식 오류 교정 — Codex 통과"}}
 {"g":"voice","text":"올 리브 영 들러 줘","expect":{"qhas":["올리브영"],"note":"음성인식 띄어쓰기"}}
 {"g":"voice","text":"편의점이요","expect":{"qhas":["편의점"]}}
+{"g":"narrow","text":"가는 길에 빵 사고 마트에서 장보고 가려고","expect":{"ambopt":2,"note":"넓은 업종 둘 — 각자 자기 되묻기를 받는다"}}
+{"g":"narrow","text":"올리브영 들르고 싶어","expect":{"ambopt":0,"note":"브랜드는 이미 좁다 — 되묻지 않는다"}}
+{"g":"narrow","text":"강남역 스타벅스 들렀다 가자","expect":{"ambopt":0,"note":"특정 지점은 이미 좁다 — 되묻지 않는다"}}

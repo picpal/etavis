@@ -108,7 +108,10 @@ const TABLE: {
  */
 const FRANCHISE = [
   // 빵 — 실측 150건에서 꼬리로 나온 것들
-  '파리바게뜨', '뚜레쥬르', '파리크라상', '아티제', '앤티앤스프레즐', '와플대학', '브레댄코', '코코호도', '던킨',
+  // '파리바게트'(ㅌ)는 실측 스펠링 변이다 — 2026-09-15, '파리바게트 신트리점'은
+  // category_name 이 "음식점 > 간식 > 제과,베이커리"(브랜드 조각 없음)로만 온다.
+  // 카카오가 같은 브랜드를 '파리바게뜨'(ㄸ)로도 적어서 두 표기를 다 둔다.
+  '파리바게뜨', '파리바게트', '뚜레쥬르', '파리크라상', '아티제', '앤티앤스프레즐', '와플대학', '브레댄코', '코코호도', '던킨',
   // 카페 — 실측
   '스타벅스', '투썸플레이스', '이디야커피', '컴포즈커피', '빽다방', '할리스', '커피빈', '폴바셋',
   '메가MGC커피', '매머드익스프레스', '텐퍼센트커피', '파스쿠찌', '엔제리너스', '탐앤탐스',
@@ -143,5 +146,25 @@ export function keepByCategoryName(categoryName: string | undefined, plan: Searc
   if (plan.pathAny.length > 0 && !plan.pathAny.some(p => categoryName.includes(p))) return false;
   if (plan.pathNot.some(p => categoryName.includes(p))) return false;
   if (plan.localOnly && FRANCHISE.some(f => categoryName.includes(f))) return false;
+  return true;
+}
+
+/**
+ * `keepByCategoryName`에 더해, **가게 이름**까지 프랜차이즈를 본다.
+ *
+ * 실측 2026-09-15: '파리바게트 신트리점'은 category_name 이 "음식점 > 간식 >
+ * 제과,베이커리"로 끝난다 — 브랜드 조각이 아예 없다. 그런데 같은 브랜드의
+ * '파리바게뜨 신정역점'은 "… > 제과,베이커리 > 파리바게뜨"로, 브랜드가 붙어서 온다.
+ * 두 응답의 category_name 이 바이트 단위로 같을 수도, 다를 수도 있다는 뜻이라
+ * 경로만으로는 이 브랜드를 걸러낼 방법이 구조적으로 없다 — 그래서 이름도 본다.
+ *
+ * 이름 검사는 일부러 `plan.localOnly`일 때만 켠다. '동네'로 좁힌 검색에서
+ * 과하게 거르면 동네 후보 몇 개를 놓치는 정도지만, 모든 질의에 이름 검사를 걸면
+ * 평범한 "파리바게뜨" 검색 자체가 텅 빌 수 있다 — 과소 필터링보다 과잉 필터링이
+ * 훨씬 비싸다. 이 비대칭이 이 파일 전체의 원칙이다.
+ */
+export function keepPlace(placeName: string, categoryName: string | undefined, plan: SearchPlan): boolean {
+  if (!keepByCategoryName(categoryName, plan)) return false;
+  if (plan.localOnly && FRANCHISE.some(f => placeName.includes(f))) return false;
   return true;
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keepByCategoryName, planSearch } from './placeQuery.ts';
+import { keepByCategoryName, keepPlace, planSearch } from './placeQuery.ts';
 
 test("'동네 X' 는 검색어가 아니라 접두사다 — X 를 찾고 프랜차이즈를 뺀다", () => {
   // 실측 2026-09-15: "동네 빵집" 질의는 카카오에서 0건이다. 가게 이름이 그렇지 않으니까
@@ -132,4 +132,22 @@ test('접두사만 남으면 원래 질의를 쓴다 — 빈 검색어는 카카
   const p = planSearch('동네');
   assert.equal(p.query, '동네');
   assert.equal(p.localOnly, false);
+});
+
+test('프랜차이즈가 category_name 에 안 실릴 때가 있다 — 이름도 본다', () => {
+  const p = planSearch('동네 빵집');
+  // 실측 2026-09-15: '파리바게트 신트리점' 은 '음식점 > 간식 > 제과,베이커리' 로만 온다.
+  // 같은 브랜드의 신정역점은 '… > 파리바게뜨' 로 온다 — 카카오가 일관되지 않다
+  assert.ok(keepByCategoryName('음식점 > 간식 > 제과,베이커리', p), '경로만 보면 못 거른다');
+  assert.ok(!keepPlace('파리바게트 신트리점', '음식점 > 간식 > 제과,베이커리', p));
+  assert.ok(!keepPlace('파리바게뜨 여의도점', '음식점 > 간식 > 제과,베이커리 > 파리바게뜨', p));
+  assert.ok(keepPlace('폴앤폴리나 여의도점', '음식점 > 간식 > 제과,베이커리', p));
+  // 하르당은 지점이 몇 안 되는 작은 체인이라 일부러 FRANCHISE 에 없다
+  assert.ok(keepPlace('하르당 목동역점', '음식점 > 간식 > 제과,베이커리', p));
+});
+
+test('좁히지 않았으면 이름으로도 안 거른다', () => {
+  const p = planSearch('빵집');
+  assert.ok(keepPlace('파리바게뜨 여의도점', '음식점 > 간식 > 제과,베이커리 > 파리바게뜨', p));
+  assert.ok(keepPlace('스타벅스 여의도점', '음식점 > 카페 > 커피전문점 > 스타벅스', planSearch('카페')));
 });

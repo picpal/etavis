@@ -11,7 +11,7 @@
 import Constants from 'expo-constants';
 import { LatLng } from '../data/mockData';
 import { haversineM } from './geo';
-import { keepByCategoryName, planSearch } from './placeQuery';
+import { keepPlace, planSearch } from './placeQuery';
 import type { PlaceCandidate } from './routePlan/types';
 
 export type Place = {
@@ -204,7 +204,7 @@ const kakaoProvider: PlaceSearchProvider = {
     ]);
 
     const kept = ((keyword.documents ?? []) as KakaoKeywordDoc[]).filter(d =>
-      keepByCategoryName(d.category_name, plan),
+      keepPlace(d.place_name, d.category_name, plan),
     );
     const places: Place[] = kept.map(d => ({
       id: `kakao-${d.id}`,

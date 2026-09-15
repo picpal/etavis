@@ -188,3 +188,13 @@ test('plan.slots — picks 는 슬롯마다 따로 잘린다 — 앞 슬롯이 �
   assert.ok(log?.d?.picks?.toString().includes('카페:'), '두 번째 슬롯의 query 는 살아 있어야 한다');
   assert.ok(log?.d?.picks?.toString().includes('목동역 KB'), '두 번째 슬롯의 후보 이름은 살아 있어야 한다');
 });
+
+test('plan.slots — 앵커에서 온 후보는 앵커와 도보 거리를 적는다', () => {
+  const slots = [{
+    id: 'sl-1', query: '국민은행', stopKind: 'category', dwellMin: 5, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 500, searchCalls: 5,
+    candidates: [{ id: 'kb', name: '국민은행 목동역점', coord: { latitude: 37.52, longitude: 126.86 }, anchorId: 'a1', anchorWalkM: 120 }],
+  }] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
+  assert.equal(log?.d?.picks, '국민은행: 국민은행 목동역점(a1 120m)');
+});

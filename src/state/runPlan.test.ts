@@ -617,3 +617,85 @@ test('신호 하나가 망가진 모양이어도(google.rating이 숫자가 아�
   assert.ok(actions.some(a => a.type === 'RESULT'), 'RESULT는 나가야 한다');
   assert.ok(!actions.some(a => a.type === 'FAIL'), '스코어링이 던져도 이미 나간 RESULT를 FAIL이 덮으면 안 된다');
 });
+
+// --- 6단계: 대중교통이면 앵커에서 경유지를 찾는다 ---
+test('대중교통 — itinerary 가 있으면 앵커에서 찾는다', async () => {
+  const board = { latitude: 37.526097, longitude: 126.864538 };
+  const nearBoard = { latitude: 37.5263, longitude: 126.8650 };
+  const searched: { latitude: number; longitude: number }[] = [];
+  const search = async (_q: string, near: { latitude: number; longitude: number }, r: number) => {
+    searched.push(near);
+    return Math.hypot(near.latitude - nearBoard.latitude, near.longitude - nearBoard.longitude) < 0.01
+      ? [{ id: 'kb', name: '국민은행 목동역점', coord: nearBoard }]
+      : [];
+  };
+  const provider = {
+    route: async (points: { latitude: number; longitude: number }[]) => ({
+      durationMin: 24, distanceKm: 7.2,
+      polyline: [points[0], board, points[points.length - 1]],
+      sections: points.slice(1).map(() => ({ durationMin: 12, distanceKm: 3.6 })),
+      source: 'provider' as const,
+      transit: [{
+        durationMin: 24, distanceM: 7218,
+        legs: [{
+          kind: 'transit' as const, mode: 'SUBWAY' as const, line: '5호선',
+          from: { name: '목동', lat: 37.526097, lng: 126.864538 },
+          to: { name: '국회의사당', lat: 37.528143, lng: 126.917856 },
+          durationMin: 12, stops: 6, departAt: null, arriveAt: null,
+        }],
+      }],
+    }),
+  };
+  const actions: { type: string }[] = [];
+  await runPlan(
+    { origin: { latitude: 37.5188, longitude: 126.8575 }, destination: { latitude: 37.5285, longitude: 126.9187 },
+      departAtMin: 9 * 60, arriveByMin: null, mode: 'transit', order: 'auto',
+      stops: [{ id: 'sl-1', query: '국민은행', count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
+    { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
+  );
+
+  const slots = (actions.find(a => a.type === 'SLOTS') as { slots: { candidates: { id: string; anchorId?: string; anchorWalkM?: number }[] }[] }).slots;
+  assert.equal(slots[0].candidates.length, 1);
+  assert.equal(slots[0].candidates[0].anchorId, 'a1', '승차역 앵커에 붙어야 한다');
+  assert.ok(slots[0].candidates[0].anchorWalkM! < 200);
+  // 검색은 앵커 좌표에서 이뤄졌다 — 직선 위 등간격 5점이 아니다
+  assert.ok(searched.some(p => Math.abs(p.latitude - board.latitude) < 1e-6), '승차역에서 찾지 않았다');
+});
+
+test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다', async () => {
+  const board = { latitude: 37.526097, longitude: 126.864538 };
+  // 역 주변(최대 1500m)엔 없고, 회랑 반지름 2000m 이상에서만 잡히는 가게
+  const onCorridor = { latitude: 37.5235, longitude: 126.8880 };
+  const search = async (_q: string, near: { latitude: number; longitude: number }, r: number) =>
+    Math.hypot(near.latitude - onCorridor.latitude, near.longitude - onCorridor.longitude) < 0.02 && r >= 2000
+      ? [{ id: 'far1', name: '회랑 가게', coord: onCorridor }]
+      : [];
+  const provider = {
+    route: async (points: { latitude: number; longitude: number }[]) => ({
+      durationMin: 24, distanceKm: 7.2,
+      polyline: [points[0], board, points[points.length - 1]],
+      sections: points.slice(1).map(() => ({ durationMin: 12, distanceKm: 3.6 })),
+      source: 'provider' as const,
+      transit: [{
+        durationMin: 24, distanceM: 7218,
+        legs: [{
+          kind: 'transit' as const, mode: 'SUBWAY' as const, line: '5호선',
+          from: { name: '목동', lat: 37.526097, lng: 126.864538 },
+          to: { name: '국회의사당', lat: 37.528143, lng: 126.917856 },
+          durationMin: 12, stops: 6, departAt: null, arriveAt: null,
+        }],
+      }],
+    }),
+  };
+  const actions: { type: string }[] = [];
+  await runPlan(
+    { origin: { latitude: 37.5188, longitude: 126.8575 }, destination: { latitude: 37.5285, longitude: 126.9187 },
+      departAtMin: 9 * 60, arriveByMin: null, mode: 'transit', order: 'auto',
+      stops: [{ id: 'sl-1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
+    { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
+  );
+
+  const slots = (actions.find(a => a.type === 'SLOTS') as { slots: { candidates: { id: string; anchorId?: string }[] }[] }).slots;
+  assert.equal(slots[0].candidates.length, 1, '앵커가 비었다고 후보까지 잃으면 안 된다');
+  assert.equal(slots[0].candidates[0].anchorId, undefined, '회랑에서 온 후보엔 앵커가 없다');
+});

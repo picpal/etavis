@@ -3,9 +3,10 @@
  * 예외를 밖으로 던지지 않는다. 실패는 전부 FAIL 액션이다.
  * 의존(공급자·검색·dispatch)을 주입받아 목으로 시험한다.
  */
-import { initialRadiusM, maxRadiusM, searchAlong, type SearchFn } from '../lib/corridorSearch';
+import { initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, ANCHOR_MAX_M, type SearchFn } from '../lib/corridorSearch';
 import { plan } from '../lib/routePlan/plan';
 import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
+import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
 import type { EnrichFn } from '../lib/enrich/enrichClient';
@@ -95,14 +96,28 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     const rho = direct.durationMin / Math.max(direct.distanceKm, 0.1);
     const slack = request.arriveByMin == null ? null : request.arriveByMin - request.departAtMin - direct.durationMin;
     const poly = direct.polyline.length >= 2 ? direct.polyline : [request.origin, request.destination];
+    // 대중교통이면 실제 정류장이 앵커다. 공급자가 itinerary 를 안 줬으면(추정 폴백)
+    // 앵커도 없다 — 그때는 지금까지처럼 회랑으로 찾는다
+    const itinerary = request.mode === 'transit' ? direct.transit?.[0] : undefined;
+    const anchors: Anchor[] = itinerary ? extractAnchors(itinerary, request.origin, request.destination) : [];
     let slots: Slot[];
     try {
       slots = await race(Promise.all(request.stops.map(async st => {
-        const found = await searchAlong(
+        const need = Math.max(1, st.count);
+        const target = Math.max(st.count, KC);
+        const corridor = () => searchAlong(
           poly, st.query,
-          { need: Math.max(1, st.count), target: Math.max(st.count, KC), initialRadiusM: initialRadiusM(request.mode), maxRadiusM: maxRadiusM(request.mode, slack, rho) },
+          { need, target, initialRadiusM: initialRadiusM(request.mode), maxRadiusM: maxRadiusM(request.mode, slack, rho) },
           search,
         );
+        // 앵커가 있으면 역 주변부터. 한 곳도 없으면 오늘 나오던 후보까지 잃지 않게 회랑으로 떨어진다
+        let found = anchors.length > 0
+          ? await searchAtAnchors(anchors, st.query, {
+              need, target,
+              maxRadiusM: Math.min(ANCHOR_MAX_M, maxRadiusM(request.mode, slack, rho)),
+            }, search)
+          : await corridor();
+        if (anchors.length > 0 && found.status === 'none') found = await corridor();
         return {
           // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
           id: st.id, query: st.query, stopKind: st.stopKind,
@@ -166,6 +181,9 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
       }
     }
 
+    if (anchors.length > 0) {
+      dispatch({ type: 'PROGRESS', key: 'search', detail: `앵커 ${anchors.map(a => a.name).join(' → ')}` });
+    }
     dispatch({ type: 'SLOTS', slots });
     dispatch({ type: 'PROGRESS', key: 'search', detail: slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · ') });
 

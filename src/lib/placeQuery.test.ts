@@ -151,3 +151,33 @@ test('좁히지 않았으면 이름으로도 안 거른다', () => {
   assert.ok(keepPlace('파리바게뜨 여의도점', '음식점 > 간식 > 제과,베이커리 > 파리바게뜨', p));
   assert.ok(keepPlace('스타벅스 여의도점', '음식점 > 카페 > 커피전문점 > 스타벅스', planSearch('카페')));
 });
+
+test("'스마트'도 마트가 아니다 — 끝 앵커만으로는 안 걸러진다", () => {
+  assert.deepEqual(planSearch('스마트').pathAny, [], '휴대폰 가게가 0건이 된다');
+  assert.deepEqual(planSearch('스마트폰').pathAny, []);
+  assert.deepEqual(planSearch('이마트').pathAny, ['슈퍼마켓', '대형마트'], '앞 글자가 스가 아니면 걸린다');
+  assert.deepEqual(planSearch('마트').pathAny, ['슈퍼마켓', '대형마트']);
+  assert.deepEqual(planSearch('슈퍼마켓').pathAny, ['슈퍼마켓', '대형마트']);
+});
+
+test('베이커리카페는 빵집이 아니라 카페다', () => {
+  const p = planSearch('베이커리카페');
+  assert.equal(p.query, '베이커리카페', "'빵집'으로 바꾸면 사용자의 말을 버린다");
+  assert.deepEqual(p.pathAny, ['카페']);
+  // 실측: 카페로 분류된 빵집이 있다 — 음식점 > 카페 > 테마카페 > 디저트카페
+  assert.ok(keepByCategoryName('음식점 > 카페 > 테마카페 > 디저트카페', p));
+});
+
+test('세탁소 한 조건이 빨래방까지 덮는다', () => {
+  // 실측 2026-09-15: '빨래방'·'코인빨래방' 질의는 15/15가 '가정,생활 > 세탁소 > 셀프빨래방 > …'
+  const p = planSearch('코인빨래방');
+  assert.ok(keepByCategoryName('가정,생활 > 세탁소 > 셀프빨래방 > 크린토피아 코인워시', p));
+  assert.ok(keepByCategoryName('가정,생활 > 세탁소', p));
+});
+
+test('약국 한 조건이 한약국까지 덮는다', () => {
+  // 실측: '의료,건강 > 약국' 14건, '의료,건강 > 한약국,한약방' 1건 — 둘 다 '약국'을 포함한다
+  const p = planSearch('약국');
+  assert.ok(keepByCategoryName('의료,건강 > 약국', p));
+  assert.ok(keepByCategoryName('의료,건강 > 한약국,한약방', p));
+});

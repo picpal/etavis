@@ -29,8 +29,12 @@ export type SearchPlan = {
 /**
  * '동네 X' · '작은 X' · '소형 X' 는 X 를 찾고 프랜차이즈를 빼라는 뜻이다.
  * 표에 없는 업종이어도 접두사는 뗀다 — 못 거를지언정 0건보다 낫다.
+ *
+ * 접두사 뒤에 공백을 요구한다(`\s*`가 아니라 `\s+`) — '작은도서관'처럼 그 글자로
+ * 시작하는 공식 시설 유형명까지 접두사로 오인해 '도서관'으로 잘라버리면 안 된다.
+ * 공백 없이 바로 붙어 있으면 접두사가 아니라 그 단어의 일부다.
  */
-const LOCAL_PREFIX = /^(?:동네|작은|소형)\s*/;
+const LOCAL_PREFIX = /^(?:동네|작은|소형)\s+/;
 
 /**
  * 앞에서부터 먼저 걸리는 것이 이긴다. `placeCategory.ts`의 표와 같은 규칙이고,
@@ -69,10 +73,19 @@ const TABLE: {
   // '동네'는 두 겹이다 — 모든 업종에 적용되는 접두사 규칙(프랜차이즈 제외)과, 마트
   // 업종에만 적용되는 경로 재정의(대형 제외). 두 번째를 따로 떼어내면 마트 하나의
   // 규칙을 읽으려고 파일 두 곳을 오가야 한다.
-  { re: /마트|슈퍼/i, pathAny: ['슈퍼마켓', '대형마트'], local: { pathAny: ['슈퍼마켓'], pathNot: ['대형슈퍼'] } },
+  //
+  // 끝에 고정한다 — '스마트폰'의 '마트'까지 잡으면 "가정,생활 > 전자제품 > ... >
+  // 휴대폰판매"가 슈퍼마켓 조건에 걸려 0건이 된다. 업종어는 질의 끝에 온다
+  // (마트·동네 마트·하나로마트·이마트). 중간에 박힌 건 다른 말이다
+  // (스마트폰·슈퍼비전). 이 표의 다른 행은 이런 충돌이 실측되지 않아 고정하지 않는다.
+  { re: /(?:마트|슈퍼마켓|슈퍼)$/, pathAny: ['슈퍼마켓', '대형마트'], local: { pathAny: ['슈퍼마켓'], pathNot: ['대형슈퍼'] } },
   // 실측: 150건 전부 "음식점 > 간식 > 제과,베이커리". 와플대학도 여기다 —
   // 그룹 코드로도 category_name 으로도 와플가게는 못 가른다(§6.6 정정)
-  { re: /빵집|빵|베이커리|제과/i, query: '빵집', pathAny: ['제과,베이커리'] },
+  //
+  // '빵'만 단독 일치로 좁힌다 — 원래 '빵'을 부분일치로 두면 '붕어빵'·'제과제빵학원'
+  // 같은 무관한 질의까지 빵집 검색어로 바뀌어 경로 조건이 걸린다. 모르는 질의는
+  // 안 거르는 쪽이 안전하다('제과'도 '제과점'으로 좁혀 같은 이유로 '제과제빵학원'을 피한다).
+  { re: /^빵$|빵집|베이커리|제과점/i, query: '빵집', pathAny: ['제과,베이커리'] },
   { re: /카페|커피/i, pathAny: ['카페'] },
   { re: /정육|고기\s*사/i, query: '정육점', pathAny: ['정육점'] },
   { re: /문구/i, pathAny: ['문구,사무용품'] },
@@ -104,8 +117,11 @@ const FRANCHISE = [
 
 export function planSearch(raw: string): SearchPlan {
   const trimmed = raw.trim();
-  const localOnly = LOCAL_PREFIX.test(trimmed);
-  const base = localOnly ? trimmed.replace(LOCAL_PREFIX, '').trim() : trimmed;
+  const stripped = trimmed.replace(LOCAL_PREFIX, '').trim();
+  // 접두사를 뗐는데 남는 게 없으면('동네' 단독 등) 뗄 게 아니라 원래 질의였다 —
+  // 빈 검색어를 카카오에 보내면 400이 돌아온다.
+  const localOnly = LOCAL_PREFIX.test(trimmed) && stripped.length > 0;
+  const base = localOnly ? stripped : trimmed;
   const flat = base.replace(/\s+/g, '');
 
   const hit = TABLE.find(t => t.re.test(flat));

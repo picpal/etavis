@@ -96,3 +96,40 @@ test('그룹 코드는 새 검색어로 정한다 — 접두사를 뗀 뒤에 �
   // 기대는 게 아니라, 행 자체가 코드를 들고 있어서 나오는 값이다.
   assert.equal(planSearch('대형마트').categoryCode, 'MT1');
 });
+
+test('동네 마트 — 대형슈퍼를 거르는 건 pathNot 뿐이다', () => {
+  const p = planSearch('동네 마트');
+  assert.ok(keepByCategoryName('가정,생활 > 슈퍼마켓', p), '홈마트·우리마트');
+  // pathAny 는 '슈퍼마켓' 으로 이 줄을 통과시킨다. 막는 건 pathNot 한 줄이다
+  assert.ok(!keepByCategoryName('가정,생활 > 슈퍼마켓 > 대형슈퍼 > 하나로마트', p));
+});
+
+test('좁히지 않은 질의는 프랜차이즈도 후보다 — localOnly 가드', () => {
+  assert.ok(keepByCategoryName('음식점 > 간식 > 제과,베이커리 > 파리바게뜨', planSearch('빵집')));
+  assert.ok(keepByCategoryName('음식점 > 카페 > 커피전문점 > 스타벅스', planSearch('카페')));
+});
+
+test('업종어는 질의 끝에 온다 — 스마트폰이 마트에 걸리면 0건이다', () => {
+  const p = planSearch('스마트폰');
+  assert.deepEqual(p.pathAny, []);
+  assert.ok(keepByCategoryName('가정,생활 > 전자제품 > 전자제품판매 > 휴대폰판매', p));
+  assert.deepEqual(planSearch('하나로마트').pathAny, ['슈퍼마켓', '대형마트'], '끝에 오면 걸린다');
+});
+
+test('붕어빵은 빵집이 아니다 — 모르면 안 거른다', () => {
+  const p = planSearch('붕어빵');
+  assert.equal(p.query, '붕어빵');
+  assert.deepEqual(p.pathAny, []);
+});
+
+test("'작은도서관'은 시설 유형명이다 — 접두사는 공백이 있을 때만 뗀다", () => {
+  const p = planSearch('작은도서관');
+  assert.equal(p.query, '작은도서관');
+  assert.equal(p.localOnly, false);
+});
+
+test('접두사만 남으면 원래 질의를 쓴다 — 빈 검색어는 카카오 400 이다', () => {
+  const p = planSearch('동네');
+  assert.equal(p.query, '동네');
+  assert.equal(p.localOnly, false);
+});

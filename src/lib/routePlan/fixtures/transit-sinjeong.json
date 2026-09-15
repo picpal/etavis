@@ -1,0 +1,13 @@
+{"provider":"google","source":"provider","itineraries":[
+ {"durationMin":23.6,"distanceM":7218,"legs":[
+  {"kind":"walk","durationMin":6.4,"distanceM":379},
+  {"kind":"transit","mode":"SUBWAY","line":"5호선","from":{"name":"목동","lat":37.526097,"lng":126.864538},"to":{"name":"여의도","lat":37.521624,"lng":126.924221},"durationMin":11,"stops":6,"departAt":"2026-09-16T00:47:00Z","arriveAt":"2026-09-16T00:58:00Z"},
+  {"kind":"walk","durationMin":2.1,"distanceM":79},
+  {"kind":"transit","mode":"SUBWAY","line":"9호선","from":{"name":"여의도","lat":37.521624,"lng":126.924221},"to":{"name":"국회의사당","lat":37.528143,"lng":126.917856},"durationMin":1,"stops":1,"departAt":"2026-09-16T01:01:00Z","arriveAt":"2026-09-16T01:02:00Z"},
+  {"kind":"walk","durationMin":3.2,"distanceM":164}]},
+ {"durationMin":40.1,"distanceM":8874,"legs":[
+  {"kind":"walk","durationMin":6.4,"distanceM":379},
+  {"kind":"transit","mode":"SUBWAY","line":"5호선","from":{"name":"목동","lat":37.526097,"lng":126.864538},"to":{"name":"여의나루","lat":37.527124,"lng":126.932901},"durationMin":14,"stops":7,"departAt":"2026-09-16T00:37:00Z","arriveAt":"2026-09-16T00:51:00Z"},
+  {"kind":"walk","durationMin":1.6,"distanceM":91},
+  {"kind":"transit","mode":"BUS","line":"10","from":{"name":"여의나루역","lat":37.52705,"lng":126.93245},"to":{"name":"국회의사당역.국민은행","lat":37.52814,"lng":126.91786},"durationMin":4.7,"stops":null,"departAt":null,"arriveAt":null},
+  {"kind":"walk","durationMin":2.3,"distanceM":138}]}]}

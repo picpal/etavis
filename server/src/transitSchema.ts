@@ -5,6 +5,8 @@ import type { LatLng, TransitRequest } from './transitTypes';
 
 const PAST_GRACE_MS = 5 * 60 * 1000;
 const FUTURE_MAX_MS = 7 * 24 * 60 * 60 * 1000;
+/** Date.parse 는 '2026-09-15 04:00:00Z'(공백) 같은 느슨한 모양도 받아준다 — 형식을 먼저 자른다 */
+const ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function parsePoint(raw: unknown): LatLng | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -26,7 +28,7 @@ export function parseTransitRequest(raw: unknown, now: Date): TransitRequest | n
 
   let departAt: string | undefined;
   if (r.departAt !== undefined) {
-    if (typeof r.departAt !== 'string') return null;
+    if (typeof r.departAt !== 'string' || !ISO_8601.test(r.departAt)) return null;
     const t = Date.parse(r.departAt);
     if (!Number.isFinite(t)) return null;
     if (t < now.getTime() - PAST_GRACE_MS || t > now.getTime() + FUTURE_MAX_MS) return null;

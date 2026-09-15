@@ -187,7 +187,7 @@ test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자
   const k1 = transitCacheKey({ ...base, departAt: '2026-09-16T00:33:00.000Z' }, 'google');
   const k2 = transitCacheKey({ ...base, departAt: '2026-09-16T00:39:00.000Z' }, 'google');
   const k3 = transitCacheKey({ ...base, departAt: '2026-09-16T00:41:00.000Z' }, 'google');
-  assert.equal(k1, 'transit:google:37.5246,126.8607;37.5295,126.9187:2026-09-16T00:3:3:n');
+  assert.equal(k1, 'transit:google:37.5246,126.8607;37.5295,126.9187:2026-09-16T00:3:n');
   assert.equal(k1, k2);
   assert.notEqual(k1, k3);
   assert.notEqual(transitCacheKey(base, 'google'), k1); // now 버킷

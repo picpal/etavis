@@ -17,6 +17,12 @@ test('departAt — ISO 8601, 지금-5분 ~ 7일 안만', () => {
   assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '내일' }, now), null);
 });
 
+test('departAt — 느슨한 모양은 거절, 타임존 오프셋은 UTC 로 정규화', () => {
+  assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '2026/09/16' }, now), null);
+  assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '2026-09-15 04:00:00Z' }, now), null); // 공백
+  assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '2026-09-15T13:00:00+09:00' }, now)?.departAt, '2026-09-15T04:00:00.000Z');
+});
+
 test('alternatives 1~3 정수만, subwayOnly 는 불리언만', () => {
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 2 }, now)?.alternatives, 2);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 0 }, now), null);

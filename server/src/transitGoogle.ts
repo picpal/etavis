@@ -111,22 +111,25 @@ export function normalizeGoogleTransit(raw: unknown, req: TransitRequest): Trans
   const routes = (raw as { routes?: unknown } | null)?.routes;
   if (!Array.isArray(routes)) return { ok: false, code: 'shape', msg: 'routes 배열 아님' };
   if (routes.length === 0) return { ok: false, code: 'none', msg: 'routes 없음' };
-  const out: TransitItinerary[] = [];
+  const out: { sec: number; it: TransitItinerary }[] = [];
   for (const r of routes as Record<string, unknown>[]) {
     const sec = seconds(r.duration);
+    // /transit 은 2점 요청만 받으므로 leg 는 항상 하나. 경유지를 받게 되면 여기서 조용히 잘린다
     const legsRaw = (r.legs as Record<string, unknown>[] | undefined)?.[0]?.steps;
     const legs = legsOf(legsRaw);
     if (sec == null || !legs) return { ok: false, code: 'shape', msg: 'route 모양' };
-    out.push({ durationMin: round1(sec / 60), distanceM: num(r.distanceMeters) ?? 0, legs });
+    out.push({ sec, it: { durationMin: round1(sec / 60), distanceM: num(r.distanceMeters) ?? 0, legs } });
   }
-  out.sort((a, b) => a.durationMin - b.durationMin);
+  // 반올림 뒤 정렬하면 6초 차이가 동률이 돼 dedup 이 빠른 쪽을 못 고른다
+  out.sort((a, b) => a.sec - b.sec);
   const seen = new Set<string>();
-  const dedup = out.filter(it => { const k = sequenceKey(it); if (seen.has(k)) return false; seen.add(k); return true; });
+  const dedup = out.filter(({ it }) => { const k = sequenceKey(it); if (seen.has(k)) return false; seen.add(k); return true; }).map(({ it }) => it);
   return { ok: true, itineraries: dedup.slice(0, req.alternatives) };
 }
 
 export const googleAdapter: TransitAdapter = {
   id: 'google',
+  hasKey: (env: TransitEnv) => Boolean(env.GOOGLE_ROUTES_KEY ?? env.GOOGLE_PLACES_KEY),
   fetchRaw(req, env: TransitEnv, f) {
     const key = env.GOOGLE_ROUTES_KEY ?? env.GOOGLE_PLACES_KEY ?? '';
     return f(GOOGLE_ENDPOINT, {

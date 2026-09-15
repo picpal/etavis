@@ -759,5 +759,5 @@ curl -s -X POST http://localhost:8787/transit -H 'content-type: application/json
 
 1. `npm test` 전부 PASS, 서버 `tsc` 0. 새 테스트: 스키마 5 + 어댑터 7 + 핸들러 7 + 가드 1.
 2. 로컬 또는 운영 curl 로 실패 케이스가 `목동 → 여의도 → 국회의사당`으로 오고, 두 번째 호출이 캐시 히트.
-3. 키가 코드·문서·커밋에 없다(`git log -p | grep AIza` 0건).
+3. 키가 코드·문서·커밋에 없다(`git log -p main..HEAD | grep -cE 'AIza[0-9A-Za-z_-]{30,}'` 0건).
 4. `TRANSIT_PROVIDER=tmap`이면 501(조용한 폴백 없음).

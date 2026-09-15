@@ -36,4 +36,6 @@ export interface TransitAdapter {
   id: TransitProviderId;
   fetchRaw(req: TransitRequest, env: TransitEnv, f: typeof fetch): Promise<Response>;
   normalize(raw: unknown, req: TransitRequest): TransitNormalizeResult;
+  /** 키 없이 부르면 상류가 401을 주기 전에 여기서 끊는다. 없으면 항상 있다고 본다 */
+  hasKey?(env: TransitEnv): boolean;
 }

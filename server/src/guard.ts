@@ -39,7 +39,7 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  * | `/route:future` | 일  5,000 | 8원 | 4,000 |
  * | `/enrich`       | 구글 Places — `enrich.ts`에 월 900 카운터가 따로 있다 | | 600 |
  * | `/extract`      | OpenAI, 무료분 없음 | 문장당 | 1,200 |
- * | `/transit`      | Google Routes Essentials 월 10,000 → 일 ≈333 | 초과 $5/1,000 | 300 |
+ * | `/transit`      | Google Routes — Compute Routes Essentials 월 10,000 무료·$5/1,000 (2026-09-15 공식 요금·SKU 문서 확인: TRANSIT·transitDetails·대안 경로는 Pro/Enterprise 트리거가 아님) | | 300 |
  *
  * 상한에 닿으면 429를 낸다. 앱은 서버 실패를 이미 로컬 목으로 폴백하므로
  * (`src/lib/intent.ts`) 화면이 죽지는 않는다 — 대신 추정값이 보인다.
@@ -123,12 +123,13 @@ export function routeCacheKey(req: RouteRequest): string {
  */
 export const TRANSIT_TTL_S = 600;
 
-/** 좌표 4자리(약 11m), 출발 시각 10분 버킷, 옵션·공급자 포함 */
+/** 좌표 4자리(약 11m), 출발 시각 10분 버킷, 공급자 포함. alternatives 는 뺀다 — 캐시는 항상
+    최대치로 채우고 응답에서 자르므로, 이 값이 다르다고 상류를 두 번 부를 이유가 없다 */
 export function transitCacheKey(req: TransitRequest, provider: string): string {
   const q = (n: number) => n.toFixed(4);
   const pts = `${q(req.origin.lat)},${q(req.origin.lng)};${q(req.destination.lat)},${q(req.destination.lng)}`;
   const depart = req.departAt ? req.departAt.slice(0, 15) : 'now'; // 'YYYY-MM-DDTHH:M' = 10분 버킷
-  return `transit:${provider}:${pts}:${depart}:${req.alternatives}:${req.subwayOnly ? 's' : 'n'}`;
+  return `transit:${provider}:${pts}:${depart}:${req.subwayOnly ? 's' : 'n'}`;
 }
 
 /**

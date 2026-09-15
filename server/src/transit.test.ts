@@ -89,3 +89,28 @@ test('모르는 공급자는 501 — 조용히 google 로 떨어지지 않는다
   const res = await handleTransit(body, e, { fetch: fakeFetch(200, fixture).f, now });
   assert.equal(res.status, 501);
 });
+
+test('키 없으면 500 — 공급자를 안 부르고 일일 카운터도 안 건드린다', async () => {
+  const e = { CACHE: kv(), RATE: kv() }; // GOOGLE_ROUTES_KEY·GOOGLE_PLACES_KEY 둘 다 없음
+  const { f, calls } = fakeFetch(200, fixture);
+  const res = await handleTransit(body, e, { fetch: f, now });
+  assert.equal(res.status, 500);
+  assert.equal(((await res.json()) as { error: string; provider: string }).provider, 'google');
+  assert.equal(calls.length, 0);
+  assert.equal(e.RATE.m.size, 0);
+});
+
+test('alternatives 는 캐시 키에서 빠진다 — 3개로 받은 뒤 1개 요청은 상류를 다시 안 부르고 자른다', async () => {
+  const e = env();
+  const { f, calls } = fakeFetch(200, fixture);
+  const r1 = await handleTransit(body, e, { fetch: f, now });
+  assert.equal(r1.status, 200);
+  const j1 = (await r1.json()) as { itineraries: unknown[] };
+  assert.equal(j1.itineraries.length, 2); // 픽스처엔 중복 제거 후 2개뿐이라 기본값(3)도 2개까지만 옴
+
+  const r2 = await handleTransit({ ...body, alternatives: 1 }, e, { fetch: f, now });
+  assert.equal(r2.status, 200);
+  const j2 = (await r2.json()) as { itineraries: unknown[] };
+  assert.equal(j2.itineraries.length, 1);
+  assert.equal(calls.length, 1); // 캐시 히트 — 상류를 다시 안 부름
+});

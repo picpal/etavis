@@ -165,3 +165,26 @@ test('plan.slots — 후보 이름·반지름·검색 횟수를 남긴다', () =
   assert.equal(log?.d?.search, '올리브영 r=800 calls=5');
   assert.equal(log?.d?.picks, '올리브영: 올리브영 목동점, 올리브영 국회의사당역점');
 });
+
+test('plan.slots — picks 는 슬롯마다 따로 잘린다 — 앞 슬롯이 길어도 뒤 슬롯 이름은 살아남는다', () => {
+  const bigSlot = {
+    id: 'sl-1', query: '가나다라마바사아자차카타파점', stopKind: 'category', dwellMin: 10, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 5,
+    // 32곳 — 이 슬롯 혼자만으로도 옛 전역 600자 컷을 넘겨야, 뒤 슬롯이 진짜로 지워지는지 증명된다
+    candidates: Array.from({ length: 32 }, (_, i) => ({
+      id: `b-${i + 1}`,
+      name: `가나다라마바사아자차카타파점 ${i + 1}`,
+      coord: { latitude: 37.5, longitude: 127.0 },
+    })),
+  };
+  const smallSlot = {
+    id: 'sl-2', query: '카페', stopKind: 'category', dwellMin: 10, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 5,
+    candidates: [{ id: 'k-9', name: '목동역 KB', coord: { latitude: 37.5, longitude: 127.0 } }],
+  };
+  const slots = [bigSlot, smallSlot] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
+  assert.ok(log?.d?.picks?.toString().includes('…'), '첫 슬롯은 300자에서 잘려야 한다');
+  assert.ok(log?.d?.picks?.toString().includes('카페:'), '두 번째 슬롯의 query 는 살아 있어야 한다');
+  assert.ok(log?.d?.picks?.toString().includes('목동역 KB'), '두 번째 슬롯의 후보 이름은 살아 있어야 한다');
+});

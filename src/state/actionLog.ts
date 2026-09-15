@@ -158,9 +158,9 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
         d: {
           found: action.slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · '),
           search: action.slots.map(s => `${s.query} r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`).join(' · '),
-          // 이름을 전부 남긴다 — "기대한 가게가 후보에 들어왔나"가 6단계의 합격 조건이라
-          // 상위 몇 개만 남기면 판정을 못 한다
-          picks: cut(action.slots.map(s => `${s.query}: ${s.candidates.map(c => c.name).join(', ')}`).join(' · '), 600),
+          // 슬롯마다 따로 자른다 — 전체를 한 번에 자르면 슬롯이 둘만 돼도 뒤쪽 슬롯의
+          // 이름이 통째로 사라진다. 이름을 읽으려고 넣은 로그가 이름을 지우면 안 된다
+          picks: action.slots.map(s => `${s.query}: ${cut(s.candidates.map(c => c.name).join(', '), 300)}`).join(' · '),
         },
       };
     case 'RESULT': {

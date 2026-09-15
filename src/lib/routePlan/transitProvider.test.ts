@@ -91,6 +91,34 @@ test('서버 실패·모양 불량·타임아웃은 추정으로 폴백하고 on
   assert.equal(est.calls, 3);
 });
 
+test('서버 자진 강등(source:estimate)은 존중, 승격/알 수 없는 값은 무시', async () => {
+  const demoted = { ...fixture, source: 'estimate' };
+  const r1 = await mk(fakeFetch(() => ({ status: 200, body: demoted })).fn).route([O, D], 9 * 60, 'transit');
+  assert.equal(r1.source, 'estimate');
+  const noSource = { ...fixture };
+  delete (noSource as { source?: string }).source;
+  const r2 = await mk(fakeFetch(() => ({ status: 200, body: noSource })).fn).route([O, D], 9 * 60, 'transit');
+  assert.equal(r2.source, 'provider');
+  const provider = { ...fixture, source: 'provider' };
+  const r3 = await mk(fakeFetch(() => ({ status: 200, body: provider })).fn).route([O, D], 9 * 60, 'transit');
+  assert.equal(r3.source, 'provider');
+  const unknown = { ...fixture, source: 'anything-else' };
+  const r4 = await mk(fakeFetch(() => ({ status: 200, body: unknown })).fn).route([O, D], 9 * 60, 'transit');
+  assert.equal(r4.source, 'provider');
+});
+
+test('transit leg 좌표 없음(null) — 추정으로 폴백하고 onFallback 을 부른다', async () => {
+  const broken = JSON.parse(JSON.stringify(fixture));
+  broken.itineraries[0].legs[1].from.lat = null;
+  const est = estimateStub();
+  const errs: unknown[] = [];
+  const p = mk(fakeFetch(() => ({ status: 200, body: broken })).fn, { estimate: est, onFallback: e => errs.push(e) });
+  const r = await p.route([O, D], 9 * 60, 'transit');
+  assert.equal(r.source, 'estimate');
+  assert.equal(errs.length, 1);
+  assert.equal(est.calls, 1);
+});
+
 test('대중교통 외 모드는 거절', async () => {
   const p = mk(fakeFetch(() => ({ status: 200, body: fixture })).fn);
   await assert.rejects(() => p.route([O, D], 540, 'car'), /transit/);

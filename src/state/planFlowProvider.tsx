@@ -45,11 +45,11 @@ function timedRoute(provider: RouteProvider): RouteProvider {
   return {
     route: async (points, departAtMin, mode) => {
       const t0 = Date.now();
-      const ep = mode === 'transit' ? '/transit' : '/route';
+      const ep = mode === 'transit' ? (points.length === 2 ? '/transit' : 'estimate') : '/route';
       try {
         const r = await provider.route(points, departAtMin, mode);
         // 소수점 열두 자리는 읽는 데 방해만 된다 — 로그는 사람이 먼저 읽는다
-        logTrack({ k: 'net', ep, ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: Math.round(r.durationMin * 10) / 10 } });
+        logTrack({ k: 'net', ep, ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: Math.round(r.durationMin * 10) / 10, src: r.source ?? null } });
         return r;
       } catch (e) {
         logTrack({ k: 'net', ep, ms: Date.now() - t0, ok: false, d: { points: points.length, mode, err: String(e).slice(0, 120) } });

@@ -41,6 +41,9 @@ export function itineraryToRoute(it: TransitItinerary, origin: LatLng, destinati
   };
   for (const l of it.legs) {
     if (l.kind !== 'transit') continue;
+    if (!Number.isFinite(l.from?.lat) || !Number.isFinite(l.from?.lng) || !Number.isFinite(l.to?.lat) || !Number.isFinite(l.to?.lng)) {
+      throw new Error('transit leg 좌표 없음');
+    }
     push({ latitude: l.from.lat, longitude: l.from.lng });
     push({ latitude: l.to.lat, longitude: l.to.lng });
   }
@@ -80,7 +83,8 @@ export function transitRouteProvider(opts: TransitProviderOptions): RouteProvide
         const data = (await res.json()) as TransitResponse;
         const list = Array.isArray(data.itineraries) ? data.itineraries.filter(isItinerary) : [];
         if (list.length === 0) throw new Error('transit: itineraries 없음');
-        return itineraryToRoute(list[0], origin, destination, list);
+        const route = itineraryToRoute(list[0], origin, destination, list);
+        return data.source === 'estimate' ? { ...route, source: 'estimate' } : route;
       } catch (e) {
         opts.onFallback?.(e);
         return opts.estimate.route(points, departAtMin, mode);

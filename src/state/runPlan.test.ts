@@ -27,6 +27,21 @@ const collect = () => {
   return { actions, dispatch: (a: PlanFlowAction) => { actions.push(a); } };
 };
 
+test('후보가 2곳뿐이면 상한까지 넓혀 찾고 status 는 ok — Kc=8 확보가 목표', async () => {
+  // 카탈로그의 올리브영은 2곳(oy1·oy2, 둘 다 회랑 2km 안). target 8을 못 채우니 15km까지 넓힌다
+  const radii: number[] = [];
+  const spy: SearchFn = async (q, near, r) => { radii.push(r); return search(q, near, r); };
+  const { actions, dispatch } = collect();
+  await runPlan(req([{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'brand' }]), { provider: mockRouteProvider(), search: spy, dispatch });
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { searchStatus?: string; candidates: unknown[] }[] }).slots;
+  assert.equal(slots[0].searchStatus, 'ok'); // count=1 은 채웠다
+  assert.equal(slots[0].candidates.length, 2);
+  // 2km → 4km → 8km → 15km, 각 5점
+  assert.deepEqual([...new Set(radii)], [2000, 4000, 8000, 15000]);
+  assert.equal(radii.length, 20);
+  assert.equal(actions[actions.length - 1].type, 'RESULT');
+});
+
 test('정상 — START·PROGRESS×3·SLOTS·RESULT 순서, 직행은 한 번만', async () => {
   const provider = mockRouteProvider();
   const { actions, dispatch } = collect();

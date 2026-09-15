@@ -27,6 +27,9 @@ const MAX_CANDIDATES = 30;
 const ENRICH_MIN_CANDIDATES = 4;
 /** 마감이 없을 때, 트렌드 1위로 바꾸며 허용하는 추가시간 */
 const TREND_SWAP_SLACK_MIN = 10;
+/** 슬롯당 확보 목표. 설계 0.5단계의 Kc. 이만큼 모일 때까지 회랑 반지름을 넓힌다 —
+    후보가 적으면 추천 점수도 교체 시트도 의미가 없다. short 판정은 count 기준이라 별개 */
+export const KC = 8;
 
 /**
  * 보강 뒤에 남겨 둬야 하는 플래너 라우팅 몫. 플래너는 실측을 최대 9회 부른다.
@@ -97,7 +100,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
       slots = await race(Promise.all(request.stops.map(async st => {
         const found = await searchAlong(
           poly, st.query,
-          { need: Math.max(1, st.count), initialRadiusM: initialRadiusM(request.mode), maxRadiusM: maxRadiusM(request.mode, slack, rho) },
+          { need: Math.max(1, st.count), target: Math.max(st.count, KC), initialRadiusM: initialRadiusM(request.mode), maxRadiusM: maxRadiusM(request.mode, slack, rho) },
           search,
         );
         return {

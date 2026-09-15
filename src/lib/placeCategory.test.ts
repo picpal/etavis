@@ -40,3 +40,33 @@ test('공백·대소문자에 흔들리지 않는다', () => {
   assert.equal(kakaoCategoryFor(' 국민 은행 '), 'BK9');
   assert.equal(kakaoCategoryFor('Gs25'), 'CS2');
 });
+
+test('수정 라운드 1 — 리뷰 지적 4건(실측 확인)', () => {
+  // FINDING 1: 농협하나로마트는 실측 전부 MT1, 농협은행은 그대로 BK9
+  assert.equal(kakaoCategoryFor('농협하나로마트'), 'MT1');
+  assert.equal(kakaoCategoryFor('농협은행'), 'BK9');
+  // FINDING 2: "전기차충전소"는 실측 category_group_code가 빈 값 — OL7 찍으면 0건
+  assert.equal(kakaoCategoryFor('전기차충전소'), null);
+  // FINDING 3: "국회의원회관"은 실측 주차장·정치단체 사무실만 나오고 HP8은 없다
+  assert.equal(kakaoCategoryFor('국회의원회관'), null);
+  // FINDING 4: "팜"은 실측 문구점·IT·건강식품이 걸리고, "팜약국"만 PM9
+  assert.equal(kakaoCategoryFor('팜'), null);
+  assert.equal(kakaoCategoryFor('팜약국'), 'PM9');
+});
+
+test('수정 라운드 1 — 자체 감사에서 찾은 동형 충돌(실측 확인)', () => {
+  // 농협뿐 아니라 신협·수협·새마을금고도 전부 자기 이름을 건 주유소를 운영한다.
+  // BK9 쪽 패턴을 낱개로 좁히지 않고 MT1·OL7을 BK9보다 앞에 둬서 한 번에 막는다.
+  assert.equal(kakaoCategoryFor('농협주유소'), 'OL7');
+  assert.equal(kakaoCategoryFor('신협주유소'), 'OL7');
+  assert.equal(kakaoCategoryFor('수협주유소'), 'OL7');
+  assert.equal(kakaoCategoryFor('새마을금고주유소'), 'OL7');
+  // "은행나무"는 관광명소(실측 AT4/빈 값)이지 은행이 아니다 — 은행 뒤에 "나무"가
+  // 오면 걸지 않는다. 파생어인 "은행나무주유소"(실측 OL7)도 함께 확인한다.
+  assert.equal(kakaoCategoryFor('은행나무'), null);
+  assert.equal(kakaoCategoryFor('은행나무주유소'), 'OL7');
+  // 그냥 "atm"은 영단어 부분 문자열도 집는다 — "atmosphere"는 실측 카페(CE7)이지
+  // ATM이 아니다. 단어 경계(\b)를 걸어 막는다. 정상적인 단독 ATM/atm 표기는
+  // 위 '은행' 테스트에서 이미 확인했다.
+  assert.equal(kakaoCategoryFor('atmosphere'), null);
+});

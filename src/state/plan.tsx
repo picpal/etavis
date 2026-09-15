@@ -9,7 +9,7 @@ import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
-import { narrowStopChips, syncConditionChips } from './chips';
+import { narrowStopChips, resetConditionChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import {
@@ -44,8 +44,9 @@ export type IntentChip =
       /** false면 특정 지점 고정. 최적화 대상에서 뺀다 */
       flexible: boolean;
     }
-  | { id: string; kind: 'arriveBy'; label: string; value: number }
-  | { id: string; kind: 'mode'; label: string; value: 'car' | 'walk' | 'transit' };
+  | { id: string; kind: 'arriveBy'; label: string; value: number };
+/* 이동수단은 칩이 아니다 — A2 헤더의 셀렉트가 유일한 조작점이다. 칩으로도 두던 시절엔
+   ✕를 눌러도 state.mode 가 안 바뀌어, 지워도 안 지워지는 칩이었다(chips.ts 주석) */
 
 export type StopState = Stop & {
   /** 원본 stop id — 교체돼도 유지되며 LEGS 조회 키로 쓴다 */
@@ -135,7 +136,9 @@ const legBetween = (a: string, b: string, ds?: Dataset) => {
 };
 
 
-const MODE_TEXT = { car: '자동차', walk: '도보', transit: '대중교통' } as const;
+/** 이동수단 라벨은 여기 하나뿐이다 — A1 세그먼트·A2 헤더·시트가 같은 말을 써야 한다 */
+export const MODE_KEYS = ['car', 'walk', 'transit'] as const;
+export const MODE_TEXT: Record<PlanState['mode'], string> = { car: '자동차', walk: '도보', transit: '대중교통' };
 let chipSeq = 0;
 
 const asStopState = (s: Stop): StopState => ({
@@ -215,7 +218,6 @@ function initState(ds: Dataset, seed = false): PlanState {
     openNow: st.openNow,
     flexible: st.flexible,
   }));
-  seedChips.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[ds.mode], value: ds.mode });
   return {
     departMin,
     chips: seedChips,
@@ -409,7 +411,9 @@ export type PlanAction =
   | { type: 'APPLY_INTENT'; intent: Intent }
   | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'NARROW_STOP'; chipId: string; query: string }
-  | { type: 'PUSH_CHAT'; text: string };
+  | { type: 'PUSH_CHAT'; text: string }
+  /** A2에서 뒤로 나갈 때 — 대화와 대화가 만든 것을 전부 버리고 진입 시점 조건으로 되돌린다 */
+  | { type: 'RESET_CHAT'; mode: PlanState['mode']; arriveByMin: number | null };
 
 function reducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
@@ -603,7 +607,6 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
       if (arriveBy != null) {
         keep.push({ id: `a-${chipSeq++}`, kind: 'arriveBy', label: `${toHHMM(arriveBy).padStart(5, '0')}까지`, value: arriveBy });
       }
-      keep.push({ id: `m-${chipSeq++}`, kind: 'mode', label: MODE_TEXT[mode], value: mode });
       const stops = stopsForChips(state.dataset, keep);
       /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
          이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다) */
@@ -647,8 +650,7 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
       if (!chip) return state;
       const chips = state.chips.filter(c => c.id !== action.id);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      const patch =
-        chip.kind === 'arriveBy' ? { arriveByMin: null } : chip.kind === 'mode' ? {} : {};
+      const patch = chip.kind === 'arriveBy' ? { arriveByMin: null } : {};
       const stops = stopsForChips(state.dataset, chips);
       return {
         ...state,
@@ -672,6 +674,26 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
     }
     case 'PUSH_CHAT':
       return { ...state, chat: [...state.chat, action.text] };
+    case 'RESET_CHAT': {
+      /* 대화가 만든 것을 전부 되돌린다 — 경유지 칩뿐 아니라 APPLY_INTENT 가 바꿨을
+         수 있는 도착 시각·이동수단까지. 칩만 지우고 조건을 남기면 "대화를 지웠다"고
+         해놓고 대화의 흔적이 남는다. 되돌릴 값은 A2에 들어온 시점의 조건이고,
+         그건 화면(PlanScreen)이 진입할 때 잡아 둔다 — 스토어는 그 스냅샷을 모른다.
+         목적지·출발지는 A1에서 고른 것이라 건드리지 않는다 */
+      const chips = resetConditionChips(state.chips, { mode: action.mode, arriveByMin: action.arriveByMin }, k => `${k}-${chipSeq++}`);
+      const stops = stopsForChips(state.dataset, chips);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      return {
+        ...state,
+        chat: [],
+        chips,
+        mode: action.mode,
+        arriveByMin: action.arriveByMin,
+        stopCount: stops.length,
+        optionOverrides: {},
+        ...computeChain(stops, state.dataset, state.departMin),
+      };
+    }
     default:
       return state;
   }
@@ -726,6 +748,8 @@ type PlanApi = {
   /** 되묻기 선택지를 골랐을 때 — 그 경유지의 검색어를 고른 값 하나로 좁힌다 */
   narrowStop: (chipId: string, query: string) => void;
   pushChat: (text: string) => void;
+  /** A2를 대화 전으로 되돌린다. `entry`는 A2에 들어온 시점의 조건 — 화면이 잡아서 넘긴다 */
+  resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }) => void;
   arriveByLabel: string;
 };
 
@@ -828,6 +852,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
       pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
+      resetChat: entry => dispatch({ type: 'RESET_CHAT', mode: entry.mode, arriveByMin: entry.arriveByMin }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),
     };

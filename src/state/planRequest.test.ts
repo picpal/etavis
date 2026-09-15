@@ -39,7 +39,6 @@ test('count 는 항상 1 — 개수는 APPLY_INTENT 가 칩을 복제해 표현�
 test('경유지가 아닌 칩은 빠진다', () => {
   const chips: IntentChip[] = [
     stop(),
-    { id: 'm-1', kind: 'mode', label: '자동차', value: 'car' },
     { id: 'a-1', kind: 'arriveBy', label: '21:00까지', value: 1260 },
   ];
   assert.equal(requestStopsFromChips(chips).length, 1);

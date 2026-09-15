@@ -1,10 +1,12 @@
 /**
- * 조건 칩(이동수단·도착 시각)을 지금 상태에 맞춘다.
+ * 조건 칩(도착 시각)을 지금 상태에 맞춘다.
  *
  * A1에서 이동수단을 바꿔도 A2의 칩은 `자동차` 그대로였다(2026-09-15 시뮬레이터).
  * 헤더는 `대중교통`이라고 쓰는데 칩은 `자동차`라서, **화면이 서로 다른 말을 했다.**
- * 계산은 `state.mode`를 쓰므로 결과는 맞았지만 — 사용자가 믿는 건 칩이다.
- * 이 앱은 "알아들은 것을 칩으로 드러낸다"가 원칙이라, 칩이 틀리면 원칙이 무너진다.
+ * 그래서 한동안 이동수단도 칩으로 맞춰 왔는데 — 지금은 A2 헤더가 이동수단 셀렉트를
+ * 직접 들고 있다. 조작점이 헤더 하나면 칩은 같은 말을 두 번 하는 자리이고, 게다가
+ * ✕를 눌러도 `state.mode`가 안 바뀌어 **지워도 안 지워지는 칩**이었다. 그래서 뺐다.
+ * 도착 시각은 그대로 칩으로 둔다 — 대화가 바꿀 수 있는 조건이라 드러나야 한다.
  *
  * `plan.tsx`를 런타임으로 물지 않으려고 타입만 가져온다. 테스트가 직접 부른다.
  */
@@ -12,24 +14,24 @@ import type { IntentChip } from './plan';
 import { toHHMM } from '../lib/clock';
 
 export type Mode = 'car' | 'walk' | 'transit';
-const MODE_TEXT: Record<Mode, string> = { car: '자동차', walk: '도보', transit: '대중교통' };
 
 /**
  * 경유지 칩은 그대로 두고 조건 칩만 맞춘다.
  *
- * - 이동수단 칩은 항상 하나 있다. 이미 있으면 **id를 유지**한다 — 새 id를 주면
- *   목록이 통째로 다시 그려져 칩이 깜빡인다.
  * - 도착 시각이 `null`이면(= '상관없어요') 칩을 **뺀다.** 없는 조건을 칩으로 두면
  *   지울 수 있는 것처럼 보인다.
- * - 순서는 `APPLY_INTENT`와 같다: 경유지 → 도착 시각 → 이동수단.
+ * - 이미 있으면 **id를 유지**한다 — 새 id를 주면 목록이 통째로 다시 그려져 칩이 깜빡인다.
+ * - 순서는 `APPLY_INTENT`와 같다: 경유지 → 도착 시각.
+ *
+ * `mode`는 받기만 하고 칩으로 만들지 않는다. 조건의 출처를 한 곳으로 두려고 인자
+ * 모양을 유지했다 — 호출부가 "지금 조건"을 통째로 넘기는 형태 그대로다.
  */
 export function syncConditionChips(
   chips: IntentChip[],
   cond: { mode: Mode; arriveByMin: number | null },
-  nextId: (kind: 'm' | 'a') => string,
+  nextId: (kind: 'a') => string,
 ): IntentChip[] {
-  const stops = chips.filter(c => c.kind === 'stop');
-  const out: IntentChip[] = [...stops];
+  const out: IntentChip[] = chips.filter(c => c.kind === 'stop');
 
   if (cond.arriveByMin != null) {
     const prev = chips.find(c => c.kind === 'arriveBy');
@@ -41,15 +43,22 @@ export function syncConditionChips(
     });
   }
 
-  const prevMode = chips.find(c => c.kind === 'mode');
-  out.push({
-    id: prevMode?.id ?? nextId('m'),
-    kind: 'mode',
-    label: MODE_TEXT[cond.mode],
-    value: cond.mode,
-  });
-
   return out;
+}
+
+/**
+ * 대화 전으로 되돌린다 — A2에서 뒤로 나갈 때 쓴다.
+ *
+ * 경유지 칩은 전부 대화가 만든 것이라 버린다. 조건은 **A2에 들어온 시점의 값**으로
+ * 다시 맞춘다 — `APPLY_INTENT`가 대화로 도착 시각·이동수단까지 바꿀 수 있어서,
+ * 칩만 지우고 조건을 남기면 "대화를 지웠다"고 해놓고 대화의 흔적이 남는다.
+ */
+export function resetConditionChips(
+  chips: IntentChip[],
+  entry: { mode: Mode; arriveByMin: number | null },
+  nextId: (kind: 'a') => string,
+): IntentChip[] {
+  return syncConditionChips(chips.filter(c => c.kind !== 'stop'), entry, nextId);
 }
 
 /**

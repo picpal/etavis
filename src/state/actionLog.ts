@@ -40,6 +40,9 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
 
     case 'PUSH_CHAT':
       return { a: 'chat.send', d: { text: cut(action.text) } };
+    case 'RESET_CHAT':
+      // 몇 마디 만에 버렸는지가 남아야 한다 — 되돌리기가 잦으면 추출이 못 미더운 것이다
+      return { a: 'chat.reset', d: { turns: before.chat.length, stops: before.chips.filter(c => c.kind === 'stop').length } };
     case 'APPLY_INTENT': {
       const i = action.intent;
       return {

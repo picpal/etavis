@@ -4,7 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
-import { usePlan } from '../state/plan';
+import { MODE_KEYS, MODE_TEXT, usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { Card, haptic, PrimaryButton, SegmentControl } from '../components/common';
 import { Chevron, DashedLineV, Hairline, PinIcon, SwapIcon } from '../components/primitives';
@@ -17,8 +17,7 @@ import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-const MODES = ['자동차', '도보', '대중교통'] as const;
-const MODE_KEYS = ['car', 'walk', 'transit'] as const;
+const MODES = MODE_KEYS.map(k => MODE_TEXT[k]);
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();

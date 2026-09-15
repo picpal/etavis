@@ -1,0 +1,1 @@
+{"id":"sinjeong-yeouido","origin":"서울 양천구 신정동 1000-10","destination":"현대카드빌딩 2관","departAt":"09:30","stops":["KB국민은행 ATM","올리브영"],"expected":{"board":"목동역","line":"5호선","alight":"국회의사당역","anchors":["목동역 KB국민은행","국회의사당역 올리브영"]},"note":"2026-09-15 실패 케이스. 앱은 직선 회랑으로 이마트목동점·현대해상 ATM을 골랐다"}

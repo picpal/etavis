@@ -4,6 +4,7 @@
  * 하는 일은 둘이다: 키를 가리고, 바깥 응답을 검증해서 넘긴다.
  *   /extract — LLM 의도 추출
  *   /route   — 카카오모빌리티 자동차 길찾기(경유지 ≤ 5)
+ *   /transit — Google Routes 대중교통(공급자 교체 가능)
  * 경로 조합·시간 판정은 앱이 한다. 여기서 하면 느려지고 배터리만 먹는다.
  */
 import { parseIntent } from './schema';
@@ -11,6 +12,7 @@ import { SYSTEM_PROMPT, kstHHMM } from './prompt';
 import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
+import { handleTransit } from './transit';
 import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 
 export interface Env {
@@ -27,6 +29,10 @@ export interface Env {
   NCP_API_KEY: string;
   /** 구글 Places (New). Places API (New) 하나로만 제한된 키 */
   GOOGLE_PLACES_KEY: string;
+  /** Routes API 용 키. 없으면 GOOGLE_PLACES_KEY 를 쓴다(같은 키에 Routes 를 허용해 둔 경우) */
+  GOOGLE_ROUTES_KEY?: string;
+  /** 대중교통 공급자. google | tmap | kakao. 없으면 google */
+  TRANSIT_PROVIDER?: string;
   /** 바깥 응답 캐시. RATE 와 별개 — 용도가 섞이면 TTL 을 못 나눈다 */
   CACHE: KVNamespace;
   RATE: KVNamespace;
@@ -135,12 +141,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
-    const known = ['/extract', '/route', '/enrich'];
+    const known = ['/extract', '/route', '/enrich', '/transit'];
     if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
     if (gated instanceof Response) return gated;
     if (url.pathname === '/route') return handleRoute(gated.body, env);
+    if (url.pathname === '/transit') return handleTransit(gated.body, env, { fetch, now: new Date() });
     if (url.pathname === '/enrich') {
       if (await overDailyCap(env.RATE, '/enrich', new Date())) return json({ error: 'daily cap' }, 429);
       return handleEnrich(gated.body, env, { fetch, now: new Date() });

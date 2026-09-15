@@ -16,6 +16,7 @@
  * Durable Object로 옮길 때 얻는다.
  */
 import type { RouteRequest } from './routeSchema';
+import type { TransitRequest } from './transitTypes';
 
 export type KVLike = {
   get(key: string): Promise<string | null>;
@@ -23,11 +24,11 @@ export type KVLike = {
 };
 
 /** 기기당 분당 상한. /route는 계획 하나에 5~9회가 나가므로 더 넉넉하다 */
-export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10 };
+export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 20 };
 
 /** IP당 분당 상한. 기기당의 3배 — 사무실·모바일 NAT로 여럿이 한 IP를 쓰는 걸
     감안하되, 기기 id만 갈아끼우는 우회는 막는다 */
-export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30 };
+export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 60 };
 
 /**
  * 전역 일일 상한. 값의 근거는 2026-09-14 기준 각 API 요금표다.
@@ -38,6 +39,7 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  * | `/route:future` | 일  5,000 | 8원 | 4,000 |
  * | `/enrich`       | 구글 Places — `enrich.ts`에 월 900 카운터가 따로 있다 | | 600 |
  * | `/extract`      | OpenAI, 무료분 없음 | 문장당 | 1,200 |
+ * | `/transit`      | Google Routes Essentials 월 10,000 → 일 ≈333 | 초과 $5/1,000 | 300 |
  *
  * 상한에 닿으면 429를 낸다. 앱은 서버 실패를 이미 로컬 목으로 폴백하므로
  * (`src/lib/intent.ts`) 화면이 죽지는 않는다 — 대신 추정값이 보인다.
@@ -47,6 +49,7 @@ export const PER_DAY: Record<string, number> = {
   '/route:now': 8000,
   '/route:future': 4000,
   '/enrich': 600,
+  '/transit': 300,
 };
 
 const DAY_TTL_S = 2 * 24 * 60 * 60;
@@ -112,6 +115,20 @@ export function routeCacheKey(req: RouteRequest): string {
   const pts = req.points.map(p => `${q(p.lat)},${q(p.lng)}`).join(';');
   const depart = req.departAt ? `${req.departAt.slice(0, 11)}0` : 'now';
   return `route:${pts}:${depart}:${req.polyline ? 'p' : 'n'}`;
+}
+
+/**
+ * /transit 응답 캐시 TTL. 배차가 시각에 묶이므로 짧다(10분). TMAP 약관(24시간 이상 저장 금지)도 만족.
+ * 노리는 건 한 계획 안의 재조회 — 6단계가 같은 직행을 지하철우선으로 한 번 더 묻는다.
+ */
+export const TRANSIT_TTL_S = 600;
+
+/** 좌표 4자리(약 11m), 출발 시각 10분 버킷, 옵션·공급자 포함 */
+export function transitCacheKey(req: TransitRequest, provider: string): string {
+  const q = (n: number) => n.toFixed(4);
+  const pts = `${q(req.origin.lat)},${q(req.origin.lng)};${q(req.destination.lat)},${q(req.destination.lng)}`;
+  const depart = req.departAt ? req.departAt.slice(0, 15) : 'now'; // 'YYYY-MM-DDTHH:M' = 10분 버킷
+  return `transit:${provider}:${pts}:${depart}:${req.alternatives}:${req.subwayOnly ? 's' : 'n'}`;
 }
 
 /**

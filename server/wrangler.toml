@@ -6,6 +6,7 @@ compatibility_date = "2026-09-01"
 # 데모를 배포하면 그 도메인을 여기 추가할 것 — 와일드카드로 열지 않는다.
 [vars]
 ALLOWED_ORIGINS = "http://localhost:8080,http://localhost:8081"
+TRANSIT_PROVIDER = "google"
 
 # 무료 티어 KV — 기기당 rate limit 카운터만 쓴다
 # npx wrangler kv namespace create RATE
@@ -23,3 +24,4 @@ id = "8d5b43b63d4145589f306da232a2a02f"
 #   npx wrangler secret put OPENAI_API_KEY
 #   npx wrangler secret put APP_TOKEN
 #   npx wrangler secret put KAKAO_MOBILITY_KEY   # developers.kakaomobility.com 키 (카카오 로컬 키와 별개)
+#   npx wrangler secret put GOOGLE_ROUTES_KEY   # 없으면 GOOGLE_PLACES_KEY 사용 (같은 키에 Routes API 허용 필요)

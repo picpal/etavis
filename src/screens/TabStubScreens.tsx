@@ -231,19 +231,20 @@ function StopCard({
 }
 
 /** 마감 초과가 예측되면 한 번만 알린다 (만회 가능한 시점) */
-function useDeadlineRiskAlert(slackMin: number | null, deadlineLabel: string) {
+// 이미 timingCopy.showVerdict 로 걸러진 값만 넘긴다 — 추정치 위에서 판정하면 안 되니까
+function useDeadlineRiskAlert(verdictSlack: number | null, deadlineLabel: string) {
   const firedRef = React.useRef(false);
   React.useEffect(() => {
-    if (slackMin == null) {
+    if (verdictSlack == null) {
       firedRef.current = false;
       return;
     }
-    if (slackMin < 0 && !firedRef.current) {
+    if (verdictSlack < 0 && !firedRef.current) {
       firedRef.current = true;
-      notifyDeadlineRisk(-slackMin, deadlineLabel);
+      notifyDeadlineRisk(-verdictSlack, deadlineLabel);
     }
-    if (slackMin >= 5) firedRef.current = false; // 여유를 회복하면 다시 감시
-  }, [slackMin, deadlineLabel]);
+    if (verdictSlack >= 5) firedRef.current = false; // 여유를 회복하면 다시 감시
+  }, [verdictSlack, deadlineLabel]);
 }
 
 /** 진행중 — 확정한 계획의 실행 뷰 */
@@ -315,8 +316,10 @@ export function TodayScreen() {
     const lines = ['[Etavia] 같이 가는 길', `${destinationDisplay} ${copy.approx}${formatEta(state.destArriveAt)} 도착 예정`];
     const remaining = state.stops.slice(state.passedCount);
     if (remaining.length) lines.push(`들렀다 가요 · ${remaining.map(s => s.name).join(', ')}`);
-    if (slackMin != null) {
-      lines.push(slackMin < 0 ? `${arriveByLabel} 기준 ${-slackMin}분 초과` : `${arriveByLabel} 기준 ${slackMin}분 여유`);
+    if (verdictSlack != null) {
+      lines.push(verdictSlack < 0 ? `${arriveByLabel} 기준 ${-verdictSlack}분 초과` : `${arriveByLabel} 기준 ${verdictSlack}분 여유`);
+    } else if (copy.banner) {
+      lines.push(copy.banner);
     }
     return lines.join('\n');
   })();

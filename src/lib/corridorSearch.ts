@@ -1,6 +1,6 @@
 /**
- * 회랑 검색 — 직행 폴리라인 위 5개 점에서 찾고, 없으면 반지름을 2배씩 넓힌다.
- * 상한까지 없으면 가장 가까운 곳을 far로 넣는다. 설계 0.5단계.
+ * 회랑 검색 — 직행 폴리라인 위 5개 점에서 찾고, target(기본 need)만큼 모일 때까지 반지름을 2배씩 넓힌다.
+ * status는 need 기준. 상한까지 없으면 가장 가까운 곳을 far로 넣는다. 설계 0.5단계.
  * 검색 함수는 주입받는다(places.ts는 expo-constants를 물고 있어 node 테스트가 못 읽는다).
  */
 import { crossTrack, pointAtProgress, polylineLengthM } from './geo';
@@ -9,7 +9,10 @@ import type { LatLng, Mode, PlaceCandidate, SearchStatus } from './routePlan/typ
 export type SearchFn = (query: string, near: LatLng, radiusM: number) => Promise<PlaceCandidate[]>;
 
 export type CorridorSearchOptions = {
+  /** 이보다 적으면 short. 사용자가 말한 개수(count) */
   need: number;
+  /** 이만큼 모일 때까지 반지름을 넓힌다. 없으면 need. 추천·교체 시트는 후보가 많아야 의미가 있다 */
+  target?: number;
   initialRadiusM: number;
   maxRadiusM: number;
   samples?: number;
@@ -55,15 +58,17 @@ export async function searchAlong(
     return [...seen.values()];
   };
 
+  const target = Math.max(opts.need, opts.target ?? opts.need);
   let radiusM = opts.initialRadiusM;
   let found: PlaceCandidate[] = [];
   while (true) {
     const r = radiusM;
     found = merge(await Promise.all(points.map(p => search(query, p, r))));
-    if (found.length >= opts.need) return { candidates: byCorridor(found), status: 'ok', radiusM: r };
+    if (found.length >= target) return { candidates: byCorridor(found), status: 'ok', radiusM: r };
     if (r >= opts.maxRadiusM) break;
     radiusM = Math.min(opts.maxRadiusM, r * 2);
   }
+  if (found.length >= opts.need) return { candidates: byCorridor(found), status: 'ok', radiusM };
   if (found.length > 0) return { candidates: byCorridor(found), status: 'short', radiusM };
 
   // 상한까지 0건 — 더 멀리 한 번만 보고 가장 가까운 3곳

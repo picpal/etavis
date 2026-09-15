@@ -114,3 +114,37 @@ test('중복 id 는 한 번만 — 샘플 점이 겹쳐도 같은 가게가 두 
   const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 1000, maxRadiusM: 4000 }, search);
   assert.equal(r.candidates.length, 1);
 });
+
+test('target — 1곳 찾았어도 target 까지 반지름을 넓힌다', async () => {
+  // 2km 안에 1곳, 4km 안에 2곳 더, 8km 안에 5곳 더 = 8곳
+  const cat: PlaceCandidate[] = [
+    { id: 'a', name: 'a', coord: at(37.5, 127.05) },
+    { id: 'b', name: 'b', coord: at(37.53, 127.05) },
+    { id: 'c', name: 'c', coord: at(37.47, 127.05) },
+    ...[1, 2, 3, 4, 5].map(i => ({ id: `d${i}`, name: `d${i}`, coord: at(37.56, 127.02 + 0.01 * i) })),
+  ];
+  const { fn, calls } = catalogSearch(cat);
+  const r = await searchAlong(poly, 'q', { need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 15000 }, fn);
+  assert.equal(r.status, 'ok');
+  assert.equal(r.radiusM, 8000);
+  assert.equal(r.candidates.length, 8);
+  assert.equal(calls.length, 15); // 2km·4km·8km × 5점
+});
+
+test('target 을 못 채워도 need 이상이면 ok — short 는 count 기준이다', async () => {
+  const three = [127.03, 127.06, 127.09].map((lng, i) => ({ id: `t${i}`, name: `t${i}`, coord: at(37.5, lng) }));
+  const { fn, calls } = catalogSearch(three);
+  const r = await searchAlong(poly, 'q', { need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 4000 }, fn);
+  assert.equal(r.status, 'ok');
+  assert.equal(r.candidates.length, 3);
+  assert.equal(r.radiusM, 4000); // 상한까지 넓혔다
+  assert.equal(calls.length, 10);
+});
+
+test('target 없으면 need 가 곧 target — 기존 동작', async () => {
+  const c1: PlaceCandidate = { id: 'c1', name: 'c1', coord: at(37.5, 127.05) };
+  const { fn, calls } = catalogSearch([c1]);
+  const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 2000, maxRadiusM: 15000 }, fn);
+  assert.equal(r.status, 'ok');
+  assert.equal(calls.length, 5);
+});

@@ -44,22 +44,30 @@
 `src/lib/corridorSearch.test.ts` 맨 아래에 추가한다. 기존 `catalogSearch` 헬퍼(파일 위쪽)를 그대로 쓴다.
 
 ```ts
-test('calls — 샘플 5점 × 반지름 회차 수', async () => {
-  // 10km 경로 한가운데에 한 곳. 초기 반지름 2000m 로는 못 찾고 4000m 에서 찾는다
+test('calls — 한 회차는 샘플 5점', async () => {
+  // 경로 한가운데. 50% 샘플이 바로 여기라 1회차(5번 호출)에 찾는다
   const mid = at(37.5, 127.0568);
   const { fn, calls } = catalogSearch([{ id: 'p1', name: '한곳', coord: mid }]);
   const r = await searchAlong(poly, '카페', { need: 1, initialRadiusM: 2000, maxRadiusM: 8000 }, fn);
   assert.equal(r.candidates.length, 1);
   assert.equal(r.calls, calls.length);
-  assert.equal(r.calls % 5, 0, '샘플 5점이 한 회차');
-  assert.ok(r.calls >= 5);
+  assert.equal(r.calls, 5);
+});
+
+test('calls — 못 찾으면 회차마다 5씩 는다', async () => {
+  // 어디에도 없다 → 2000 → 4000 → 8000 세 회차
+  const { fn, calls } = catalogSearch([{ id: 'z', name: '딴데', coord: at(38.2, 128.5) }]);
+  const r = await searchAlong(poly, '카페', { need: 1, initialRadiusM: 2000, maxRadiusM: 8000 }, fn);
+  assert.equal(r.status, 'none');
+  assert.equal(r.calls, calls.length);
+  assert.equal(r.calls, 15, '5점 × 3회차');
 });
 ```
 
 - [ ] **Step 2: 실패를 확인한다**
 
 Run: `npx tsx --test src/lib/corridorSearch.test.ts`
-Expected: FAIL — `r.calls`가 `undefined`라 `assert.equal(undefined, N)`에서 깨진다.
+Expected: FAIL 2건 — `r.calls`가 `undefined`라 `assert.equal(undefined, 5)`에서 깨진다.
 
 - [ ] **Step 3: `searchAlong`이 호출 수를 세게 한다**
 
@@ -131,16 +139,14 @@ test('plan.slots — 후보 이름·반지름·검색 횟수를 남긴다', () =
       { id: 'k-1', name: '올리브영 목동점', coord: { latitude: 37.5, longitude: 127.0 } },
       { id: 'k-2', name: '올리브영 국회의사당역점', coord: { latitude: 37.52, longitude: 126.91 } },
     ],
-  }] as unknown as PlanFlowAction extends never ? never : Parameters<typeof describeFlowAction>[0] extends never ? never : never;
-  const log = describeFlowAction({ type: 'SLOTS', slots: slots as never }, flowState());
+  }] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
   assert.equal(log?.a, 'plan.slots');
   assert.equal(log?.d?.found, '올리브영 2곳');
   assert.equal(log?.d?.search, '올리브영 r=800 calls=5');
   assert.equal(log?.d?.picks, '올리브영: 올리브영 목동점, 올리브영 국회의사당역점');
 });
 ```
-
-타입 곡예가 지저분하면 `const slots = [...] as never;`로 단순화해도 된다 — 이 테스트가 보는 건 로그 문자열이다.
 
 - [ ] **Step 8: 실패를 확인한다**
 
@@ -431,11 +437,13 @@ test('앵커 검색 — 상한까지 0건이면 none', async () => {
 });
 
 test('앵커 검색 — 여러 앵커에서 같은 id 가 나오면 가까운 앵커로 한 번만', async () => {
-  const between = at(37.5249, 126.9210); // 여의도·국회의사당 사이, 국회의사당에 더 가깝다
-  const { fn } = catalogSearch([{ id: 'dup', name: '올리브영', coord: between }]);
+  // 여의도에서 북쪽 200m. 반지름 1200m 면 국회의사당(770m)·목적지(740m)도 같이 집어온다
+  const nearTransfer = at(37.5234, 126.924221);
+  const { fn } = catalogSearch([{ id: 'dup', name: '올리브영', coord: nearTransfer }]);
   const r = await searchAtAnchors(anchors, '올리브영', { need: 1, initialRadiusM: 1200 }, fn);
-  assert.equal(r.candidates.length, 1);
-  assert.equal(r.candidates[0].anchorId, 'a3');
+  assert.equal(r.candidates.length, 1, '같은 id 가 세 앵커에서 나와도 하나');
+  assert.equal(r.candidates[0].anchorId, 'a2', '가장 가까운 환승역에 붙는다');
+  assert.ok(r.candidates[0].anchorWalkM! < 300);
 });
 
 test('앵커 검색 — 도보 거리 오름차순', async () => {
@@ -617,23 +625,42 @@ test('대중교통 — itinerary 가 있으면 앵커에서 찾는다', async ()
 });
 
 test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다', async () => {
-  // 앵커(역) 근처엔 없고, 직선 회랑 중간에만 있는 가게
+  const board = { latitude: 37.526097, longitude: 126.864538 };
+  // 역 주변(최대 1500m)엔 없고, 회랑 반지름 2000m 이상에서만 잡히는 가게
   const onCorridor = { latitude: 37.5235, longitude: 126.8880 };
   const search = async (_q: string, near: { latitude: number; longitude: number }, r: number) =>
     Math.hypot(near.latitude - onCorridor.latitude, near.longitude - onCorridor.longitude) < 0.02 && r >= 2000
       ? [{ id: 'far1', name: '회랑 가게', coord: onCorridor }]
       : [];
-  // (provider·runPlan 호출은 위 테스트와 같은 모양으로 구성한다)
-  // 기대: SLOTS 의 후보가 1곳이고 anchorId 가 없다(회랑에서 온 것)
-});
-```
+  const provider = {
+    route: async (points: { latitude: number; longitude: number }[]) => ({
+      durationMin: 24, distanceKm: 7.2,
+      polyline: [points[0], board, points[points.length - 1]],
+      sections: points.slice(1).map(() => ({ durationMin: 12, distanceKm: 3.6 })),
+      source: 'provider' as const,
+      transit: [{
+        durationMin: 24, distanceM: 7218,
+        legs: [{
+          kind: 'transit' as const, mode: 'SUBWAY' as const, line: '5호선',
+          from: { name: '목동', lat: 37.526097, lng: 126.864538 },
+          to: { name: '국회의사당', lat: 37.528143, lng: 126.917856 },
+          durationMin: 12, stops: 6, departAt: null, arriveAt: null,
+        }],
+      }],
+    }),
+  };
+  const actions: { type: string }[] = [];
+  await runPlan(
+    { origin: { latitude: 37.5188, longitude: 126.8575 }, destination: { latitude: 37.5285, longitude: 126.9187 },
+      departAtMin: 9 * 60, arriveByMin: null, mode: 'transit', order: 'auto',
+      stops: [{ id: 'sl-1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
+    { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
+  );
 
-두 번째 테스트의 provider·runPlan 호출부는 첫 테스트를 그대로 복사해 `search`만 바꾼다. 기대값:
-
-```ts
-  assert.equal(slots[0].candidates.length, 1);
+  const slots = (actions.find(a => a.type === 'SLOTS') as { slots: { candidates: { id: string; anchorId?: string }[] }[] }).slots;
+  assert.equal(slots[0].candidates.length, 1, '앵커가 비었다고 후보까지 잃으면 안 된다');
   assert.equal(slots[0].candidates[0].anchorId, undefined, '회랑에서 온 후보엔 앵커가 없다');
-```
+});
 
 - [ ] **Step 2: 실패를 확인한다**
 

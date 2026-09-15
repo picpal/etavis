@@ -17,6 +17,10 @@ export type PlaceCandidate = {
   parking?: '가능' | '어려움' | '없음';
   /** 카카오 address_name. /enrich 요청에 싣는다 */
   address?: string;
+  /** 어느 앵커 주변에서 찾았나(6단계). 없으면 회랑 검색으로 찾은 것 */
+  anchorId?: string;
+  /** 그 앵커에서 여기까지 직선 거리(m). 7단계 삽입 비용의 재료 */
+  anchorWalkM?: number;
   /** /enrich 가 붙인 바깥 신호. 없으면 보강을 안 했거나 실패한 것 */
   signals?: import('../enrich/types').PlaceSignals;
 };

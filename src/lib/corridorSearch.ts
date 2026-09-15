@@ -3,8 +3,9 @@
  * status는 need 기준. 상한까지 없으면 가장 가까운 곳을 far로 넣는다. 설계 0.5단계.
  * 검색 함수는 주입받는다(places.ts는 expo-constants를 물고 있어 node 테스트가 못 읽는다).
  */
-import { crossTrack, pointAtProgress, polylineLengthM } from './geo';
+import { crossTrack, haversineM, pointAtProgress, polylineLengthM } from './geo';
 import type { LatLng, Mode, PlaceCandidate, SearchStatus } from './routePlan/types';
+import type { Anchor } from './routePlan/anchors';
 
 export type SearchFn = (query: string, near: LatLng, radiusM: number) => Promise<PlaceCandidate[]>;
 
@@ -79,5 +80,65 @@ export async function searchAlong(
     const far = merge(await Promise.all(points.map(p => countedSearch(query, p, farR))));
     if (far.length > 0) return { candidates: byCorridor(far).slice(0, 3), status: 'far', radiusM: farR, calls };
   }
+  return { candidates: [], status: 'none', radiusM, calls };
+}
+
+/** 역에서 이만큼 안이면 "역 근처"다. 초기 반지름 */
+export const ANCHOR_INITIAL_M = 500;
+/** 여기를 넘으면 역 근처가 아니라 별개의 경유다 — 넓히기를 멈춘다 */
+export const ANCHOR_MAX_M = 1500;
+
+export type AnchorSearchOptions = {
+  /** 이보다 적으면 short */
+  need: number;
+  /** 이만큼 모일 때까지 넓힌다. 없으면 need */
+  target?: number;
+  initialRadiusM?: number;
+  maxRadiusM?: number;
+  max?: number;
+};
+
+/**
+ * 앵커 주변 검색 — 직선 위 아무 점이 아니라 실제로 내리는 역에서 찾는다.
+ * 후보마다 가장 가까운 앵커와 그 거리를 붙인다. 순위는 여기서 정하지 않는다(7단계).
+ */
+export async function searchAtAnchors(
+  anchors: Anchor[],
+  query: string,
+  opts: AnchorSearchOptions,
+  search: SearchFn,
+): Promise<{ candidates: PlaceCandidate[]; status: SearchStatus; radiusM: number; calls: number }> {
+  const initial = opts.initialRadiusM ?? ANCHOR_INITIAL_M;
+  const maxR = Math.max(initial, opts.maxRadiusM ?? ANCHOR_MAX_M);
+  const target = Math.max(opts.need, opts.target ?? opts.need);
+  const max = opts.max ?? 30;
+  let calls = 0;
+
+  /** 후보를 가장 가까운 앵커에 붙인다. 같은 id 가 여러 앵커에서 나오면 가까운 쪽이 이긴다 */
+  const attach = (lists: PlaceCandidate[][]) => {
+    const best = new Map<string, PlaceCandidate>();
+    for (let i = 0; i < lists.length; i++) {
+      const a = anchors[i];
+      for (const c of lists[i]) {
+        const walkM = Math.round(haversineM(a.coord, c.coord));
+        const prev = best.get(c.id);
+        if (prev && (prev.anchorWalkM ?? Infinity) <= walkM) continue;
+        best.set(c.id, { ...c, anchorId: a.id, anchorWalkM: walkM });
+      }
+    }
+    return [...best.values()].sort((x, y) => (x.anchorWalkM ?? 0) - (y.anchorWalkM ?? 0)).slice(0, max);
+  };
+
+  let radiusM = initial;
+  let found: PlaceCandidate[] = [];
+  while (true) {
+    const r = radiusM;
+    found = attach(await Promise.all(anchors.map(a => { calls++; return search(query, a.coord, r); })));
+    if (found.length >= target) return { candidates: found, status: 'ok', radiusM: r, calls };
+    if (r >= maxR) break;
+    radiusM = Math.min(maxR, r * 2);
+  }
+  if (found.length >= opts.need) return { candidates: found, status: 'ok', radiusM, calls };
+  if (found.length > 0) return { candidates: found, status: 'short', radiusM, calls };
   return { candidates: [], status: 'none', radiusM, calls };
 }

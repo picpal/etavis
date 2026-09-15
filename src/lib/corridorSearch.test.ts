@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPolyline, haversineM } from './geo.ts';
-import { initialRadiusM, maxRadiusM, searchAlong, type SearchFn } from './corridorSearch.ts';
+import { ANCHOR_INITIAL_M, initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, type SearchFn } from './corridorSearch.ts';
 import type { PlaceCandidate } from './routePlan/types.ts';
+import type { Anchor } from './routePlan/anchors.ts';
 
 const O = { latitude: 37.5, longitude: 127.0 };
 const D = { latitude: 37.5, longitude: 127.1136 }; // ≈10km
@@ -166,4 +167,62 @@ test('calls — 못 찾으면 회차마다 5씩 는다', async () => {
   assert.equal(r.status, 'none');
   assert.equal(r.calls, calls.length);
   assert.equal(r.calls, 20, '5점 × (3회차 + far 1회차)');
+});
+
+const anchors: Anchor[] = [
+  { id: 'a0', kind: 'origin', name: '출발지', coord: at(37.5188, 126.8575), progressM: 0 },
+  { id: 'a1', kind: 'board', name: '목동', coord: at(37.526097, 126.864538), progressM: 1100 },
+  { id: 'a2', kind: 'transfer', name: '여의도', coord: at(37.521624, 126.924221), progressM: 6400 },
+  { id: 'a3', kind: 'alight', name: '국회의사당', coord: at(37.528143, 126.917856), progressM: 7300 },
+  { id: 'a4', kind: 'destination', name: '목적지', coord: at(37.5285, 126.9187), progressM: 7400 },
+];
+
+test('앵커 검색 — 각 앵커에서 한 번씩, 후보에 앵커와 도보 거리가 붙는다', async () => {
+  const nearBoard = at(37.5263, 126.8650); // 목동역에서 100m 이내
+  const { fn, calls } = catalogSearch([{ id: 'kb', name: '국민은행 목동역점', coord: nearBoard }]);
+  const r = await searchAtAnchors(anchors, '국민은행', { need: 1 }, fn);
+
+  assert.equal(r.calls, calls.length);
+  assert.equal(r.calls, anchors.length, '앵커마다 한 번');
+  assert.ok(calls.every(c => c.radiusM === ANCHOR_INITIAL_M));
+  assert.equal(r.status, 'ok');
+  assert.equal(r.candidates.length, 1);
+  assert.equal(r.candidates[0].anchorId, 'a1');
+  assert.ok(r.candidates[0].anchorWalkM! < 200, `도보 ${r.candidates[0].anchorWalkM}m`);
+});
+
+test('앵커 검색 — target 에 못 미치면 반지름을 넓힌다', async () => {
+  const far = at(37.5300, 126.8700); // 목동역에서 500m 밖, 1000m 안
+  const { fn, calls } = catalogSearch([{ id: 'x', name: '먼곳', coord: far }]);
+  const r = await searchAtAnchors(anchors, '카페', { need: 1 }, fn);
+  assert.equal(r.candidates.length, 1);
+  assert.ok(r.radiusM > ANCHOR_INITIAL_M, '넓혔어야 한다');
+  assert.equal(r.calls, calls.length);
+  assert.equal(r.calls, anchors.length * 2, '두 회차');
+});
+
+test('앵커 검색 — 상한까지 0건이면 none', async () => {
+  const { fn } = catalogSearch([{ id: 'z', name: '아주먼곳', coord: at(37.6, 127.3) }]);
+  const r = await searchAtAnchors(anchors, '카페', { need: 1 }, fn);
+  assert.equal(r.status, 'none');
+  assert.equal(r.candidates.length, 0);
+});
+
+test('앵커 검색 — 여러 앵커에서 같은 id 가 나오면 가까운 앵커로 한 번만', async () => {
+  // 여의도에서 북쪽 200m. 반지름 1200m 면 국회의사당(770m)·목적지(740m)도 같이 집어온다
+  const nearTransfer = at(37.5234, 126.924221);
+  const { fn } = catalogSearch([{ id: 'dup', name: '올리브영', coord: nearTransfer }]);
+  const r = await searchAtAnchors(anchors, '올리브영', { need: 1, initialRadiusM: 1200 }, fn);
+  assert.equal(r.candidates.length, 1, '같은 id 가 세 앵커에서 나와도 하나');
+  assert.equal(r.candidates[0].anchorId, 'a2', '가장 가까운 환승역에 붙는다');
+  assert.ok(r.candidates[0].anchorWalkM! < 300);
+});
+
+test('앵커 검색 — 도보 거리 오름차순', async () => {
+  const { fn } = catalogSearch([
+    { id: 'far', name: '먼 올리브영', coord: at(37.5300, 126.8700) },
+    { id: 'near', name: '가까운 올리브영', coord: at(37.5263, 126.8650) },
+  ]);
+  const r = await searchAtAnchors(anchors, '올리브영', { need: 2, initialRadiusM: 1200 }, fn);
+  assert.deepEqual(r.candidates.map(c => c.id), ['near', 'far']);
 });

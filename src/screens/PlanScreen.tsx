@@ -210,11 +210,12 @@ export function PlanScreen({ navigation }: Props) {
     navigation.navigate('Calculating');
   };
 
-  /* 좁히기 질문은 아직 업종인 경유지만 가리킬 수 있다. 이미 좁혀진 칩(stopKind:'brand')을
-     후보에서 빼지 않으면, 두 경유지가 같은 값으로 좁혀졌을 때 나중 질문이 엉뚱한 쪽을 집는다 */
+  /* 좁히기 질문은 아직 좁히기 질문에 답하지 않은 경유지만 가리킬 수 있다. 이미 좁혀진
+     칩(narrowed:true)을 후보에서 빼지 않으면, 두 경유지가 같은 값으로 좁혀졌을 때
+     나중 질문이 엉뚱한 쪽을 집는다 */
   const chipFor = (field: string) => {
     const q = field.slice('stop:'.length);
-    return state.chips.find(c => c.kind === 'stop' && c.stopKind === 'category' && c.queries.includes(q));
+    return state.chips.find(c => c.kind === 'stop' && !c.narrowed && c.queries.includes(q));
   };
 
   return (

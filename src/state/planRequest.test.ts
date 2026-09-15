@@ -59,14 +59,17 @@ test('빈 칩 목록이면 빈 슬롯', () => {
   assert.deepEqual(requestStopsFromChips([]), []);
 });
 
-/* 이 테스트는 NARROW_STOP 을 검증하지 않는다 — 그 좁히기 규칙(queries/stopKind 변경)은
+/* 이 테스트는 NARROW_STOP 을 검증하지 않는다 — 그 좁히기 규칙(queries/narrowed 변경)은
    narrowStopChips(chips.test.ts) 가 검증한다. 여기서는 좁혀진 모양의 칩 —
-   queries: [고른 값] 하나, stopKind: 'brand' — 을 손으로 만들어, 그 모양이
-   requestStopsFromChips 를 거쳐 검색 파이프라인 슬롯까지 그대로 내려가는 것만 본다. */
+   queries: [고른 값] 하나, stopKind: 'category' 그대로, narrowed: true — 을 손으로
+   만들어, 그 모양이 requestStopsFromChips 를 거쳐 검색 파이프라인 슬롯까지 그대로
+   내려가는 것만 본다. stopKind 는 좁히기로 바뀌지 않는다 — runPlan.ts 의 보강·트렌드
+   스왑이 계속 이 슬롯에 돌아야 하기 때문이다. narrowed 는 슬롯에서 읽는 곳이 없어
+   여기로 넘어가지 않는다. */
 
-test('좁혀진 모양의 칩(queries 한 개·stopKind brand) — 검색어와 stopKind 가 그대로 내려간다', () => {
-  const narrowed = stop({ queries: ['파리바게뜨'], stopKind: 'brand' });
+test('좁혀진 모양의 칩(queries 한 개·stopKind는 category 유지) — 검색어가 그대로 내려간다', () => {
+  const narrowed = stop({ queries: ['파리바게뜨'], stopKind: 'category', narrowed: true });
   const [s] = requestStopsFromChips([narrowed]);
   assert.equal(s.query, '파리바게뜨');
-  assert.equal(s.stopKind, 'brand');
+  assert.equal(s.stopKind, 'category');
 });

@@ -58,17 +58,29 @@ export function syncConditionChips(
  * 고른 값 하나로 줄인다 — `requestStopsFromChips`가 `queries[0]`을 쓰므로
  * 검색어가 그대로 좁혀진다. '상관없어요'면 원래대로 두고 질문만 닫는다(화면 몫).
  *
- * `stopKind`를 `'brand'`로 올리는 이유: 사용자가 고른 값은 더 이상 업종이 아니라
- * 지정이다. `'category'`로 남기면 보강·트렌드 스왑이 계속 이 칩에 돈다 — 이미
- * 좁힌 값을 다시 업종 취급해 흔드는 꼴이라 여기서 그 경로를 빼야 한다.
+ * `stopKind`는 건드리지 않는다. 선택지의 절반이 브랜드가 아니라 업종어다 —
+ * `NARROW`의 '동네 빵집'·'대형마트'·'동네 마트'·'동네 카페', 프롬프트도 "'동네 빵집'
+ * 같은 업종어"를 넣으라고 시킨다. `stopKind`를 `'brand'`로 올리면 `runPlan.ts`의
+ * 보강(154행)·트렌드 스왑(232행)이 꺼져, 좁혀달라고 한 사용자가 더 적은 신호로
+ * 추천을 받는다. 대신 `narrowed`를 따로 둔다 — `stopKind`는 "사용자가 무엇이라
+ * 불렀나", `narrowed`는 "좁히기 질문에 이미 답했나"다. 두 사실이라 필드도 둘이다.
+ *
+ * 되묻기는 **경유지 하나**에 대한 답이지 칩 하나에 대한 답이 아니다. `count>1`로
+ * 칩이 여러 개 복제됐어도(APPLY_INTENT) 질문은 스톱당 하나만 온다 — 탭한 칩만
+ * 좁히면 나머지 칩은 되묻기 없이 '빵집'으로 영영 남는다. 그래서 같은 `queries`를
+ * 가진, 아직 안 좁혀진 칩을 전부 같이 좁힌다.
  *
  * 매칭되는 칩이 없으면 **같은 배열 참조**를 돌려준다 — 호출부(`plan.tsx`)가 그걸로
  * "바뀐 게 없다"를 판단해 애니메이션·재계산을 건너뛴다.
  */
 export function narrowStopChips(chips: IntentChip[], chipId: string, query: string): IntentChip[] {
   const hit = chips.find(c => c.kind === 'stop' && c.id === chipId);
-  if (!hit) return chips;
+  if (!hit || hit.kind !== 'stop') return chips;
+  const targetQueries = hit.queries;
+  const sameQueries = (a: string[]) => a.length === targetQueries.length && a.every((v, i) => v === targetQueries[i]);
   return chips.map(c =>
-    c.id === chipId && c.kind === 'stop' ? { ...c, label: query, queries: [query], stopKind: 'brand' as const } : c,
+    c.kind === 'stop' && !c.narrowed && sameQueries(c.queries)
+      ? { ...c, label: query, queries: [query], narrowed: true }
+      : c,
   );
 }

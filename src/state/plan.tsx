@@ -33,7 +33,12 @@ export type IntentChip =
       kind: 'stop';
       label: string;
       queries: string[];
+      /** 사용자가 이 경유지를 무엇이라 불렀나 — '빵집'(category)인지 '파리바게뜨'(brand)인지.
+          좁히기 질문에 답했는지와는 다른 사실이다. 아래 `narrowed`를 보라 */
       stopKind: 'brand' | 'category' | 'specific';
+      /** 좁히기 질문에 이미 답했나. `stopKind`는 그대로 둔 채(보강·트렌드 스왑이 계속
+          돌아야 하므로) 이 칩이 되묻기 대상에서 빠졌는지만 따로 기록한다 */
+      narrowed?: boolean;
       /** LLM이 뽑은 '문 연 곳만' — runPlan 의 슬롯으로 그대로 내려간다 */
       openNow: boolean;
       /** false면 특정 지점 고정. 최적화 대상에서 뺀다 */

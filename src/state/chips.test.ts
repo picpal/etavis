@@ -5,8 +5,8 @@ import type { IntentChip } from './plan';
 
 let seq = 0;
 const nextId = (k: 'm' | 'a') => `${k}-${seq++}`;
-const stop = (id: string): IntentChip => ({
-  id, kind: 'stop', label: '약국', queries: ['약국'], stopKind: 'category', openNow: false, flexible: true,
+const stop = (id: string, queries: string[] = ['약국']): IntentChip => ({
+  id, kind: 'stop', label: '약국', queries, stopKind: 'category', openNow: false, flexible: true,
 });
 const modeChip = (id: string, v: 'car' | 'walk' | 'transit', label: string): IntentChip =>
   ({ id, kind: 'mode', label, value: v });
@@ -56,21 +56,24 @@ test('이동수단 칩이 중복으로 쌓이지 않는다 — 여러 번 바꿔
   assert.equal(chips.find(c => c.kind === 'mode')!.label, '자동차');
 });
 
-test('narrowStopChips — 고른 값 하나로 queries 를 좁힌다', () => {
+test('narrowStopChips — 고른 값 하나로 queries 를 좁히고 narrowed 를 세운다. stopKind 는 그대로 둔다', () => {
   const target = stop('s-1');
   const [narrowed] = narrowStopChips([target], 's-1', '파리바게뜨');
   // queries[0] 만 보면 요소를 덧붙이고도 통과한다 — 배열 자체를 [query] 하나로 단언한다
   assert.deepEqual(narrowed.kind === 'stop' ? narrowed.queries : null, ['파리바게뜨']);
   assert.equal(narrowed.label, '파리바게뜨');
-  assert.equal(narrowed.kind === 'stop' ? narrowed.stopKind : null, 'brand');
+  // stopKind 는 "사용자가 무엇이라 불렀나"라 좁히기로 안 바뀐다 — runPlan.ts 의
+  // 보강·트렌드 스왑이 category 를 보고 계속 돌아야 한다
+  assert.equal(narrowed.kind === 'stop' ? narrowed.stopKind : null, 'category');
+  assert.equal(narrowed.kind === 'stop' ? narrowed.narrowed : null, true);
 });
 
-test('narrowStopChips — 다른 칩은 건드리지 않는다(같은 객체 참조)', () => {
+test('narrowStopChips — queries 가 다른 칩은 건드리지 않는다(같은 객체 참조)', () => {
   const target = stop('s-1');
-  const other = stop('s-2');
+  const other = stop('s-2', ['약']); // queries 가 target 과 달라 같이 좁혀지면 안 된다
   const mode = modeChip('m-1', 'car', '자동차');
   const out = narrowStopChips([target, other, mode], 's-1', '파리바게뜨');
-  assert.equal(out[1], other, 's-2 칩은 같은 객체여야 한다');
+  assert.equal(out[1], other, '다른 queries 를 가진 칩은 같은 객체여야 한다');
   assert.equal(out[2], mode, 'mode 칩은 같은 객체여야 한다');
 });
 
@@ -78,4 +81,16 @@ test('narrowStopChips — 모르는 chipId 면 같은 배열 참조를 돌려준
   const chips: IntentChip[] = [stop('s-1')];
   const out = narrowStopChips(chips, 'no-such-id', '파리바게뜨');
   assert.equal(out, chips, '매칭이 없으면 새 배열을 만들지 않는다 — 호출부가 이걸로 무변화를 판단한다');
+});
+
+test('narrowStopChips — count>1 로 칩이 복제됐어도 같은 queries 의 칩을 전부 좁힌다', () => {
+  const a = stop('s-1', ['빵집']);
+  const b = stop('s-2', ['빵집']); // APPLY_INTENT 가 count=2 로 복제한 같은 스톱
+  const c = stop('s-3', ['마트']); // 다른 스톱 — 건드리면 안 된다
+  const out = narrowStopChips([a, b, c], 's-1', '파리바게뜨');
+  const [na, nb, nc] = out;
+  assert.deepEqual(na.kind === 'stop' ? na.queries : null, ['파리바게뜨']);
+  assert.deepEqual(nb.kind === 'stop' ? nb.queries : null, ['파리바게뜨'], 'chipId 로 탭하지 않은 두 번째 빵집 칩도 같이 좁혀져야 한다');
+  assert.equal(nb.kind === 'stop' ? nb.narrowed : null, true);
+  assert.equal(out[2], c, '다른 스톱(마트) 칩은 같은 객체여야 한다');
 });

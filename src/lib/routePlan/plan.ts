@@ -176,5 +176,6 @@ export async function plan(
     }
   }
 
-  return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount };
+  const timingSource: PlanResult['timingSource'] = direct.source === 'provider' ? 'provider' : 'estimate';
+  return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
 }

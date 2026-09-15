@@ -75,3 +75,10 @@ test('기본 타임아웃은 8초 — 캐시 미스 /route 가 3.3초까지 걸�
   assert.ok(seenSignalAbortedAt !== null, 'abort 가 걸려야 한다');
   assert.ok(seenSignalAbortedAt! > 5000, `4초대에 끊기면 안 된다 (실제 ${seenSignalAbortedAt}ms)`);
 });
+
+test('응답에 source=provider 를 찍는다 — 화면이 실측·추정을 가르는 근거', async () => {
+  const { fn } = fakeFetch(() => ({ status: 200, body: okBody }));
+  const p = serverRouteProvider({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'dev1', fetchFn: fn, now });
+  const r = await p.route([at(37.5, 127), at(37.6, 127.1)], 480, 'car');
+  assert.equal(r.source, 'provider');
+});

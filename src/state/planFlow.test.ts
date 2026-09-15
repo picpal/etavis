@@ -8,7 +8,7 @@ const req: PlanRequest = {
   originName: '집', destinationName: '회사', mode: 'car', arriveByMin: 540, departAtMin: 480,
   stops: [{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'category' }], order: 'auto',
 };
-const result = { options: [], alternatives: [], slotStatus: {}, apiCalls: 1, directMin: 20, directKm: 10, measuredCount: 1, legTable: {}, rescore: () => ({ totalMin: 0, arrivals: [], distanceKm: 0, estimated: true }) } as unknown as PlanResult;
+const result = { options: [], alternatives: [], slotStatus: {}, apiCalls: 1, directMin: 20, directKm: 10, measuredCount: 1, timingSource: 'estimate', legTable: {}, rescore: () => ({ totalMin: 0, arrivals: [], distanceKm: 0, estimated: true }) } as unknown as PlanResult;
 
 test('START → direct, progress 4단계 미완', () => {
   const s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });

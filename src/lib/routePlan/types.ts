@@ -50,6 +50,9 @@ export type PlanInput = {
   order: 'auto' | 'locked';
 };
 
+/** 시간의 출처. provider = 라우팅 공급자 응답, estimate = 하버사인 목. 화면 문구는 이걸로 가른다 */
+export type TimingSource = 'provider' | 'estimate';
+
 export type RouteSection = { durationMin: number; distanceKm: number };
 export type RouteResult = {
   durationMin: number;
@@ -57,6 +60,8 @@ export type RouteResult = {
   polyline: LatLng[];
   /** points.length - 1 개. 경유지 사이 구간 */
   sections: RouteSection[];
+  /** 없으면 estimate 로 본다 — 찍지 않은 쪽이 실측을 주장할 수 없다 */
+  source?: TimingSource;
 };
 
 export interface RouteProvider {
@@ -112,4 +117,6 @@ export type PlanResult = {
   legTable: Record<string, { min: number; km: number; measured: boolean }>;
   /** 성공한 라우팅 호출 수(직행 포함). "실측 6회" */
   measuredCount: number;
+  /** 직행 응답의 출처. 한 계획의 호출은 모두 같은 모드·공급자라 직행 하나로 대표한다 */
+  timingSource: TimingSource;
 };

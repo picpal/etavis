@@ -74,6 +74,7 @@ export function mockRouteProvider(opts: MockRouteOptions = {}): RouteProvider & 
         distanceKm: sections.reduce((s, x) => s + x.distanceKm, 0),
         polyline: buildPolyline(points, 16),
         sections,
+        source: 'estimate',
       };
     },
   };

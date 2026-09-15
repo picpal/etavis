@@ -153,3 +153,12 @@ test('legTable — 선택 후보 × 양끝의 완전 표, 실측 여부 표시',
   }
   assert.equal(r.legTable['O>on'].measured, true);
 });
+
+test('timingSource — 목이면 estimate, 공급자가 provider 를 찍으면 provider', async () => {
+  const est = await plan(base([slot('a', [on, near])]), mockRouteProvider());
+  assert.equal(est.timingSource, 'estimate');
+  const mock = mockRouteProvider();
+  const stamped = { route: async (...args: Parameters<typeof mock.route>) => ({ ...(await mock.route(...args)), source: 'provider' as const }) };
+  const prov = await plan(base([slot('a', [on, near])]), stamped);
+  assert.equal(prov.timingSource, 'provider');
+});

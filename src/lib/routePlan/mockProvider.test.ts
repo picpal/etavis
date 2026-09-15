@@ -81,3 +81,9 @@ test('도보는 우회율 1.2를 기본으로 쓴다', async () => {
   assert.ok(w.distanceKm > 1.15 && w.distanceKm < 1.25, `km ${w.distanceKm}`);
   assert.ok(Math.abs(w.durationMin - w.distanceKm * 12) < 1e-9);
 });
+
+test('목 공급자는 source=estimate 를 찍는다', async () => {
+  const p = mockRouteProvider();
+  const r = await p.route([{ latitude: 37.5, longitude: 127 }, { latitude: 37.6, longitude: 127.1 }], 480, 'transit');
+  assert.equal(r.source, 'estimate');
+});

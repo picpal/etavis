@@ -190,12 +190,17 @@ export function PlanScreen({ navigation }: Props) {
         if (seq !== seqRef.current) return; // 지나간 요청의 답은 버린다
         applyIntent(intent);
         flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
-        setReply(intent.reject?.say ?? intent.ambiguous[0]?.question ?? null);
         // options 를 방어적으로 읽는다 — intentClient.ts 는 서버 응답을 Intent로 그대로
         // 캐스팅하고, looksLikeIntent 도 ambiguous 원소별로는 들여다보지 않는다. Task 1의
         // 스키마가 아직 없는 배포된 Worker가 옛 모양({field, question})을 돌려주면
         // a.options 가 undefined라 .length 에서 던진다
-        setNarrowAsks(intent.ambiguous.filter(a => a.field.startsWith('stop:') && (a.options ?? []).length > 0));
+        const narrow = intent.ambiguous.filter(a => a.field.startsWith('stop:') && (a.options ?? []).length > 0);
+        /* 칩으로 그릴 되묻기는 이 한 줄에서 빼야 한다. 안 빼면 같은 질문이 칩 줄 위와
+           되묻기 블록에 두 번 나오고, 선택지를 고른 뒤에도 위쪽 한 줄만 낡은 채 남는다
+           (2026-09-15 시뮬레이터에서 실제로 그랬다) */
+        const plain = intent.ambiguous.find(a => !narrow.includes(a));
+        setReply(intent.reject?.say ?? plain?.question ?? null);
+        setNarrowAsks(narrow);
         setFellBack(source === 'local');
         setPending(false);
       });

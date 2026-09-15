@@ -8,6 +8,7 @@ import Constants from 'expo-constants';
 import { planSearchFn } from '../lib/places';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider';
 import { serverRouteProvider } from '../lib/routePlan/serverProvider';
+import { transitRouteProvider } from '../lib/routePlan/transitProvider';
 import type { RouteProvider } from '../lib/routePlan/types';
 import { serverEnrichFn, type EnrichFn } from '../lib/enrich/enrichClient';
 import { localExtractFn, serverExtractFn, type ExtractFn } from '../lib/intentClient';
@@ -44,13 +45,14 @@ function timedRoute(provider: RouteProvider): RouteProvider {
   return {
     route: async (points, departAtMin, mode) => {
       const t0 = Date.now();
+      const ep = mode === 'transit' ? '/transit' : '/route';
       try {
         const r = await provider.route(points, departAtMin, mode);
         // 소수점 열두 자리는 읽는 데 방해만 된다 — 로그는 사람이 먼저 읽는다
-        logTrack({ k: 'net', ep: '/route', ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: Math.round(r.durationMin * 10) / 10 } });
+        logTrack({ k: 'net', ep, ms: Date.now() - t0, ok: true, d: { points: points.length, mode, min: Math.round(r.durationMin * 10) / 10 } });
         return r;
       } catch (e) {
-        logTrack({ k: 'net', ep: '/route', ms: Date.now() - t0, ok: false, d: { points: points.length, mode, err: String(e).slice(0, 120) } });
+        logTrack({ k: 'net', ep, ms: Date.now() - t0, ok: false, d: { points: points.length, mode, err: String(e).slice(0, 120) } });
         throw e;
       }
     },
@@ -83,20 +85,13 @@ function timedEnrich(enrich: EnrichFn): EnrichFn {
 }
 
 /**
- * 서버는 **자동차만** 받는다(`serverProvider.route`가 나머지는 던진다).
- * 그런데 `runPlan`의 0단계 직행은 그 예외를 그대로 `FAIL`로 만들기 때문에,
- * 도보·대중교통을 고르면 **계획 전체가 죽는다.**
- *
- * 키가 없던 시절에는 목 공급자가 모든 모드를 추정으로 처리해 드러나지 않았고,
- * 서버를 붙인 뒤 실기기에서 터졌다(2026-09-15).
- *
- * 그래서 모드로 갈라 준다 — 자동차는 실측, 나머지는 추정.
- * 추정이라는 사실은 화면이 말한다(A5의 "약" 표기).
+ * 모드별 공급자. 자동차는 카카오(/route), 대중교통은 직행만 Google(/transit)이고 경유 조합은
+ * transitProvider 안에서 목으로 위임된다. 도보는 아직 목. 출처는 결과의 source 가 말한다.
  */
-function hybridProvider(server: RouteProvider, mock: RouteProvider): RouteProvider {
+function hybridProvider(server: RouteProvider, transit: RouteProvider, mock: RouteProvider): RouteProvider {
   return {
     route: (points, departAtMin, mode) =>
-      (mode === 'car' ? server : mock).route(points, departAtMin, mode),
+      (mode === 'car' ? server : mode === 'transit' ? transit : mock).route(points, departAtMin, mode),
   };
 }
 
@@ -106,8 +101,14 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
   const appToken = extra.appToken?.trim();
   if (baseUrl && appToken) {
     const deviceId = Constants.sessionId ?? 'unknown';
+    const mock = mockRouteProvider();
+    const transit = transitRouteProvider({
+      baseUrl, appToken, deviceId, estimate: mock,
+      // 폴백은 화면엔 '추정' 배너로만 보인다 — 왜 폴백했는지는 로그에만 남긴다
+      onFallback: e => logTrack({ k: 'net', ep: '/transit', ms: 0, ok: false, d: { points: 2, mode: 'transit', err: String(e).slice(0, 120) } }),
+    });
     return {
-      provider: hybridProvider(serverRouteProvider({ baseUrl, appToken, deviceId }), mockRouteProvider()),
+      provider: hybridProvider(serverRouteProvider({ baseUrl, appToken, deviceId }), transit, mock),
       usingServer: true,
       enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
       extract: serverExtractFn({ baseUrl, appToken, deviceId }),

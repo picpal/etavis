@@ -67,7 +67,8 @@ export function serverRouteProvider(opts: ServerProviderOptions): RouteProvider 
         if (!res.ok) throw new Error(`server route ${res.status}`);
         const data = (await res.json()) as RouteResult;
         if (!Array.isArray(data.sections) || typeof data.durationMin !== 'number') throw new Error('server route: bad shape');
-        return { ...data, source: 'provider' };
+        // 서버가 스스로 추정이라고 말하면 강등은 받아들인다. 승격은 못 한다 — 없으면 provider
+        return { ...data, source: data.source ?? 'provider' };
       } finally {
         clearTimeout(timer);
       }

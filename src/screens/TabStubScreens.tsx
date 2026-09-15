@@ -360,9 +360,11 @@ export function TodayScreen() {
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted }}>
           경유지 {state.totals.stopCount}곳 · {MODE_LABELS[state.mode]} · 도착 예정 {copy.approx}{formatEta(state.destArriveAt)}
         </Text>
-        {/* 마감이 있고 실측일 때만 여유·초과. 추정이면 그 자리에 출처 한 줄 */}
+        {/* 마감이 있고 실측일 때만 여유·초과. 추정이면 그 자리에 출처 한 줄 — 마감이 있으면 라벨을 배너와 병기한다 */}
         {copy.banner ? (
-          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 18, color: color.amberDeep }}>{copy.banner}</Text>
+          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 18, color: color.amberDeep }}>
+            {slackMin != null ? `${arriveByLabel} · ${copy.banner}` : copy.banner}
+          </Text>
         ) : verdictSlack != null && (
           <Text
             style={{

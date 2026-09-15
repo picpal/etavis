@@ -240,7 +240,9 @@ export function TimelineScreen({ navigation, route }: Props) {
           ]}
         />
         {copy.banner && (
-          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, textAlign: 'center', color: color.amberDeep }}>{copy.banner}</Text>
+          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, textAlign: 'center', color: color.amberDeep }}>
+            {slackMin != null ? `${arriveByLabel} · ${copy.banner}` : copy.banner}
+          </Text>
         )}
         {slackMin != null && copy.showVerdict && (
           <Text

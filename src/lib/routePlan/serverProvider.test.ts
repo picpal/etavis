@@ -82,3 +82,10 @@ test('응답에 source=provider 를 찍는다 — 화면이 실측·추정을 �
   const r = await p.route([at(37.5, 127), at(37.6, 127.1)], 480, 'car');
   assert.equal(r.source, 'provider');
 });
+
+test('서버가 스스로 추정이라 말하면 강등을 받아들인다 — 승격은 못 한다', async () => {
+  const { fn } = fakeFetch(() => ({ status: 200, body: { ...okBody, source: 'estimate' } }));
+  const p = serverRouteProvider({ baseUrl: 'https://x.test', appToken: 'T', deviceId: 'dev1', fetchFn: fn, now });
+  const r = await p.route([at(37.5, 127), at(37.6, 127.1)], 480, 'car');
+  assert.equal(r.source, 'estimate');
+});

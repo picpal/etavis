@@ -24,14 +24,16 @@ const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
  * 출발→도착 타임바. 직행이면 어디까지, 들르면 얼마나 더, 마감은 어디쯤인지를 한 줄로 보인다.
  * 숫자 세 개(직행·경유·마감)를 문장으로 읽게 하지 않으려고.
  */
-function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated }: {
+function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated, showVerdict }: {
   departMin: number; directMin: number; totalMin: number; arriveByMin: number | null; estimated: boolean;
+  /** 추정치 위에서는 초과를 판정하지 않는다 — timingCopy.showVerdict */
+  showVerdict: boolean;
 }) {
   const deadline = arriveByMin == null ? null : arriveByMin - departMin;
   // 막대 끝이 곧 도착(또는 더 늦은 마감). 여백을 두면 도착점이 어디인지 흐려진다
   const span = Math.max(totalMin, deadline ?? 0, 1);
   const pct = (m: number) => `${Math.max(0, Math.min(100, (m / span) * 100))}%` as const;
-  const late = deadline != null && totalMin > deadline;
+  const late = showVerdict && deadline != null && totalMin > deadline;
   const pre = estimated ? '약 ' : '';
   const dp = deadline == null ? 0 : (deadline / span) * 100;
   const deadlineAtEdge = dp < 22 || dp > 78;
@@ -182,6 +184,7 @@ export function OptionsScreen({ navigation }: Props) {
             totalMin={current.timing.totalMin}
             arriveByMin={req.arriveByMin}
             estimated={approx !== ''}
+            showVerdict={copy.showVerdict}
           />
         </View>
 

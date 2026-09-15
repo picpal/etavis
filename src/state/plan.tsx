@@ -9,7 +9,7 @@ import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
-import { narrowStopChips, resetConditionChips, syncConditionChips } from './chips';
+import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import {
@@ -413,7 +413,11 @@ export type PlanAction =
   | { type: 'NARROW_STOP'; chipId: string; query: string }
   | { type: 'PUSH_CHAT'; text: string }
   /** A2에서 뒤로 나갈 때 — 대화와 대화가 만든 것을 전부 버리고 진입 시점 조건으로 되돌린다 */
-  | { type: 'RESET_CHAT'; mode: PlanState['mode']; arriveByMin: number | null };
+  /* `committed` — 이 대화가 이미 확정 계획이 됐는가. 스토어가 아니라 **액션이 나른다.**
+     `applyLive` 와 `navigation.reset` 이 같은 틱에 돌아서, 그때 상태를 읽는 쪽(로그의
+     `stateRef`, 화면의 리스너 클로저)은 아직 APPLY_LIVE 이전을 본다. 한 곳에서 동기적으로
+     정하고 실어 보내야 리듀서와 로그가 같은 사실을 읽는다 */
+  | { type: 'RESET_CHAT'; mode: PlanState['mode']; arriveByMin: number | null; committed: boolean };
 
 function reducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
@@ -680,7 +684,14 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
          해놓고 대화의 흔적이 남는다. 되돌릴 값은 A2에 들어온 시점의 조건이고,
          그건 화면(PlanScreen)이 진입할 때 잡아 둔다 — 스토어는 그 스냅샷을 모른다.
          목적지·출발지는 A1에서 고른 것이라 건드리지 않는다 */
-      const chips = resetConditionChips(state.chips, { mode: action.mode, arriveByMin: action.arriveByMin }, k => `${k}-${chipSeq++}`);
+      const chips = resetChatChips(
+        state.chips,
+        { mode: action.mode, arriveByMin: action.arriveByMin },
+        k => `${k}-${chipSeq++}`,
+        action.committed,
+      );
+      // 같은 참조 = 확정된 계획이다. 기록만 비우고 칩·조건·경유지는 그대로 둔다
+      if (chips === state.chips) return { ...state, chat: [] };
       const stops = stopsForChips(state.dataset, chips);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       return {
@@ -763,6 +774,9 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   const recalcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  /* 대화가 확정 계획이 됐는지. 상태가 아니라 ref 인 이유는 `PlanAction`의 RESET_CHAT
+     주석에 있다 — 같은 틱 안에서 읽혀야 한다 */
+  const chatCommitted = useRef(false);
 
   /**
    * 리듀서가 아니라 dispatch 를 감싼다 — 리듀서는 순수해야 하고, StrictMode 가 개발 중
@@ -809,7 +823,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       })(),
       selectOption: id => dispatch({ type: 'SELECT_OPTION', id }),
       applyOption: id => dispatch({ type: 'APPLY_OPTION', id }),
-      applyLive: payload => dispatch({ type: 'APPLY_LIVE', payload }),
+      applyLive: payload => {
+        chatCommitted.current = true;
+        dispatch({ type: 'APPLY_LIVE', payload });
+      },
       setOptionStore: (optionId, baseId, candidateId) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'SET_OPTION_STORE', optionId, baseId, candidateId });
@@ -851,8 +868,14 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       applyIntent: intent => dispatch({ type: 'APPLY_INTENT', intent }),
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
-      pushChat: text => dispatch({ type: 'PUSH_CHAT', text }),
-      resetChat: entry => dispatch({ type: 'RESET_CHAT', mode: entry.mode, arriveByMin: entry.arriveByMin }),
+      pushChat: text => {
+        // 새 말이 들어오면 다시 '버릴 것'이 생긴다 — 안 내리면 "확정 → 새 대화 → 중간에
+        // 나감"에서 버려야 할 경유지 칩이 남는다
+        chatCommitted.current = false;
+        dispatch({ type: 'PUSH_CHAT', text });
+      },
+      resetChat: entry =>
+        dispatch({ type: 'RESET_CHAT', mode: entry.mode, arriveByMin: entry.arriveByMin, committed: chatCommitted.current }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),
     };

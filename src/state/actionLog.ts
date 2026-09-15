@@ -40,9 +40,18 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
 
     case 'PUSH_CHAT':
       return { a: 'chat.send', d: { text: cut(action.text) } };
-    case 'RESET_CHAT':
-      // 몇 마디 만에 버렸는지가 남아야 한다 — 되돌리기가 잦으면 추출이 못 미더운 것이다
-      return { a: 'chat.reset', d: { turns: before.chat.length, stops: before.chips.filter(c => c.kind === 'stop').length } };
+    case 'RESET_CHAT': {
+      /* 몇 마디 만에 버렸는지가 남아야 한다 — 되돌리기가 잦으면 추출이 못 미더운 것이다.
+         확정된 뒤(`action.committed`)엔 아무것도 안 버린다. 그때도 버린 것처럼 적으면
+         로그가 거짓말을 한다 — 2026-09-16 의 '진행 중 경유지 0곳'을 바로 이 줄로 진단했다.
+         `before` 가 아니라 액션에서 읽는 이유는 `PlanAction` 의 RESET_CHAT 주석에 있다 —
+         `stateRef` 는 같은 틱의 APPLY_LIVE 를 아직 못 봤다 */
+      const stops = before.chips.filter(c => c.kind === 'stop').length;
+      const turns = before.chat.length;
+      return action.committed
+        ? { a: 'chat.reset', d: { turns, stops: 0, kept: stops } }
+        : { a: 'chat.reset', d: { turns, stops } };
+    }
     case 'APPLY_INTENT': {
       const i = action.intent;
       return {

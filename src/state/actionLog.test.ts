@@ -208,3 +208,21 @@ test('plan.slots — 앵커에서 온 후보는 앵커와 도보 거리를 적�
   const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
   assert.equal(log?.d?.picks, '국민은행: 국민은행 목동역점(a1 120m)');
 });
+
+test('확정 뒤의 대화 되돌리기는 버린 게 없다고 적는다', () => {
+  /* 확정하면 A2가 스택에서 빠지며 RESET_CHAT 이 오지만 칩은 그대로다.
+     그때 'stops: 2'라고 적으면 로그가 거짓말을 한다 — 이 줄로 버그를 진단했다 */
+  const s = planState({ chat: ['가는길에 은행'] });
+  assert.deepEqual(describePlanAction({ type: 'RESET_CHAT', mode: 'car', arriveByMin: null, committed: true }, s), {
+    a: 'chat.reset',
+    d: { turns: 1, stops: 0, kept: 1 },
+  });
+});
+
+test('확정 전이면 버린 경유지 수를 적는다', () => {
+  const s = planState({ chat: ['가는길에 은행'] });
+  assert.deepEqual(describePlanAction({ type: 'RESET_CHAT', mode: 'car', arriveByMin: null, committed: false }, s), {
+    a: 'chat.reset',
+    d: { turns: 1, stops: 1 },
+  });
+});

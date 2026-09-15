@@ -62,6 +62,32 @@ export function resetConditionChips(
 }
 
 /**
+ * 대화 되돌리기가 칩까지 건드려도 되는가.
+ *
+ * A5에서 `확인`을 누르면 `applyLive`가 대화의 산출물을 확정 계획으로 올리고, 곧바로
+ * `navigation.reset([Home, Today])`이 A2를 스택에서 뺀다. 그때 A2의 `beforeRemove`가
+ * **포커스 없는 채로** 깨어나 "조용히 되돌린다" 가지를 타는데, 버릴 대화가 이미 계획이
+ * 된 뒤다. 2026-09-16 실기 트랙 로그에서 `plan.apply {count:2}` 바로 다음 줄이
+ * `chat.reset {stops:2}`였고, 진행 중 탭이 **경유지 0곳**으로 떴다.
+ *
+ * 화면에서는 못 막는다. `applyLive`와 `navigation.reset`이 같은 틱에 돌아서 리스너는
+ * 아직 낡은 클로저(`chat.length > 0`)를 들고 있다. 그래서 규칙을 리듀서가 읽는 이
+ * 자리에 둔다.
+ *
+ * `committed`면 **같은 배열 참조**를 돌려준다 — 호출부가 그걸로 "칩은 그대로"를 판단해
+ * 조건 되돌리기와 재계산을 통째로 건너뛴다(`narrowStopChips`와 같은 약속).
+ */
+export function resetChatChips(
+  chips: IntentChip[],
+  entry: { mode: Mode; arriveByMin: number | null },
+  nextId: (kind: 'a') => string,
+  committed: boolean,
+): IntentChip[] {
+  if (committed) return chips;
+  return resetConditionChips(chips, entry, nextId);
+}
+
+/**
  * 되묻기 선택지를 고른 결과를 경유지 칩에 반영한다.
  *
  * 고른 값 하나로 줄인다 — `requestStopsFromChips`가 `queries[0]`을 쓰므로

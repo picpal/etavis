@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { narrowStopChips, resetConditionChips, syncConditionChips } from './chips';
+import { narrowStopChips, resetChatChips, resetConditionChips, syncConditionChips } from './chips';
 import type { IntentChip } from './plan';
 
 let seq = 0;
@@ -119,4 +119,19 @@ test('narrowStopChips — 이미 좁힌 칩을 다시 좁히려 하면 같은 �
     { id: 's-1', kind: 'stop', label: '파리바게뜨', queries: ['파리바게뜨'], stopKind: 'category', openNow: false, flexible: true, narrowed: true },
   ];
   assert.equal(narrowStopChips(chips, 's-1', '뚜레쥬르'), chips, '참조가 같아야 재계산을 건너뛴다');
+});
+
+test('확정한 뒤의 대화 되돌리기는 칩을 건드리지 않는다', () => {
+  /* 2026-09-16 실기 로그: `plan.apply {count:2}` 바로 다음 줄이 `chat.reset {stops:2}`였고
+     진행 중 탭이 경유지 0곳으로 떴다. A5의 확인이 A2를 스택에서 빼면서 `beforeRemove`가
+     포커스 없이 깨어나 "대화를 버린다" 가지를 탄 것이다 — 버릴 대화가 이미 계획이 된 뒤였다 */
+  const chips = [stop('s-1'), arriveChip('a-1', 540, '09:00까지')];
+  const out = resetChatChips(chips, { mode: 'car', arriveByMin: 540 }, nextId, true);
+  assert.equal(out, chips, '같은 배열 참조 — 호출부가 이걸로 재계산을 건너뛴다');
+});
+
+test('확정 전이면 그대로 되돌린다 — 경유지 칩은 대화가 만든 것이다', () => {
+  const chips = [stop('s-1'), stop('s-2')];
+  const out = resetChatChips(chips, { mode: 'car', arriveByMin: null }, nextId, false);
+  assert.deepEqual(out.map(c => c.kind), [], '경유지 칩은 전부 버린다');
 });

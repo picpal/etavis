@@ -61,6 +61,24 @@ function parseStop(raw: unknown): IntentStop | null {
 }
 
 /**
+ * 되묻기 선택지 — '상관없어요'를 여기서 고정으로 붙인다.
+ *
+ * `PlanScreen.tsx`는 정확히 이 문자열을 "아무것도 바꾸지 않는다"는 뜻으로 읽는다.
+ * 그 약속을 프롬프트만 믿으면, LLM이 '아무거나'처럼 다른 말을 뱉는 순간 탭이 진짜
+ * 검색어가 되어 결과 0건으로 떨어진다. AGENTS.md대로 인젝션 방어선은 프롬프트가
+ * 아니라 이 스키마다 — 옵트아웃 문자열도 여기서 보장해야 실제로 방어가 된다.
+ *
+ * 옵션이 하나도 없는 되묻기(순수 질문, 예: 이동수단 되묻기)는 건드리지 않는다 —
+ * 없던 옵션을 만들면 화면이 칩 없는 질문에 갑자기 칩을 그리게 된다.
+ */
+function parseOptions(raw: unknown): string[] {
+  const strings = (Array.isArray(raw) ? raw : []).filter(isStr).map(o => o.slice(0, 20));
+  if (strings.length === 0) return [];
+  const withoutOptOut = strings.filter(o => o !== '상관없어요');
+  return [...withoutOptOut.slice(0, 3), '상관없어요'];
+}
+
+/**
  * 임의의 JSON을 Intent로 좁힌다. 모르는 필드는 버리고, 이상하면 null.
  * null이면 호출부가 로컬 목으로 떨어진다.
  */
@@ -106,10 +124,7 @@ export function parseIntent(raw: unknown): Intent | null {
           question: clampText(x.question),
           // 선택지는 그대로 화면의 탭 대상이 된다 — 길이와 개수를 여기서 자른다.
           // 프롬프트 규칙은 1차선일 뿐이고, 앱에 닿는 건 이 필터를 통과한 것뿐이다
-          options: (Array.isArray(x.options) ? x.options : [])
-            .filter(isStr)
-            .map(o => o.slice(0, 20))
-            .slice(0, 4),
+          options: parseOptions(x.options),
         };
       })
       .filter(a => a.question),

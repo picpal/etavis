@@ -2,14 +2,42 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseIntent } from './schema';
 
-test('ambiguous options — 문자열만, 최대 4개, 각 20자', () => {
+test('ambiguous options — 문자열만, 3개로 자르고 상관없어요를 맨 뒤에 붙인다', () => {
+  // '상관없어요'가 안 섞인 5개를 넣는다 — 3개만 남고 뒤에 옵트아웃이 붙는 걸 명확히 보여준다
   const i = parseIntent({
     stops: [], endpoints: {}, ambiguous: [
-      { field: 'stop:빵집', question: '어떤 빵집으로 할까요?', options: ['파리바게뜨', '뚜레쥬르', '동네 빵집', '상관없어요', '다섯번째'] },
+      { field: 'stop:빵집', question: '어떤 빵집으로 할까요?', options: ['파리바게뜨', '뚜레쥬르', '동네 빵집', '마트', '다섯번째'] },
     ],
   });
   assert.equal(i!.ambiguous[0].field, 'stop:빵집');
   assert.deepEqual(i!.ambiguous[0].options, ['파리바게뜨', '뚜레쥬르', '동네 빵집', '상관없어요']);
+});
+
+test('ambiguous options — 모델이 상관없어요를 이미 넣었어도 한 번만, 맨 뒤에 남는다', () => {
+  const i = parseIntent({
+    stops: [], endpoints: {}, ambiguous: [
+      { field: 'stop:빵집', question: '어떤 빵집으로 할까요?', options: ['상관없어요', '파리바게뜨', '뚜레쥬르', '동네 빵집', '다섯번째'] },
+    ],
+  });
+  assert.deepEqual(i!.ambiguous[0].options, ['파리바게뜨', '뚜레쥬르', '동네 빵집', '상관없어요']);
+});
+
+test('ambiguous options — 모델이 상관없어요를 빠뜨리면 스키마가 붙여준다 (인젝션 방어선)', () => {
+  const i = parseIntent({
+    stops: [], endpoints: {}, ambiguous: [
+      { field: 'stop:마트', question: '어떤 마트로 할까요?', options: ['이마트', '홈플러스'] },
+    ],
+  });
+  assert.deepEqual(i!.ambiguous[0].options, ['이마트', '홈플러스', '상관없어요']);
+});
+
+test('ambiguous options — 옵션이 아예 없으면 빈 배열로 남는다 (순수 질문에 칩을 만들지 않는다)', () => {
+  const i = parseIntent({
+    stops: [], endpoints: {}, ambiguous: [
+      { field: 'mode', question: '어떤 이동수단으로 갈까요?', options: [] },
+    ],
+  });
+  assert.deepEqual(i!.ambiguous[0].options, []);
 });
 
 test('ambiguous options — 20자 넘으면 자른다', () => {
@@ -27,5 +55,6 @@ test('ambiguous options — 없거나 이상하면 빈 배열', () => {
   const none = parseIntent({ stops: [], endpoints: {}, ambiguous: [{ field: 'mode', question: '어떤 이동수단으로 갈까요?' }] });
   assert.deepEqual(none!.ambiguous[0].options, []);
   const junk = parseIntent({ stops: [], endpoints: {}, ambiguous: [{ field: 'mode', question: '뭘로 갈까요?', options: [1, null, { a: 1 }, '카페'] }] });
-  assert.deepEqual(junk!.ambiguous[0].options, ['카페'], '문자열 아닌 건 버린다');
+  // 문자열 아닌 건 버리지만, 남은 문자열 옵션이 하나라도 있으면 옵트아웃이 붙는다
+  assert.deepEqual(junk!.ambiguous[0].options, ['카페', '상관없어요'], '문자열 아닌 건 버린다');
 });

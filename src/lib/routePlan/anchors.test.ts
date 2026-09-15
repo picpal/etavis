@@ -47,6 +47,25 @@ test('대중교통 구간이 없으면 출발지·목적지뿐', () => {
   assert.deepEqual(extractAnchors(it, O, D).map(x => x.kind), ['origin', 'destination']);
 });
 
+test('이름이 둘 다 빈 문자열이면 이름 일치로 보지 않는다 — 3km 떨어진 별개 역', () => {
+  const it: TransitItinerary = {
+    durationMin: 40, distanceM: 9000,
+    legs: [
+      { kind: 'transit', mode: 'BUS', line: '100',
+        from: { name: '목동', lat: 37.526097, lng: 126.864538 },
+        to: { name: '', lat: 37.521624, lng: 126.924221 },
+        durationMin: 11, stops: null, departAt: null, arriveAt: null },
+      { kind: 'transit', mode: 'BUS', line: '200',
+        from: { name: '', lat: 37.521624, lng: 126.954221 }, // 위와 이름은 같은 '' 이지만 약 3km 떨어짐
+        to: { name: '국회의사당', lat: 37.528143, lng: 126.917856 },
+        durationMin: 5, stops: null, departAt: null, arriveAt: null },
+    ],
+  };
+  const a = extractAnchors(it, O, D);
+  // 이름이 ''로 같아도 3km 떨어져 있으니 접히지 않는다 — 환승 지점이 두 개(transfer가 연속 두 번) 살아남는다
+  assert.deepEqual(a.map(x => x.kind), ['origin', 'board', 'transfer', 'transfer', 'alight', 'destination']);
+});
+
 test('이름이 달라도 200m 안이면 한 환승역', () => {
   const it: TransitItinerary = {
     durationMin: 30, distanceM: 6000,

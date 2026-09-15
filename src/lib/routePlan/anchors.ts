@@ -2,9 +2,14 @@
  * itinerary → 앵커. 대중교통에서 경유지가 붙을 만한 자리는 직선 위 아무 점이 아니라
  * 내가 실제로 발을 딛는 곳이다 — 출발지·승차역·환승역·하차역·목적지.
  *
- * progressM 은 5단계 itineraryToRoute 가 만드는 폴리라인
- * ([출발지, …정류장(연속 중복 제거)…, 목적지])의 진행 거리와 같은 좌표계다.
- * 같은 점 목록을 같은 순서로 걷기 때문이지, 투영해서 맞추는 게 아니다.
+ * progressM 은 앵커 목록 자체를 출발지에서부터 누적한 직선거리다 — 뒤 단계가
+ * 방문 순서를 이 값으로 정렬하기 때문에 존재한다.
+ *
+ * 5단계 itineraryToRoute 가 만드는 폴리라인의 진행 거리와 값이 "비슷"할 수는
+ * 있지만 같다고 보장하지 않는다: itineraryToRoute 는 연속된 점을 좌표가 정확히
+ * 같을 때만 접고, 여기서는 이름이 같거나 SAME_STOP_M 이내면 접기 때문이다
+ * (이름은 다르지만 8m 떨어진 같은 역을 하나로 묶는 테스트가 그 증거다). 두 값을
+ * 같다고 가정하는 코드를 쓰면 안 된다.
  */
 import { haversineM } from '../geo';
 import type { LatLng, TransitItinerary, TransitStop } from './types';
@@ -22,7 +27,7 @@ export function extractAnchors(it: TransitItinerary, origin: LatLng, destination
   const stops: TransitStop[] = [];
   const push = (s: TransitStop) => {
     const last = stops[stops.length - 1];
-    if (last && (last.name === s.name || haversineM(toCoord(last), toCoord(s)) <= SAME_STOP_M)) return;
+    if (last && ((last.name !== '' && last.name === s.name) || haversineM(toCoord(last), toCoord(s)) <= SAME_STOP_M)) return;
     stops.push(s);
   };
   for (const l of it.legs) {

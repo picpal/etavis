@@ -6,8 +6,8 @@ const now = new Date('2026-09-15T03:00:00Z'); // KST 12:00
 const o = { lat: 37.5246, lng: 126.8607 };
 const d = { lat: 37.5295, lng: 126.9187 };
 
-test('정상 — 기본값 alternatives 3, subwayOnly false, departAt 없음', () => {
-  assert.deepEqual(parseTransitRequest({ origin: o, destination: d }, now), { origin: o, destination: d, departAt: undefined, alternatives: 3, subwayOnly: false });
+test('정상 — 기본값 alternatives 3, preferSubway false, departAt 없음', () => {
+  assert.deepEqual(parseTransitRequest({ origin: o, destination: d }, now), { origin: o, destination: d, departAt: undefined, alternatives: 3, preferSubway: false });
 });
 
 test('departAt — ISO 8601, 지금-5분 ~ 7일 안만', () => {
@@ -23,13 +23,13 @@ test('departAt — 느슨한 모양은 거절, 타임존 오프셋은 UTC 로 �
   assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '2026-09-15T13:00:00+09:00' }, now)?.departAt, '2026-09-15T04:00:00.000Z');
 });
 
-test('alternatives 1~3 정수만, subwayOnly 는 불리언만', () => {
+test('alternatives 1~3 정수만, preferSubway 는 불리언만', () => {
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 2 }, now)?.alternatives, 2);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 0 }, now), null);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 4 }, now), null);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: '3' }, now), null);
-  assert.equal(parseTransitRequest({ origin: o, destination: d, subwayOnly: true }, now)?.subwayOnly, true);
-  assert.equal(parseTransitRequest({ origin: o, destination: d, subwayOnly: 'yes' }, now), null);
+  assert.equal(parseTransitRequest({ origin: o, destination: d, preferSubway: true }, now)?.preferSubway, true);
+  assert.equal(parseTransitRequest({ origin: o, destination: d, preferSubway: 'yes' }, now), null);
 });
 
 test('좌표 범위 밖·문자열·누락은 거절', () => {

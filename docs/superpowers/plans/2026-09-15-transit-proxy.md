@@ -17,6 +17,7 @@
 - **키는 코드·문서에 절대 넣지 않는다.** 어댑터는 `env.GOOGLE_ROUTES_KEY ?? env.GOOGLE_PLACES_KEY`를 쓴다.
 - 앱 코드(`src/`)는 손대지 않는다. 앱 연결은 5단계.
 - Google 무료분은 월 1만 회 → 일일 상한 `PER_DAY['/transit'] = 300`. 캐시 TTL `TRANSIT_TTL_S = 600`(10분. 배차가 시각에 묶이므로 짧게. TMAP 24시간 저장 금지 약관도 만족).
+- `preferSubway` 는 선호이지 필터가 아니다 — 실측으로 확인(2026-09-15: 6623번 버스가 1위로 왔다). 진짜로 거르려면 앱이 `legs.mode`로 고른다.
 - 정규화 규칙(스파이크 발견): 연속 WALK step은 하나로 합친다. 같은 정류장 열(transit leg 마다 `line|from|to`)을 가진 경로는 **가장 빠른 것 하나만** 남긴다. 소요시간 오름차순, `alternatives`(1~3, 기본 3)개로 자른다.
 - 응답 형식은 아래 `TransitItinerary`. 앱 `RouteResult`와 다르다 — 정류장 좌표가 필요해서다.
 
@@ -55,7 +56,7 @@ export type TransitLeg =
 export type TransitItinerary = { durationMin: number; distanceM: number; legs: TransitLeg[] };
 export type TransitProviderId = 'google' | 'tmap' | 'kakao';
 export type TransitResponse = { provider: TransitProviderId; source: 'provider'; itineraries: TransitItinerary[] };
-export type TransitRequest = { origin: LatLng; destination: LatLng; departAt?: string; alternatives: number; subwayOnly: boolean };
+export type TransitRequest = { origin: LatLng; destination: LatLng; departAt?: string; alternatives: number; preferSubway: boolean };
 export type TransitNormalizeResult = { ok: true; itineraries: TransitItinerary[] } | { ok: false; code: 'shape' | 'none'; msg: string };
 export interface TransitAdapter { id: TransitProviderId; fetchRaw(req: TransitRequest, env: TransitEnv, f: typeof fetch): Promise<Response>; normalize(raw: unknown, req: TransitRequest): TransitNormalizeResult; }
 export type TransitEnv = { GOOGLE_ROUTES_KEY?: string; GOOGLE_PLACES_KEY?: string; TMAP_APP_KEY?: string };
@@ -76,8 +77,8 @@ const now = new Date('2026-09-15T03:00:00Z'); // KST 12:00
 const o = { lat: 37.5246, lng: 126.8607 };
 const d = { lat: 37.5295, lng: 126.9187 };
 
-test('정상 — 기본값 alternatives 3, subwayOnly false, departAt 없음', () => {
-  assert.deepEqual(parseTransitRequest({ origin: o, destination: d }, now), { origin: o, destination: d, departAt: undefined, alternatives: 3, subwayOnly: false });
+test('정상 — 기본값 alternatives 3, preferSubway false, departAt 없음', () => {
+  assert.deepEqual(parseTransitRequest({ origin: o, destination: d }, now), { origin: o, destination: d, departAt: undefined, alternatives: 3, preferSubway: false });
 });
 
 test('departAt — ISO 8601, 지금-5분 ~ 7일 안만', () => {
@@ -87,13 +88,13 @@ test('departAt — ISO 8601, 지금-5분 ~ 7일 안만', () => {
   assert.equal(parseTransitRequest({ origin: o, destination: d, departAt: '내일' }, now), null);
 });
 
-test('alternatives 1~3 정수만, subwayOnly 는 불리언만', () => {
+test('alternatives 1~3 정수만, preferSubway 는 불리언만', () => {
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 2 }, now)?.alternatives, 2);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 0 }, now), null);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: 4 }, now), null);
   assert.equal(parseTransitRequest({ origin: o, destination: d, alternatives: '3' }, now), null);
-  assert.equal(parseTransitRequest({ origin: o, destination: d, subwayOnly: true }, now)?.subwayOnly, true);
-  assert.equal(parseTransitRequest({ origin: o, destination: d, subwayOnly: 'yes' }, now), null);
+  assert.equal(parseTransitRequest({ origin: o, destination: d, preferSubway: true }, now)?.preferSubway, true);
+  assert.equal(parseTransitRequest({ origin: o, destination: d, preferSubway: 'yes' }, now), null);
 });
 
 test('좌표 범위 밖·문자열·누락은 거절', () => {
@@ -145,7 +146,7 @@ export type TransitRequest = {
   /** 돌려줄 경로 수 1~3 */
   alternatives: number;
   /** 지하철·기차만(버스 제외). 스파이크의 '지하철우선' */
-  subwayOnly: boolean;
+  preferSubway: boolean;
 };
 export type TransitNormalizeResult =
   | { ok: true; itineraries: TransitItinerary[] }
@@ -203,12 +204,12 @@ export function parseTransitRequest(raw: unknown, now: Date): TransitRequest | n
     alternatives = r.alternatives;
   }
 
-  let subwayOnly = false;
-  if (r.subwayOnly !== undefined) {
-    if (typeof r.subwayOnly !== 'boolean') return null;
-    subwayOnly = r.subwayOnly;
+  let preferSubway = false;
+  if (r.preferSubway !== undefined) {
+    if (typeof r.preferSubway !== 'boolean') return null;
+    preferSubway = r.preferSubway;
   }
-  return { origin, destination, departAt, alternatives, subwayOnly };
+  return { origin, destination, departAt, alternatives, preferSubway };
 }
 ```
 
@@ -252,7 +253,7 @@ import { GOOGLE_FIELD_MASK, googleTransitBody, normalizeGoogleTransit } from './
 import type { TransitRequest } from './transitTypes';
 
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/google-transit-sinjeong.json', import.meta.url), 'utf8'));
-const req: TransitRequest = { origin: { lat: 37.5246, lng: 126.8607 }, destination: { lat: 37.5295, lng: 126.9187 }, departAt: '2026-09-16T00:30:00.000Z', alternatives: 3, subwayOnly: false };
+const req: TransitRequest = { origin: { lat: 37.5246, lng: 126.8607 }, destination: { lat: 37.5295, lng: 126.9187 }, departAt: '2026-09-16T00:30:00.000Z', alternatives: 3, preferSubway: false };
 
 test('요청 본문 — TRANSIT, 대안 요청, 한국어, 출발시각', () => {
   const b = googleTransitBody(req) as Record<string, unknown>;
@@ -264,8 +265,8 @@ test('요청 본문 — TRANSIT, 대안 요청, 한국어, 출발시각', () => 
   assert.equal('transitPreferences' in b, false);
 });
 
-test('요청 본문 — subwayOnly 면 SUBWAY·TRAIN 만, departAt 없으면 departureTime 없음', () => {
-  const b = googleTransitBody({ ...req, departAt: undefined, subwayOnly: true }) as Record<string, unknown>;
+test('요청 본문 — preferSubway 면 SUBWAY·TRAIN 만, departAt 없으면 departureTime 없음', () => {
+  const b = googleTransitBody({ ...req, departAt: undefined, preferSubway: true }) as Record<string, unknown>;
   assert.deepEqual(b.transitPreferences, { allowedTravelModes: ['SUBWAY', 'TRAIN'] });
   assert.equal('departureTime' in b, false);
 });
@@ -368,7 +369,7 @@ export function googleTransitBody(req: TransitRequest): object {
     languageCode: 'ko',
   };
   if (req.departAt) body.departureTime = req.departAt;
-  if (req.subwayOnly) body.transitPreferences = { allowedTravelModes: ['SUBWAY', 'TRAIN'] };
+  if (req.preferSubway) body.transitPreferences = { allowedTravelModes: ['SUBWAY', 'TRAIN'] };
   return body;
 }
 
@@ -503,7 +504,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```ts
 test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자 포함', async () => {
   const { transitCacheKey } = await import('./guard');
-  const base = { origin: { lat: 37.52459, lng: 126.86069 }, destination: { lat: 37.52947, lng: 126.91869 }, alternatives: 3, subwayOnly: false };
+  const base = { origin: { lat: 37.52459, lng: 126.86069 }, destination: { lat: 37.52947, lng: 126.91869 }, alternatives: 3, preferSubway: false };
   const k1 = transitCacheKey({ ...base, departAt: '2026-09-16T00:33:00.000Z' }, 'google');
   const k2 = transitCacheKey({ ...base, departAt: '2026-09-16T00:39:00.000Z' }, 'google');
   const k3 = transitCacheKey({ ...base, departAt: '2026-09-16T00:41:00.000Z' }, 'google');
@@ -511,7 +512,7 @@ test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자
   assert.equal(k1, k2);
   assert.notEqual(k1, k3);
   assert.notEqual(transitCacheKey(base, 'google'), k1); // now 버킷
-  assert.notEqual(transitCacheKey({ ...base, subwayOnly: true }, 'google'), transitCacheKey(base, 'google'));
+  assert.notEqual(transitCacheKey({ ...base, preferSubway: true }, 'google'), transitCacheKey(base, 'google'));
   assert.notEqual(transitCacheKey(base, 'tmap'), transitCacheKey(base, 'google'));
 });
 ```
@@ -642,7 +643,7 @@ export function transitCacheKey(req: TransitRequest, provider: string): string {
   const q = (n: number) => n.toFixed(4);
   const pts = `${q(req.origin.lat)},${q(req.origin.lng)};${q(req.destination.lat)},${q(req.destination.lng)}`;
   const depart = req.departAt ? req.departAt.slice(0, 15) : 'now'; // 'YYYY-MM-DDTHH:M' = 10분 버킷
-  return `transit:${provider}:${pts}:${depart}:${req.alternatives}:${req.subwayOnly ? 's' : 'n'}`;
+  return `transit:${provider}:${pts}:${depart}:${req.alternatives}:${req.preferSubway ? 's' : 'n'}`;
 }
 ```
 

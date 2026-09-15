@@ -25,7 +25,7 @@ export function googleTransitBody(req: TransitRequest): object {
     languageCode: 'ko',
   };
   if (req.departAt) body.departureTime = req.departAt;
-  if (req.subwayOnly) body.transitPreferences = { allowedTravelModes: ['SUBWAY', 'TRAIN'] };
+  if (req.preferSubway) body.transitPreferences = { allowedTravelModes: ['SUBWAY', 'TRAIN'] };
   return body;
 }
 

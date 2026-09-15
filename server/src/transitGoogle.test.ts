@@ -5,7 +5,7 @@ import { GOOGLE_FIELD_MASK, googleTransitBody, normalizeGoogleTransit } from './
 import type { TransitRequest } from './transitTypes';
 
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/google-transit-sinjeong.json', import.meta.url), 'utf8'));
-const req: TransitRequest = { origin: { lat: 37.5246, lng: 126.8607 }, destination: { lat: 37.5295, lng: 126.9187 }, departAt: '2026-09-16T00:30:00.000Z', alternatives: 3, subwayOnly: false };
+const req: TransitRequest = { origin: { lat: 37.5246, lng: 126.8607 }, destination: { lat: 37.5295, lng: 126.9187 }, departAt: '2026-09-16T00:30:00.000Z', alternatives: 3, preferSubway: false };
 
 test('요청 본문 — TRANSIT, 대안 요청, 한국어, 출발시각', () => {
   const b = googleTransitBody(req) as Record<string, unknown>;
@@ -17,8 +17,8 @@ test('요청 본문 — TRANSIT, 대안 요청, 한국어, 출발시각', () => 
   assert.equal('transitPreferences' in b, false);
 });
 
-test('요청 본문 — subwayOnly 면 SUBWAY·TRAIN 만, departAt 없으면 departureTime 없음', () => {
-  const b = googleTransitBody({ ...req, departAt: undefined, subwayOnly: true }) as Record<string, unknown>;
+test('요청 본문 — preferSubway 면 SUBWAY·TRAIN 만, departAt 없으면 departureTime 없음', () => {
+  const b = googleTransitBody({ ...req, departAt: undefined, preferSubway: true }) as Record<string, unknown>;
   assert.deepEqual(b.transitPreferences, { allowedTravelModes: ['SUBWAY', 'TRAIN'] });
   assert.equal('departureTime' in b, false);
 });

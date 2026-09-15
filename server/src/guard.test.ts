@@ -183,7 +183,7 @@ test('preflight 에 필요한 헤더를 전부 허용한다 — 하나라도 빠
 
 test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자 포함', async () => {
   const { transitCacheKey } = await import('./guard');
-  const base = { origin: { lat: 37.52459, lng: 126.86069 }, destination: { lat: 37.52947, lng: 126.91869 }, alternatives: 3, subwayOnly: false };
+  const base = { origin: { lat: 37.52459, lng: 126.86069 }, destination: { lat: 37.52947, lng: 126.91869 }, alternatives: 3, preferSubway: false };
   const k1 = transitCacheKey({ ...base, departAt: '2026-09-16T00:33:00.000Z' }, 'google');
   const k2 = transitCacheKey({ ...base, departAt: '2026-09-16T00:39:00.000Z' }, 'google');
   const k3 = transitCacheKey({ ...base, departAt: '2026-09-16T00:41:00.000Z' }, 'google');
@@ -191,6 +191,6 @@ test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자
   assert.equal(k1, k2);
   assert.notEqual(k1, k3);
   assert.notEqual(transitCacheKey(base, 'google'), k1); // now 버킷
-  assert.notEqual(transitCacheKey({ ...base, subwayOnly: true }, 'google'), transitCacheKey(base, 'google'));
+  assert.notEqual(transitCacheKey({ ...base, preferSubway: true }, 'google'), transitCacheKey(base, 'google'));
   assert.notEqual(transitCacheKey(base, 'tmap'), transitCacheKey(base, 'google'));
 });

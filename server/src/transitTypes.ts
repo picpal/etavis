@@ -24,8 +24,8 @@ export type TransitRequest = {
   departAt?: string;
   /** 돌려줄 경로 수 1~3 */
   alternatives: number;
-  /** 지하철·기차만(버스 제외). 스파이크의 '지하철우선' */
-  subwayOnly: boolean;
+  /** 지하철·기차 선호. Google 은 이걸 필터가 아니라 순위 선호로만 반영한다 — 버스가 섞여 올 수 있다(2026-09-15 실측: 6623번 버스). 진짜로 거르려면 응답 legs.mode 로 앱이 거른다 */
+  preferSubway: boolean;
 };
 export type TransitNormalizeResult =
   | { ok: true; itineraries: TransitItinerary[] }

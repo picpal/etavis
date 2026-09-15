@@ -41,10 +41,10 @@ export function parseTransitRequest(raw: unknown, now: Date): TransitRequest | n
     alternatives = r.alternatives;
   }
 
-  let subwayOnly = false;
-  if (r.subwayOnly !== undefined) {
-    if (typeof r.subwayOnly !== 'boolean') return null;
-    subwayOnly = r.subwayOnly;
+  let preferSubway = false;
+  if (r.preferSubway !== undefined) {
+    if (typeof r.preferSubway !== 'boolean') return null;
+    preferSubway = r.preferSubway;
   }
-  return { origin, destination, departAt, alternatives, subwayOnly };
+  return { origin, destination, departAt, alternatives, preferSubway };
 }

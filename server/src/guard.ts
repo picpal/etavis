@@ -129,7 +129,7 @@ export function transitCacheKey(req: TransitRequest, provider: string): string {
   const q = (n: number) => n.toFixed(4);
   const pts = `${q(req.origin.lat)},${q(req.origin.lng)};${q(req.destination.lat)},${q(req.destination.lng)}`;
   const depart = req.departAt ? req.departAt.slice(0, 15) : 'now'; // 'YYYY-MM-DDTHH:M' = 10분 버킷
-  return `transit:${provider}:${pts}:${depart}:${req.subwayOnly ? 's' : 'n'}`;
+  return `transit:${provider}:${pts}:${depart}:${req.preferSubway ? 's' : 'n'}`;
 }
 
 /**

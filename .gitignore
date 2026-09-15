@@ -59,3 +59,5 @@ node_modules
 
 # wrangler 로컬 시크릿 — 절대 커밋하지 않는다
 server/.dev.vars
+# wrangler dev 로컬 상태(KV 에뮬레이션 등)
+server/.wrangler/

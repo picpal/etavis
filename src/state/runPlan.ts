@@ -117,7 +117,14 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
               maxRadiusM: Math.min(ANCHOR_MAX_M, maxRadiusM(request.mode, slack, rho)),
             }, search)
           : await corridor();
-        if (anchors.length > 0 && found.status === 'none') found = await corridor();
+        if (anchors.length > 0 && found.status === 'none') {
+          // 앵커에서 0건이라 회랑으로 다시 찾는다. 호출 수는 더한다 —
+          // 이 숫자는 실제로 나간 장소 검색 요청 수를 감사하려고 남기는 것이라
+          // 앞의 앵커 조회를 빼고 적으면 로그가 사용량을 축소해서 말한다
+          const anchorCalls = found.calls;
+          const viaCorridor = await corridor();
+          found = { ...viaCorridor, calls: viaCorridor.calls + anchorCalls };
+        }
         return {
           // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
           id: st.id, query: st.query, stopKind: st.stopKind,

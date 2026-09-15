@@ -666,10 +666,13 @@ test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다'
   const board = { latitude: 37.526097, longitude: 126.864538 };
   // 역 주변(최대 1500m)엔 없고, 회랑 반지름 2000m 이상에서만 잡히는 가게
   const onCorridor = { latitude: 37.5235, longitude: 126.8880 };
-  const search = async (_q: string, near: { latitude: number; longitude: number }, r: number) =>
-    Math.hypot(near.latitude - onCorridor.latitude, near.longitude - onCorridor.longitude) < 0.02 && r >= 2000
+  const calls: { latitude: number; longitude: number }[] = [];
+  const search = async (_q: string, near: { latitude: number; longitude: number }, r: number) => {
+    calls.push(near);
+    return Math.hypot(near.latitude - onCorridor.latitude, near.longitude - onCorridor.longitude) < 0.02 && r >= 2000
       ? [{ id: 'far1', name: '회랑 가게', coord: onCorridor }]
       : [];
+  };
   const provider = {
     route: async (points: { latitude: number; longitude: number }[]) => ({
       durationMin: 24, distanceKm: 7.2,
@@ -695,7 +698,10 @@ test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다'
     { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
   );
 
-  const slots = (actions.find(a => a.type === 'SLOTS') as { slots: { candidates: { id: string; anchorId?: string }[] }[] }).slots;
+  const slots = (actions.find(a => a.type === 'SLOTS') as { slots: { candidates: { id: string; anchorId?: string }[]; searchCalls?: number }[] }).slots;
   assert.equal(slots[0].candidates.length, 1, '앵커가 비었다고 후보까지 잃으면 안 된다');
   assert.equal(slots[0].candidates[0].anchorId, undefined, '회랑에서 온 후보엔 앵커가 없다');
+  // 앵커 조회(0건으로 끝남)와 회랑 재조회, 둘 다 실제로 나간 요청이다 — 로그의 calls는
+  // 회랑 몫만이 아니라 실제 발신 총량이어야 감사 목적에 맞는다
+  assert.equal(slots[0].searchCalls, calls.length, 'searchCalls는 앵커 조회 + 회랑 재조회를 합친 실제 요청 수여야 한다');
 });

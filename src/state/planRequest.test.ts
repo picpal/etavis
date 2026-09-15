@@ -59,11 +59,12 @@ test('빈 칩 목록이면 빈 슬롯', () => {
   assert.deepEqual(requestStopsFromChips([]), []);
 });
 
-/* NARROW_STOP 리듀서 자체는 export 되지 않는다(plan.tsx 는 react-native 를 문다).
-   그 액션이 만드는 칩 모양 — queries 를 고른 값 하나로, stopKind 를 'brand' 로 —
-   을 여기서 재현해, requestStopsFromChips 가 그 결과를 제대로 검색어로 내리는지 본다. */
+/* 이 테스트는 NARROW_STOP 을 검증하지 않는다 — 그 좁히기 규칙(queries/stopKind 변경)은
+   narrowStopChips(chips.test.ts) 가 검증한다. 여기서는 좁혀진 모양의 칩 —
+   queries: [고른 값] 하나, stopKind: 'brand' — 을 손으로 만들어, 그 모양이
+   requestStopsFromChips 를 거쳐 검색 파이프라인 슬롯까지 그대로 내려가는 것만 본다. */
 
-test('NARROW_STOP 이후의 칩 — 좁힌 값이 검색어로, stopKind 는 brand 로 내려간다', () => {
+test('좁혀진 모양의 칩(queries 한 개·stopKind brand) — 검색어와 stopKind 가 그대로 내려간다', () => {
   const narrowed = stop({ queries: ['파리바게뜨'], stopKind: 'brand' });
   const [s] = requestStopsFromChips([narrowed]);
   assert.equal(s.query, '파리바게뜨');

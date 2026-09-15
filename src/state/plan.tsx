@@ -9,7 +9,7 @@ import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
-import { syncConditionChips } from './chips';
+import { narrowStopChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import {
@@ -621,17 +621,10 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
       };
     }
     case 'NARROW_STOP': {
-      // 고른 값 하나로 줄인다 — requestStopsFromChips 가 queries[0] 을 쓰므로
-      // 검색어가 그대로 좁혀진다. '상관없어요'면 원래대로 두고 질문만 닫는다(화면 몫)
-      //
-      // stopKind 를 'brand' 로 올리는 이유: 사용자가 고른 값은 더 이상 업종이 아니라
-      // 지정이다. 'category' 로 남기면 보강·트렌드 스왑이 계속 이 칩에 돈다 — 이미
-      // 좁힌 값을 다시 업종 취급해 흔드는 꼴이라 여기서 그 경로를 빼야 한다.
-      const chips = state.chips.map(c =>
-        c.kind === 'stop' && c.id === action.chipId
-          ? { ...c, label: action.query, queries: [action.query], stopKind: 'brand' as const }
-          : c,
-      );
+      // 좁히는 규칙(라벨·queries·stopKind) 자체는 chips.ts 의 narrowStopChips 가 갖는다 —
+      // plan.tsx 런타임(react-native)을 물지 않는 곳에 둬야 node 테스트가 직접 부를 수 있다.
+      const chips = narrowStopChips(state.chips, action.chipId, action.query);
+      if (chips === state.chips) return state; // 없는 칩 — 애니메이션도 재계산도 돌릴 이유가 없다
       // chips 를 바꾸는 것만으로 끝나지 않는다 — stopsForChips(dataset, chips) 가
       // chip.queries 로 데이터셋 경유지를 다시 매칭하므로, queries 를 좁히면 매칭되는
       // 경유지 자체가 바뀐다. REMOVE_CHIP 과 같은 모양으로 stops·체인을 다시 계산한다.

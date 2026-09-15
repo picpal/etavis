@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { syncConditionChips } from './chips';
+import { narrowStopChips, syncConditionChips } from './chips';
 import type { IntentChip } from './plan';
 
 let seq = 0;
@@ -54,4 +54,28 @@ test('이동수단 칩이 중복으로 쌓이지 않는다 — 여러 번 바꿔
   }
   assert.equal(chips.filter(c => c.kind === 'mode').length, 1);
   assert.equal(chips.find(c => c.kind === 'mode')!.label, '자동차');
+});
+
+test('narrowStopChips — 고른 값 하나로 queries 를 좁힌다', () => {
+  const target = stop('s-1');
+  const [narrowed] = narrowStopChips([target], 's-1', '파리바게뜨');
+  // queries[0] 만 보면 요소를 덧붙이고도 통과한다 — 배열 자체를 [query] 하나로 단언한다
+  assert.deepEqual(narrowed.kind === 'stop' ? narrowed.queries : null, ['파리바게뜨']);
+  assert.equal(narrowed.label, '파리바게뜨');
+  assert.equal(narrowed.kind === 'stop' ? narrowed.stopKind : null, 'brand');
+});
+
+test('narrowStopChips — 다른 칩은 건드리지 않는다(같은 객체 참조)', () => {
+  const target = stop('s-1');
+  const other = stop('s-2');
+  const mode = modeChip('m-1', 'car', '자동차');
+  const out = narrowStopChips([target, other, mode], 's-1', '파리바게뜨');
+  assert.equal(out[1], other, 's-2 칩은 같은 객체여야 한다');
+  assert.equal(out[2], mode, 'mode 칩은 같은 객체여야 한다');
+});
+
+test('narrowStopChips — 모르는 chipId 면 같은 배열 참조를 돌려준다', () => {
+  const chips: IntentChip[] = [stop('s-1')];
+  const out = narrowStopChips(chips, 'no-such-id', '파리바게뜨');
+  assert.equal(out, chips, '매칭이 없으면 새 배열을 만들지 않는다 — 호출부가 이걸로 무변화를 판단한다');
 });

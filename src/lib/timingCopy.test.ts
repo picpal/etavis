@@ -21,10 +21,18 @@ test('출처를 모르면 추정으로 본다 — 목 데이터셋', () => {
   assert.equal(timingCopy(undefined, 'car').approx, '약 ');
 });
 
-test('입력 화면 안내는 모드별', () => {
+test('직행만 실측(provider_direct_only) — 약·전용 배너·판정 안 함', () => {
+  assert.deepEqual(timingCopy('provider_direct_only', 'transit'), { approx: '약 ', banner: '직행은 시간표 조회 · 경유 추가시간은 추정', showVerdict: false });
+});
+
+test('입력 화면 안내 — 대중교통은 직행 실측 사실을 말한다', () => {
+  assert.equal(introCopy('transit'), '대중교통 직행은 시간표 기준 · 경유지 추가시간은 아직 추정이에요');
+  assert.equal(introCopy('walk'), '도보 시간은 아직 추정이에요 · 도착 시각은 참고만');
   assert.equal(introCopy('car'), '직선거리가 아니라 실제 소요시간으로 계산해요');
-  assert.equal(introCopy('transit'), '도보·대중교통 시간은 아직 추정이에요 · 도착 시각은 참고만');
-  assert.equal(introCopy('walk'), '도보·대중교통 시간은 아직 추정이에요 · 도착 시각은 참고만');
+});
+
+test('1안 근거 — 직행만 실측', () => {
+  assert.equal(rationaleCopy('provider_direct_only', 3), '직행은 실측, 경유는 추정으로 계산한 경로예요');
 });
 
 test('1안 근거 — 실측이면 횟수, 추정이면 실측 전', () => {

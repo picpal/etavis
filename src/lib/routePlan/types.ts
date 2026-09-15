@@ -50,8 +50,14 @@ export type PlanInput = {
   order: 'auto' | 'locked';
 };
 
-/** 시간의 출처. provider = 라우팅 공급자 응답, estimate = 하버사인 목. 화면 문구는 이걸로 가른다 */
-export type TimingSource = 'provider' | 'estimate';
+/** 시간의 출처. provider = 전부 공급자 응답, provider_direct_only = 직행만 공급자·경유 조합은 추정(대중교통 5단계), estimate = 하버사인 목 */
+export type TimingSource = 'provider' | 'provider_direct_only' | 'estimate';
+
+export type TransitStop = { name: string; lat: number; lng: number };
+export type TransitLeg =
+  | { kind: 'walk'; durationMin: number; distanceM: number }
+  | { kind: 'transit'; mode: 'SUBWAY' | 'BUS' | 'TRAIN' | 'OTHER'; line: string; from: TransitStop; to: TransitStop; durationMin: number; stops: number | null; departAt: string | null; arriveAt: string | null };
+export type TransitItinerary = { durationMin: number; distanceM: number; legs: TransitLeg[] };
 
 export type RouteSection = { durationMin: number; distanceKm: number };
 export type RouteResult = {
@@ -62,6 +68,8 @@ export type RouteResult = {
   sections: RouteSection[];
   /** 없으면 estimate 로 본다 — 찍지 않은 쪽이 실측을 주장할 수 없다 */
   source?: TimingSource;
+  /** 대중교통 직행일 때 서버가 준 경로들(1위가 [0]). 앵커(6단계)의 재료 */
+  transit?: TransitItinerary[];
 };
 
 export interface RouteProvider {

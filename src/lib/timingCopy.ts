@@ -17,18 +17,29 @@ const BANNER: Record<Mode, string> = {
   car: '소요시간은 추정이에요 · 서버 연결 전',
 };
 
+const BANNER_DIRECT_ONLY: Record<Mode, string> = {
+  transit: '직행은 시간표 조회 · 경유 추가시간은 추정',
+  walk: '직행은 실측 · 경유 추가시간은 추정',
+  car: '직행은 실측 · 경유 추가시간은 추정',
+};
+
 export function timingCopy(source: TimingSource | undefined, mode: Mode, legEstimated = false): TimingCopy {
+  if (source === 'provider') return { approx: legEstimated ? '약 ' : '', banner: null, showVerdict: true };
+  // 직행만 실측 — 도착 시각의 대부분이 추정이라 판정은 안 한다. 다만 배너는 무엇이 실측인지 말한다
+  if (source === 'provider_direct_only') return { approx: '약 ', banner: BANNER_DIRECT_ONLY[mode], showVerdict: false };
   // 출처를 못 밝히면 추정이다 — 목 데이터셋(timingSource 없음)이 여기 온다
-  if (source !== 'provider') return { approx: '약 ', banner: BANNER[mode], showVerdict: false };
-  return { approx: legEstimated ? '약 ' : '', banner: null, showVerdict: true };
+  return { approx: '약 ', banner: BANNER[mode], showVerdict: false };
 }
 
-export function introCopy(mode: Mode): string {
-  return mode === 'car'
-    ? '직선거리가 아니라 실제 소요시간으로 계산해요'
-    : '도보·대중교통 시간은 아직 추정이에요 · 도착 시각은 참고만';
-}
+const INTRO: Record<Mode, string> = {
+  car: '직선거리가 아니라 실제 소요시간으로 계산해요',
+  transit: '대중교통 직행은 시간표 기준 · 경유지 추가시간은 아직 추정이에요',
+  walk: '도보 시간은 아직 추정이에요 · 도착 시각은 참고만',
+};
+export function introCopy(mode: Mode): string { return INTRO[mode]; }
 
 export function rationaleCopy(source: TimingSource, measuredCount: number): string {
-  return source === 'provider' ? `실측 ${measuredCount}회로 확인한 경로예요.` : '추정으로 계산한 경로예요 · 실측 전';
+  if (source === 'provider') return `실측 ${measuredCount}회로 확인한 경로예요.`;
+  if (source === 'provider_direct_only') return '직행은 실측, 경유는 추정으로 계산한 경로예요';
+  return '추정으로 계산한 경로예요 · 실측 전';
 }

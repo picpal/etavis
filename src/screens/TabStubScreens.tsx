@@ -14,6 +14,7 @@ import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
 import { CONGESTION } from '../lib/congestion';
 import { notifyDeadlineRisk, scheduleThanksNotification } from '../notifications';
+import { timingCopy } from '../lib/timingCopy';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
 import { DevSheet } from '../sheets/DevSheet';
@@ -264,7 +265,10 @@ export function TodayScreen() {
     if (params.sheet === 'task' && params.stopId) setTaskStopId(params.stopId);
     if (params.sheet === 'mapapp') setMapAppOpen(true);
   }, [params.sheet, params.stopId]);
-  useDeadlineRiskAlert(state.planConfirmed ? slackMin : null, arriveByLabel);
+  const copy = timingCopy(state.dataset.timingSource, state.mode);
+  // 추정치 위에서는 마감 초과를 판정하지 않는다 — 알림도 같이 막는다
+  const verdictSlack = copy.showVerdict ? slackMin : null;
+  useDeadlineRiskAlert(state.planConfirmed ? verdictSlack : null, arriveByLabel);
 
   if (!state.planConfirmed) {
     return (
@@ -308,7 +312,7 @@ export function TodayScreen() {
     이미 지나온 경유지는 빼고, 앞으로 들를 곳만 적는다.
   */
   const shareMessage = (() => {
-    const lines = ['[Etavia] 같이 가는 길', `${destinationDisplay} ${formatEta(state.destArriveAt)} 도착 예정`];
+    const lines = ['[Etavia] 같이 가는 길', `${destinationDisplay} ${copy.approx}${formatEta(state.destArriveAt)} 도착 예정`];
     const remaining = state.stops.slice(state.passedCount);
     if (remaining.length) lines.push(`들렀다 가요 · ${remaining.map(s => s.name).join(', ')}`);
     if (slackMin != null) {
@@ -346,24 +350,26 @@ export function TodayScreen() {
             <Text style={[type.labelPlain, { color: color.muted }]} numberOfLines={1}>
               {originDisplay} → {destinationDisplay}
             </Text>
-            <Text style={[type.statL, { color: color.ink }]}>{state.totals.totalMin}분</Text>
+            <Text style={[type.statL, { color: color.ink }]}>{copy.approx}{state.totals.totalMin}분</Text>
           </View>
-          <Text style={[type.statS, { color: color.amber }]}>+{state.totals.deltaMin}분</Text>
+          <Text style={[type.statS, { color: color.amber }]}>{copy.approx}+{state.totals.deltaMin}분</Text>
         </View>
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted }}>
-          경유지 {state.totals.stopCount}곳 · {MODE_LABELS[state.mode]} · 도착 예정 {formatEta(state.destArriveAt)}
+          경유지 {state.totals.stopCount}곳 · {MODE_LABELS[state.mode]} · 도착 예정 {copy.approx}{formatEta(state.destArriveAt)}
         </Text>
-        {/* 마감이 있을 때만 여유·초과가 등장한다 */}
-        {slackMin != null && (
+        {/* 마감이 있고 실측일 때만 여유·초과. 추정이면 그 자리에 출처 한 줄 */}
+        {copy.banner ? (
+          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 18, color: color.amberDeep }}>{copy.banner}</Text>
+        ) : verdictSlack != null && (
           <Text
             style={{
               fontFamily: 'Pretendard-SemiBold',
               fontSize: 13,
               lineHeight: 18,
-              color: slackMin < 0 ? color.amberDeep : color.green,
+              color: verdictSlack < 0 ? color.amberDeep : color.green,
             }}
           >
-            {arriveByLabel} · {slackMin < 0 ? `${-slackMin}분 초과` : `${slackMin}분 여유`}
+            {arriveByLabel} · {verdictSlack < 0 ? `${-verdictSlack}분 초과` : `${verdictSlack}분 여유`}
           </Text>
         )}
       </Card>

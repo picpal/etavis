@@ -20,6 +20,7 @@ import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { TaskSheet } from '../sheets/TaskSheet';
+import { timingCopy } from '../lib/timingCopy';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Timeline'>;
@@ -30,6 +31,7 @@ let guideSeen = false;
 export function TimelineScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { state, reorderStops, removeStop, replaceStop, destinationDisplay, originDisplay, slackMin, arriveByLabel, confirmPlan, departAtLabel } = usePlan();
+  const copy = timingCopy(state.dataset.timingSource, state.mode);
   const [taskStopId, setTaskStopId] = useState<string | null>(null);
   const [candidateStopId, setCandidateStopId] = useState<string | null>(null);
 
@@ -232,12 +234,15 @@ export function TimelineScreen({ navigation, route }: Props) {
           padV={13}
           valueSize={17}
           items={[
-            { label: '총 예상', value: `${state.totals.totalMin}분` },
+            { label: '총 예상', value: `${copy.approx}${state.totals.totalMin}분` },
             { label: '경유지', value: `${state.totals.stopCount}곳` },
-            { label: '직행 대비', value: `+${state.totals.deltaMin}분`, tint: color.amber },
+            { label: '직행 대비', value: `${copy.approx}+${state.totals.deltaMin}분`, tint: color.amber },
           ]}
         />
-        {slackMin != null && (
+        {copy.banner && (
+          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, textAlign: 'center', color: color.amberDeep }}>{copy.banner}</Text>
+        )}
+        {slackMin != null && copy.showVerdict && (
           <Text
             style={{
               fontFamily: 'Pretendard-SemiBold',

@@ -26,6 +26,7 @@ import { initialArrivalState, profileFor, stepArrival, type ArrivalState, type F
 import { flushTrackLog, logTrack } from '../lib/trackLog';
 import { shouldLogFix, shouldLogGeofence, type FixMark, type GeofenceMark } from '../lib/trackLogFormat';
 import { usePlanFlow } from './planFlowProvider';
+import { timingCopy } from '../lib/timingCopy';
 
 /** 위치 공급원 — live는 실제 GPS, 나머지는 개발용 시뮬레이션 */
 export type SimMode = 'off' | 'live' | 'driving' | 'deviate' | 'stuck';
@@ -95,6 +96,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     destArriveAt: state.destArriveAt,
     arrivedAtDest: state.arrivedAtDest,
     arriveByMin: state.arriveByMin,
+    timingSource: state.dataset.timingSource,
   });
   planRef.current = {
     stops: state.stops,
@@ -104,6 +106,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     destArriveAt: state.destArriveAt,
     arrivedAtDest: state.arrivedAtDest,
     arriveByMin: state.arriveByMin,
+    timingSource: state.dataset.timingSource,
   };
   const actionsRef = useRef({ arriveAtStop, departStop, arriveAtDestination });
   actionsRef.current = { arriveAtStop, departStop, arriveAtDestination };
@@ -250,10 +253,11 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         if (!notifiedRef.current.dest) {
           notifiedRef.current.dest = true;
           const p = planRef.current;
+          const copy = timingCopy(p.timingSource, p.mode);
           logTrack({ k: 'notify', kind: 'dest', id: 'D' });
           void notifyDestinationArrival(
             destinationDisplay,
-            p.arriveByMin == null || toMin(p.destArriveAt) <= p.arriveByMin,
+            copy.showVerdict && (p.arriveByMin == null || toMin(p.destArriveAt) <= p.arriveByMin),
             formatEta(p.destArriveAt),
           );
         }
@@ -274,7 +278,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           logTrack({ k: 'notify', kind: 'nextLeg', id: after?.id ?? 'D' });
           void notifyNextLeg(
             after?.name ?? destinationDisplay,
-            formatEta(after?.arriveAt ?? planRef.current.destArriveAt),
+            `${timingCopy(planRef.current.timingSource, planRef.current.mode).approx}${formatEta(after?.arriveAt ?? planRef.current.destArriveAt)}`,
             planRef.current.mode === 'transit',
           );
         }

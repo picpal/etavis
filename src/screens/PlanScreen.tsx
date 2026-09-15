@@ -14,6 +14,7 @@ import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { SLOT_STATUS_HELP, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
+import { introCopy } from '../lib/timingCopy';
 import type { SlotStatus } from '../lib/routePlan/types';
 import type { RootStackParamList } from '../../App';
 
@@ -80,7 +81,7 @@ function AssistantShell({ children }: { children: React.ReactNode }) {
 }
 
 /** 어시스턴트 안내 버블 — 예시 문장 제시 */
-function AssistantBubble() {
+function AssistantBubble({ mode }: { mode: 'car' | 'walk' | 'transit' }) {
   return (
     <AssistantShell>
       <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 20, color: color.body }}>
@@ -90,7 +91,7 @@ function AssistantBubble() {
         “가는 길에 올리브영 들르고 빵도 사가고 싶어”
       </Text>
       <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
-        직선거리가 아니라 실제 소요시간으로 계산해요
+        {introCopy(mode)}
       </Text>
     </AssistantShell>
   );
@@ -221,7 +222,7 @@ export function PlanScreen({ navigation }: Props) {
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
         >
-          <AssistantBubble />
+          <AssistantBubble mode={state.mode} />
           {state.chat.map((msg, i) => (
             <Bubble key={i}>{msg}</Bubble>
           ))}

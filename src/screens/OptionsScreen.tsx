@@ -13,6 +13,7 @@ import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { StopList } from '../components/StopList';
+import { timingCopy } from '../lib/timingCopy';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -126,10 +127,9 @@ export function OptionsScreen({ navigation }: Props) {
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
   const late = slack != null && slack < 0;
-  /* 서버는 자동차만 실측한다. 도보·대중교통은 추정이므로 "약"을 붙여야 한다 —
-     usingServer 만 보면 대중교통 추정치를 실측인 양 말하게 된다 */
-  const measured = flow.usingServer && req.mode === 'car';
-  const approx = current.timing.estimated || !measured ? '약 ' : '';
+  /* 출처는 결과가 안다. 서버 연결 여부만으로는 대중교통 추정치를 실측인 양 말하게 된다 */
+  const copy = timingCopy(result.timingSource, req.mode, current.timing.estimated);
+  const approx = copy.approx;
   const stale = request ? flow.isStale(request) : false;
 
   // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
@@ -164,20 +164,24 @@ export function OptionsScreen({ navigation }: Props) {
         {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로 */}
         <View style={{ gap: 10, paddingHorizontal: 2, paddingTop: 2 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            {/* 답은 항상 도착 시각. 마감이 있으면 옆에 '여유'/'늦어요' 한마디 — 늦으면 시각도 붉게 */}
-            <Text style={[type.displayXL, { color: late ? color.late : color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
-            {slack != null && (
+            {/* 답은 항상 도착 시각. 마감이 있으면 옆에 '여유'/'늦어요' 한마디 — 늦으면 시각도 붉게.
+                추정이면 판정을 내지 않는다 — 추정치 위의 "여유"는 거짓 정밀도다 */}
+            <Text style={[type.displayXL, { color: late && copy.showVerdict ? color.late : color.ink }]}>{approx}{hhmm(arriveMin)} 도착</Text>
+            {slack != null && copy.showVerdict && (
               <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: late ? color.late : color.green }}>
                 {late ? `${-slack}분 늦어요` : `${slack}분 여유`}
               </Text>
             )}
           </View>
+          {copy.banner && (
+            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 18, color: color.amberDeep }}>{copy.banner}</Text>
+          )}
           <EtaBar
             departMin={req.departAtMin}
             directMin={result.directMin}
             totalMin={current.timing.totalMin}
             arriveByMin={req.arriveByMin}
-            estimated={current.timing.estimated || !measured}
+            estimated={approx !== ''}
           />
         </View>
 
@@ -198,7 +202,7 @@ export function OptionsScreen({ navigation }: Props) {
           slots={state.slots}
           departAtMin={req.departAtMin}
           arriveByMin={req.arriveByMin}
-          late={late}
+          late={late && copy.showVerdict}
           approx={approx}
           onPick={slotId => { setPickSlot(slotId); }}
           onRemove={removeStop}

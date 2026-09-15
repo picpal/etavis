@@ -1,0 +1,1196 @@
+{
+ "routes": [
+  {
+   "legs": [
+    {
+     "steps": [
+      {
+       "distanceMeters": 315,
+       "staticDuration": "316s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.5245993,
+         "longitude": 126.8606959
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "46s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 64,
+       "staticDuration": "20s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 5688,
+       "staticDuration": "720s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "여의도",
+          "location": {
+           "latLng": {
+            "latitude": 37.521625,
+            "longitude": 126.92407899999999
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T00:49:00Z",
+         "departureStop": {
+          "name": "목동",
+          "location": {
+           "latLng": {
+            "latitude": 37.526097,
+            "longitude": 126.864538
+           }
+          }
+         },
+         "departureTime": "2026-09-16T00:37:00Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 9:49"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 9:37"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "마천역 방면",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "서울도시철도공사",
+           "uri": "http://www.odsay.com/Subway/LineInfo.asp?CID=1000&LMenu=2/"
+          }
+         ],
+         "name": "서울지하철",
+         "color": "#893bb6",
+         "nameShort": "5호선",
+         "textColor": "#ffffff",
+         "vehicle": {
+          "name": {
+           "text": "지하철"
+          },
+          "type": "SUBWAY",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/subway2.png"
+         }
+        },
+        "stopCount": 6
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "staticDuration": "22s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 37,
+       "staticDuration": "60s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "43s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 42,
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521764,
+         "longitude": 126.92403399999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 908,
+       "staticDuration": "120s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521764,
+         "longitude": 126.92403399999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "국회의사당",
+          "location": {
+           "latLng": {
+            "latitude": 37.528242,
+            "longitude": 126.91776499999999
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T00:55:00Z",
+         "departureStop": {
+          "name": "여의도",
+          "location": {
+           "latLng": {
+            "latitude": 37.521764,
+            "longitude": 126.92403399999999
+           }
+          }
+         },
+         "departureTime": "2026-09-16T00:53:00Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 9:55"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 9:53"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "개화역 방면",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "서울9호선운영(주)",
+           "uri": "http://www.odsay.com/Subway/LineInfo.asp?CID=1000&LMenu=2"
+          }
+         ],
+         "name": "서울지하철",
+         "color": "#bf9f1e",
+         "nameShort": "9호선",
+         "textColor": "#000000",
+         "vehicle": {
+          "name": {
+           "text": "지하철"
+          },
+          "type": "SUBWAY",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/subway2.png"
+         }
+        },
+        "stopCount": 1
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "staticDuration": "15s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 44,
+       "staticDuration": "57s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528641,
+         "longitude": 126.91783599999998
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 120,
+       "staticDuration": "121s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528641,
+         "longitude": 126.91783599999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.529477,
+         "longitude": 126.9186973
+        }
+       },
+       "travelMode": "WALK"
+      }
+     ]
+    }
+   ],
+   "distanceMeters": 7218,
+   "duration": "1655s"
+  },
+  {
+   "legs": [
+    {
+     "steps": [
+      {
+       "distanceMeters": 315,
+       "staticDuration": "316s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.5245993,
+         "longitude": 126.8606959
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "46s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 64,
+       "staticDuration": "20s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 5688,
+       "staticDuration": "660s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "여의도",
+          "location": {
+           "latLng": {
+            "latitude": 37.521625,
+            "longitude": 126.92407899999999
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T00:58:00Z",
+         "departureStop": {
+          "name": "목동",
+          "location": {
+           "latLng": {
+            "latitude": 37.526097,
+            "longitude": 126.864538
+           }
+          }
+         },
+         "departureTime": "2026-09-16T00:47:00Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 9:58"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 9:47"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "마천역 방면",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "서울도시철도공사",
+           "uri": "http://www.odsay.com/Subway/LineInfo.asp?CID=1000&LMenu=2/"
+          }
+         ],
+         "name": "서울지하철",
+         "color": "#893bb6",
+         "nameShort": "5호선",
+         "textColor": "#ffffff",
+         "vehicle": {
+          "name": {
+           "text": "지하철"
+          },
+          "type": "SUBWAY",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/subway2.png"
+         }
+        },
+        "stopCount": 6
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "staticDuration": "22s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 37,
+       "staticDuration": "60s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521625,
+         "longitude": 126.92407899999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "43s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 42,
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521493,
+         "longitude": 126.92368699999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.521764,
+         "longitude": 126.92403399999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 908,
+       "staticDuration": "60s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.521764,
+         "longitude": 126.92403399999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "국회의사당",
+          "location": {
+           "latLng": {
+            "latitude": 37.528242,
+            "longitude": 126.91776499999999
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T01:01:00Z",
+         "departureStop": {
+          "name": "여의도",
+          "location": {
+           "latLng": {
+            "latitude": 37.521764,
+            "longitude": 126.92403399999999
+           }
+          }
+         },
+         "departureTime": "2026-09-16T01:00:00Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 10:01"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 10:00"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "개화역 방면",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "서울9호선운영(주)",
+           "uri": "http://www.odsay.com/Subway/LineInfo.asp?CID=1000&LMenu=2"
+          }
+         ],
+         "name": "서울지하철",
+         "color": "#bf9f1e",
+         "nameShort": "9호선",
+         "textColor": "#000000",
+         "vehicle": {
+          "name": {
+           "text": "지하철"
+          },
+          "type": "SUBWAY",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/subway2.png"
+         }
+        },
+        "stopCount": 1
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "staticDuration": "15s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 44,
+       "staticDuration": "57s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528242,
+         "longitude": 126.91776499999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528641,
+         "longitude": 126.91783599999998
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 120,
+       "staticDuration": "121s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528641,
+         "longitude": 126.91783599999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.529477,
+         "longitude": 126.9186973
+        }
+       },
+       "travelMode": "WALK"
+      }
+     ]
+    }
+   ],
+   "distanceMeters": 7218,
+   "duration": "1415s"
+  },
+  {
+   "legs": [
+    {
+     "steps": [
+      {
+       "distanceMeters": 315,
+       "staticDuration": "316s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.5245993,
+         "longitude": 126.8606959
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "46s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 64,
+       "staticDuration": "20s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.525968,
+         "longitude": 126.86382700000001
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 6686,
+       "staticDuration": "840s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.526097,
+         "longitude": 126.864538
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "여의나루",
+          "location": {
+           "latLng": {
+            "latitude": 37.527131,
+            "longitude": 126.93300999999998
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T00:51:00Z",
+         "departureStop": {
+          "name": "목동",
+          "location": {
+           "latLng": {
+            "latitude": 37.526097,
+            "longitude": 126.864538
+           }
+          }
+         },
+         "departureTime": "2026-09-16T00:37:00Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 9:51"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 9:37"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "마천역 방면",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "서울도시철도공사",
+           "uri": "http://www.odsay.com/Subway/LineInfo.asp?CID=1000&LMenu=2/"
+          }
+         ],
+         "name": "서울지하철",
+         "color": "#893bb6",
+         "nameShort": "5호선",
+         "textColor": "#ffffff",
+         "vehicle": {
+          "name": {
+           "text": "지하철"
+          },
+          "type": "SUBWAY",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/subway2.png"
+         }
+        },
+        "stopCount": 7
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "staticDuration": "17s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "staticDuration": "0s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 48,
+       "staticDuration": "33s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.527131,
+         "longitude": 126.93300999999998
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.5271,
+         "longitude": 126.93246
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 43,
+       "staticDuration": "43s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.5271,
+         "longitude": 126.93246
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.527383,
+         "longitude": 126.932112
+        }
+       },
+       "travelMode": "WALK"
+      },
+      {
+       "distanceMeters": 1580,
+       "staticDuration": "282s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.527383,
+         "longitude": 126.932112
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.528335999999996,
+         "longitude": 126.91806299999999
+        }
+       },
+       "transitDetails": {
+        "stopDetails": {
+         "arrivalStop": {
+          "name": "국회의사당역.국민은행",
+          "location": {
+           "latLng": {
+            "latitude": 37.528335999999996,
+            "longitude": 126.91806299999999
+           }
+          }
+         },
+         "arrivalTime": "2026-09-16T01:08:25Z",
+         "departureStop": {
+          "name": "여의나루역",
+          "location": {
+           "latLng": {
+            "latitude": 37.527383,
+            "longitude": 126.932112
+           }
+          }
+         },
+         "departureTime": "2026-09-16T01:03:43Z"
+        },
+        "localizedValues": {
+         "arrivalTime": {
+          "time": {
+           "text": "오전 10:08"
+          },
+          "timeZone": "Asia/Seoul"
+         },
+         "departureTime": {
+          "time": {
+           "text": "오전 10:03"
+          },
+          "timeZone": "Asia/Seoul"
+         }
+        },
+        "headsign": "용못내공원",
+        "headway": "600s",
+        "transitLine": {
+         "agencies": [
+          {
+           "name": "경기도버스운송사업조합",
+           "uri": "http://www.odsay.com/bus/Kyeonggi_Main.asp?CID=1&LMenu=1"
+          }
+         ],
+         "name": "경기 일반버스",
+         "color": "#374ff2",
+         "nameShort": "10",
+         "textColor": "#ffffff",
+         "vehicle": {
+          "name": {
+           "text": "버스"
+          },
+          "type": "BUS",
+          "iconUri": "//maps.gstatic.com/mapfiles/transit/iw2/6/bus2.png"
+         }
+        },
+        "stopCount": 4
+       },
+       "travelMode": "TRANSIT"
+      },
+      {
+       "distanceMeters": 138,
+       "staticDuration": "139s",
+       "startLocation": {
+        "latLng": {
+         "latitude": 37.528335999999996,
+         "longitude": 126.91806299999999
+        }
+       },
+       "endLocation": {
+        "latLng": {
+         "latitude": 37.529477,
+         "longitude": 126.9186973
+        }
+       },
+       "travelMode": "WALK"
+      }
+     ]
+    }
+   ],
+   "distanceMeters": 8874,
+   "duration": "2406s"
+  }
+ ]
+}

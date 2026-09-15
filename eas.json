@@ -1,0 +1,23 @@
+{
+  "cli": {
+    "version": ">= 24.5.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "autoIncrement": true,
+      "ios": {
+        "simulator": false
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "official.picpal@gmail.com"
+      }
+    }
+  }
+}

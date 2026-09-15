@@ -37,6 +37,10 @@ export type Slot = {
   /** 추출이 정한 경유지 종류. 'category' 일 때만 보강·추천이 돈다 */
   stopKind: 'brand' | 'category' | 'specific';
   searchStatus?: SearchStatus;
+  /** 마지막으로 쓴 검색 반지름(m). 로그 판정용 */
+  searchRadiusM?: number;
+  /** 이 슬롯이 부른 장소 검색 횟수. 로그 판정용 */
+  searchCalls?: number;
 };
 
 export type PlanInput = {

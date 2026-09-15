@@ -149,3 +149,19 @@ test('후보 시트 교체는 슬롯과 후보 이름을 남긴다', () => {
   assert.equal(log?.d?.query, '카페');
   assert.equal(log?.d?.to, '제니스커피');
 });
+
+test('plan.slots — 후보 이름·반지름·검색 횟수를 남긴다', () => {
+  const slots = [{
+    id: 'sl-1', query: '올리브영', stopKind: 'category', dwellMin: 10, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 5,
+    candidates: [
+      { id: 'k-1', name: '올리브영 목동점', coord: { latitude: 37.5, longitude: 127.0 } },
+      { id: 'k-2', name: '올리브영 국회의사당역점', coord: { latitude: 37.52, longitude: 126.91 } },
+    ],
+  }] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
+  assert.equal(log?.a, 'plan.slots');
+  assert.equal(log?.d?.found, '올리브영 2곳');
+  assert.equal(log?.d?.search, '올리브영 r=800 calls=5');
+  assert.equal(log?.d?.picks, '올리브영: 올리브영 목동점, 올리브영 국회의사당역점');
+});

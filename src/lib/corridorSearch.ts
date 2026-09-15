@@ -40,8 +40,10 @@ export async function searchAlong(
   query: string,
   opts: CorridorSearchOptions,
   search: SearchFn,
-): Promise<{ candidates: PlaceCandidate[]; status: SearchStatus; radiusM: number }> {
+): Promise<{ candidates: PlaceCandidate[]; status: SearchStatus; radiusM: number; calls: number }> {
   const samples = opts.samples ?? 5;
+  let calls = 0;
+  const countedSearch: SearchFn = (q, near, r) => { calls++; return search(q, near, r); };
   const L = polylineLengthM(poly);
   const points: LatLng[] = [];
   for (let i = 0; i < samples; i++) points.push(pointAtProgress(poly, (L * i) / (samples - 1)).point);
@@ -63,19 +65,19 @@ export async function searchAlong(
   let found: PlaceCandidate[] = [];
   while (true) {
     const r = radiusM;
-    found = merge(await Promise.all(points.map(p => search(query, p, r))));
-    if (found.length >= target) return { candidates: byCorridor(found), status: 'ok', radiusM: r };
+    found = merge(await Promise.all(points.map(p => countedSearch(query, p, r))));
+    if (found.length >= target) return { candidates: byCorridor(found), status: 'ok', radiusM: r, calls };
     if (r >= opts.maxRadiusM) break;
     radiusM = Math.min(opts.maxRadiusM, r * 2);
   }
-  if (found.length >= opts.need) return { candidates: byCorridor(found), status: 'ok', radiusM };
-  if (found.length > 0) return { candidates: byCorridor(found), status: 'short', radiusM };
+  if (found.length >= opts.need) return { candidates: byCorridor(found), status: 'ok', radiusM, calls };
+  if (found.length > 0) return { candidates: byCorridor(found), status: 'short', radiusM, calls };
 
   // 상한까지 0건 — 더 멀리 한 번만 보고 가장 가까운 3곳
   const farR = opts.farRadiusM ?? 20_000;
   if (farR > opts.maxRadiusM) {
-    const far = merge(await Promise.all(points.map(p => search(query, p, farR))));
-    if (far.length > 0) return { candidates: byCorridor(far).slice(0, 3), status: 'far', radiusM: farR };
+    const far = merge(await Promise.all(points.map(p => countedSearch(query, p, farR))));
+    if (far.length > 0) return { candidates: byCorridor(far).slice(0, 3), status: 'far', radiusM: farR, calls };
   }
-  return { candidates: [], status: 'none', radiusM };
+  return { candidates: [], status: 'none', radiusM, calls };
 }

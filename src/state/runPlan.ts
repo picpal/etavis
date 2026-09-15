@@ -108,6 +108,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           id: st.id, query: st.query, stopKind: st.stopKind,
           candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, MAX_CANDIDATES), dwellMin: dwellFor(st.query),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: found.status,
+          searchRadiusM: found.radiusM, searchCalls: found.calls,
         } satisfies Slot;
       })));
     } catch (e) {

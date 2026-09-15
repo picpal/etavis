@@ -148,3 +148,22 @@ test('target 없으면 need 가 곧 target — 기존 동작', async () => {
   assert.equal(r.status, 'ok');
   assert.equal(calls.length, 5);
 });
+
+test('calls — 한 회차는 샘플 5점', async () => {
+  // 경로 한가운데. 50% 샘플이 바로 여기라 1회차(5번 호출)에 찾는다
+  const mid = at(37.5, 127.0568);
+  const { fn, calls } = catalogSearch([{ id: 'p1', name: '한곳', coord: mid }]);
+  const r = await searchAlong(poly, '카페', { need: 1, initialRadiusM: 2000, maxRadiusM: 8000 }, fn);
+  assert.equal(r.candidates.length, 1);
+  assert.equal(r.calls, calls.length);
+  assert.equal(r.calls, 5);
+});
+
+test('calls — 못 찾으면 회차마다 5씩 는다', async () => {
+  // 어디에도 없다 → 2000 → 4000 → 8000 세 회차 + far(기본 20000m) 한 회차
+  const { fn, calls } = catalogSearch([{ id: 'z', name: '딴데', coord: at(38.2, 128.5) }]);
+  const r = await searchAlong(poly, '카페', { need: 1, initialRadiusM: 2000, maxRadiusM: 8000 }, fn);
+  assert.equal(r.status, 'none');
+  assert.equal(r.calls, calls.length);
+  assert.equal(r.calls, 20, '5점 × (3회차 + far 1회차)');
+});

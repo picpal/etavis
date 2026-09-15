@@ -155,7 +155,13 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
     case 'SLOTS':
       return {
         a: 'plan.slots',
-        d: { found: action.slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · ') },
+        d: {
+          found: action.slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · '),
+          search: action.slots.map(s => `${s.query} r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`).join(' · '),
+          // 이름을 전부 남긴다 — "기대한 가게가 후보에 들어왔나"가 6단계의 합격 조건이라
+          // 상위 몇 개만 남기면 판정을 못 한다
+          picks: cut(action.slots.map(s => `${s.query}: ${s.candidates.map(c => c.name).join(', ')}`).join(' · '), 600),
+        },
       };
     case 'RESULT': {
       const best = action.result.options[0];

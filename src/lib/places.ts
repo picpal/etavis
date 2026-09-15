@@ -11,6 +11,7 @@
 import Constants from 'expo-constants';
 import { LatLng } from '../data/mockData';
 import { haversineM } from './geo';
+import { kakaoCategoryFor } from './placeCategory';
 import type { PlaceCandidate } from './routePlan/types';
 
 export type Place = {
@@ -135,6 +136,10 @@ type KakaoKeywordDoc = {
   place_name: string;
   road_address_name: string;
   address_name: string;
+  /** 업종 코드(BK9 은행, PK6 주차장 …). 브랜드 매장은 빈 값일 수 있다 */
+  category_group_code?: string;
+  /** "금융,보험 > 금융서비스 > 은행 > ATM" 같은 전체 경로 */
+  category_name?: string;
   x: string; // 경도
   y: string; // 위도
 };
@@ -159,6 +164,14 @@ const kakaoProvider: PlaceSearchProvider = {
   key: 'kakao',
   async search(query, near, radiusM) {
     const keywordParams = new URLSearchParams({ query, size: '15' });
+    /*
+      카카오는 이름만 매칭한다 — "국민은행"에 "국민은행앞1 공영노상주차장"(PK6)과
+      "현대그린푸드국민은행 여의도전산센터"(FD6)가 같이 온다. 2026-09-15 시뮬레이터에서
+      그 주차장이 1순위 추천이 됐다. 아는 업종이면 코드로 서버에서 거른다.
+      모르는 업종(올리브영 같은 브랜드)은 코드 자체가 없어서 찍으면 0건이 된다 — 그래서 null.
+    */
+    const categoryCode = kakaoCategoryFor(query);
+    if (categoryCode) keywordParams.set('category_group_code', categoryCode);
     // 기준 좌표를 주면 카카오가 가까운 순으로 정렬해 준다.
     // 국내 좌표일 때만 넘긴다 — 해외에 있으면서 한국 장소를 찾는 경우 거리순이 무의미하다
     if (near && isInKorea(near)) {
@@ -177,8 +190,11 @@ const kakaoProvider: PlaceSearchProvider = {
     */
     const [keyword, address] = await Promise.all([
       kakaoFetch('keyword', keywordParams),
-      // 주소 검색은 보조라, 실패해도 장소 결과는 살린다
-      kakaoFetch('address', new URLSearchParams({ query, size: '5' })).catch(() => ({ documents: [] })),
+      // 업종을 물었으면 주소 결과는 부르지 않는다 — 카테고리로 거른 것을 뒷문으로 다시 들인다.
+      // 주소 검색은 POI 가 없는 순수 주소를 메우는 보조라, 업종 질의에는 쓸모가 없다.
+      categoryCode
+        ? Promise.resolve({ documents: [] })
+        : kakaoFetch('address', new URLSearchParams({ query, size: '5' })).catch(() => ({ documents: [] })),
     ]);
 
     const places: Place[] = ((keyword.documents ?? []) as KakaoKeywordDoc[]).map(d => ({

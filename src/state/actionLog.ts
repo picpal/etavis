@@ -52,7 +52,8 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
           order: i.order,
           arriveBy: i.arriveBy,
           mode: i.mode,
-          // 되묻기·거절은 '못 알아들었다'는 신호다. 세어두면 어떤 문장이 막히는지 보인다
+          // ask는 '못 알아들었다'만 뜻하지 않는다 — 업종을 좁히는 되묻기(stop:<query>)처럼
+          // 정상 흐름에서 나오는 질문도 여기 섞인다. 세어두면 어떤 문장이 되묻는지 보인다
           ask: i.ambiguous.length,
           reject: i.reject ? cut(i.reject.say, 60) : null,
         },

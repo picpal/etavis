@@ -96,3 +96,45 @@ test('APPLY_OPTION 도 같은 자리다 — 확정이면(planConfirmed) 진행 �
   assert.equal(after.arrivedAtDest, false);
   assert.equal(after.atStop, false);
 });
+
+/*
+  RESET_CHAT — "새로 계획하기로 들어가면 지난 대화가 없어야 한다".
+
+  이 액션 자체는 처음부터 대화를 비웠다. 빠져 있던 건 **부르는 자리**였다:
+  A2 가 나갈 때(`beforeRemove`)만 불렀는데 그 훅은 탭바로 나가는 경로에서 아예 안 뛴다
+  (2026-09-16 시뮬레이터 실측: 재진입까지 beforeRemove 0회). 그래서 부르는 자리를
+  '나갈 때'에서 '새로 시작할 때'(HomeScreen.enterChat)로 옮겼다.
+  여기서는 그 자리가 기대하는 계약을 못박는다 — 어느 갈래로 가도 chat 은 비어야 한다.
+*/
+test('RESET_CHAT 은 대화를 비운다 — 확정 전(칩까지 되돌리는 갈래)', () => {
+  const s = run(fresh(), [
+    { type: 'PUSH_CHAT', text: '가는 길에 편의점 들러줘' },
+    { type: 'PUSH_CHAT', text: 'GS25로' },
+  ]);
+  // fresh() 는 개발 메뉴의 목 데이터셋이라 예시 대화가 한 줄 깔려 있다 — 1 + 2
+  assert.equal(s.chat.length, 3);
+  const after = planReducer(s, { type: 'RESET_CHAT', mode: s.mode, arriveByMin: null, committed: false });
+  assert.deepEqual(after.chat, [], '대화가 남으면 새 계획에 남의 말이 먼저 서 있다');
+});
+
+test('RESET_CHAT 은 확정된 계획에서도 대화를 비운다 — 칩은 남기더라도 기록은 비운다', () => {
+  const s = run(fresh(), [{ type: 'CONFIRM_PLAN' }, { type: 'PUSH_CHAT', text: '편의점도' }]);
+  const after = planReducer(s, { type: 'RESET_CHAT', mode: s.mode, arriveByMin: s.arriveByMin, committed: true });
+  assert.deepEqual(after.chat, []);
+  // committed 갈래는 칩·경유지를 그대로 둔다 — 확정한 계획을 대화 지운다고 흔들면 안 된다
+  assert.equal(after.chips, s.chips, 'committed 면 칩은 같은 참조여야 한다');
+  assert.deepEqual(after.stops, s.stops);
+});
+
+test('두 번째 RESET_CHAT 은 아무것도 바꾸지 않는다 — 진입할 때마다 불러도 안전해야 한다', () => {
+  /* A2 로 들어갈 때마다 부르는 액션이라 멱등해야 한다. 안 그러면 대화 없이 들어갔다
+     나오기만 해도 계획이 조금씩 달라진다 */
+  const entry = { mode: fresh().mode, arriveByMin: null };
+  const once = planReducer(fresh(), { type: 'RESET_CHAT', ...entry, committed: false });
+  const twice = planReducer(once, { type: 'RESET_CHAT', ...entry, committed: false });
+  assert.deepEqual(twice.chat, []);
+  assert.deepEqual(twice.stops, once.stops, '두 번 불렀다고 경유지가 달라지면 안 된다');
+  assert.deepEqual(twice.chips, once.chips);
+  assert.equal(twice.mode, once.mode);
+  assert.equal(twice.destinationName, once.destinationName, '목적지는 A1에서 고른 것이라 대화와 무관하다');
+});

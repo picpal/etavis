@@ -21,7 +21,7 @@ const MODES = MODE_KEYS.map(k => MODE_TEXT[k]);
 
 export function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { state, setMode, arriveByLabel, swapEndpoints } = usePlan();
+  const { state, setMode, arriveByLabel, swapEndpoints, resetChat } = usePlan();
   const here = useCurrentPlace();
   const [devOpen, setDevOpen] = useState(false);
   const [arriveOpen, setArriveOpen] = useState(false);
@@ -31,13 +31,33 @@ export function HomeScreen({ navigation }: Props) {
   // 목적지 미지정 상태에서 채팅을 시작하면, 목적지부터 고르게 한 뒤 이어서 이동
   const [continueAfterPick, setContinueAfterPick] = useState(false);
 
+  /*
+    A2로 들어간다 — 지난 대화를 여기서 지운다.
+
+    원래는 A2가 **나갈 때** `beforeRemove` 에서 지웠다. 그 훅은 믿을 수 없다:
+    탭바의 '진행중'은 A2 위에 화면을 얹을 뿐이라 A2가 제거되지 않아 훅이 아예 안 뛴다
+    (2026-09-16 시뮬레이터 실측: 재진입까지 beforeRemove 0회 · unmount 0회).
+    그러면 새 계획을 시작해도 남의 대화가 먼저 서 있다.
+
+    나가는 길을 전부 막는 대신 들어오는 길에서 지운다 — 들어오는 길은 여기 하나뿐이고,
+    '새로 만든다'는 뜻이 분명한 자리다. A5·A6의 '대화로 고치기'는 이 함수를 타지 않으므로
+    고치던 대화는 그대로 살아 있다.
+
+    `beforeRemove` 는 남겨둔다 — 거기서 묻는 "대화를 버릴까요?"는 여전히 필요하고,
+    칩·조건 되돌리기도 그쪽 몫이다.
+  */
+  const enterChat = () => {
+    resetChat({ mode: state.mode, arriveByMin: state.arriveByMin });
+    navigation.navigate('Plan');
+  };
+
   const proceedToChat = () => {
     if (!state.destinationName) {
       setContinueAfterPick(true);
       setDestOpen(true);
       return;
     }
-    navigation.navigate('Plan');
+    enterChat();
   };
 
   /*
@@ -287,7 +307,7 @@ export function HomeScreen({ navigation }: Props) {
         onPicked={() => {
           if (continueAfterPick) {
             setContinueAfterPick(false);
-            navigation.navigate('Plan');
+            enterChat();
           }
         }}
       />

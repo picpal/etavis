@@ -25,7 +25,7 @@ Credentials are not set up. Run this command again in interactive mode.
 | `eas whoami` · `env:*` · `config` · `build:list` | ✅ |
 | `eas login` | ❌ 브라우저 콜백 대기 — 터미널에서 |
 | `eas build` (첫 회) | ❌ Apple 로그인 프롬프트 |
-| `eas submit` | ❌ Apple 로그인 프롬프트 (API 키를 등록하면 ✅) |
+| `eas submit` | ❌ 첫 회는 Apple 로그인 프롬프트. 그때 만들어지는 ASC API 키가 EAS 에 남으므로 이후에는 ✅ 일 것으로 본다(§2, 아직 `!` 로 재확인 안 함) |
 
 ## 0. 한 번만 하는 것
 
@@ -161,27 +161,35 @@ remote 모드에서는 무시되고, 두 곳이 서로 다른 말을 하게 된�
 사용자에게 보이는 버전(`expo.version`)만 손으로 올린다.
 실패한 빌드도 번호를 가져가므로 건너뛴 번호가 생기는 건 정상이다.
 
-## 2. 아직 안 한 것 — App Store Connect API 키
+## 2. App Store Connect API 키 — 손으로 만들 게 없었다
 
-등록하면 `eas submit` 에서 **Apple 로그인(비밀번호+2FA)이 사라져** 완전 무인이 된다.
+등록되어 있으면 `eas submit` 이 Apple 비밀번호·2FA 를 묻지 않는다.
 
-**그런데 이 계정은 API 섹션이 잠겨 있다.** 사용자 및 액세스 → 통합 →
-App Store Connect API 로 가면 키 목록 대신 이렇게 나온다:
+**그런데 `eas submit` 이 첫 실행 때 키를 스스로 만들어 EAS 에 올려둔다.**
+"API 키를 만들까요?" 프롬프트에 Yes 하면 끝이고, 이름은 `[Expo] EAS Submit <난수>` 로 붙는다.
+`.p8` 은 EAS 서버에 저장되므로 **받아서 보관할 파일도, `eas.json` 에 적을 경로도 없다.**
+
+확인은 두 곳에서 된다:
+
+| 어디 | 무엇이 보이나 |
+|---|---|
+| expo.dev → 프로젝트 → Credentials → 번들 ID → **Service credentials** | `App Store Connect API key` 행 (Key ID·Issuer ID·Roles) |
+| App Store Connect → 사용자 및 액세스 → 통합 → App Store Connect API | 같은 키가 `활성화됨` 목록에 |
+
+**ASC 웹 UI 쪽은 처음에 잠겨 있다.** 키 목록 대신 이렇게 나온다:
 
 ```
 App Store Connect API에 액세스하려면 권한이 필요합니다.
 조직을 대신하여 액세스를 요청할 수 있습니다.   [ 액세스 요청 ]
 ```
 
-먼저 **`액세스 요청`** 을 눌러야 키를 만들 수 있다. 개인 계정은 본인이 Account
-Holder 라 보통 즉시 활성화된다. 그 뒤:
+`액세스 요청` → 동의 체크 → `제출` 이면 즉시 열린다(개인 계정 기준, 실측).
+**이건 웹에서 키를 보기 위한 것일 뿐**이다 — eas-cli 는 이 화면이 잠겨 있어도
+Apple ID 세션으로 키를 만들어냈다. 열어보면 그 키가 이미 목록에 있다.
 
-1. 키 생성 (역할 `App Manager` 면 충분하다. `Admin` 도 되지만 권한이 넓다.
-   역할은 생성 후 변경 불가 — 좁히려면 폐기하고 다시 만든다)
-2. **`.p8` 다운로드 — 한 번만 받을 수 있다.** `Issuer ID`·`Key ID` 도 같이 적어둔다
-3. `npx eas-cli credentials` → iOS → production → App Store Connect API Key → Upload
-
-`.p8` 은 저장소 밖에 둔다. `.gitignore` 의 `*.p8` 이 막아주긴 한다.
+키를 손으로 만들고 싶다면(역할은 `App Manager` 면 충분하고, 생성 후 변경 불가):
+`npx eas-cli credentials` → iOS → production → App Store Connect API Key → Upload.
+이때 받는 `.p8` 은 **한 번만** 받을 수 있고 저장소 밖에 둔다(`.gitignore` 의 `*.p8`).
 
 ## 알아둘 것
 
@@ -206,3 +214,5 @@ Holder 라 보통 즉시 활성화된다. 그 뒤:
 | `ascAppId` | `6812422135` (`eas.json` 에 기록됨) |
 | TestFlight | https://appstoreconnect.apple.com/apps/6812422135/testflight/ios |
 | 내부 그룹 | `Team (Expo)` · `a4de7bf1-4c5c-49c4-b8de-87915f80f866` |
+| Apple 팀 | `sugeun kim (Individual)` · `6626BYCJG4` — 무료 시절과 **같은 팀**이 유료로 바뀐 것 |
+| ASC API 키 | `[Expo] EAS Submit OPyxZBewOU` · Key `JT9LBRB7GA` · Issuer `f7fbe2e9-0d74-466b-b7aa-6e119f015cdf` (EAS 서버 보관) |

@@ -411,8 +411,10 @@ export function TodayScreen() {
             도착 시각은 원래 바 아래 11px 회색에 묻혀 있었다 — 기다리는 사람이 묻는 건 그 숫자다. */}
         <View style={{ gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-            <View style={{ flexShrink: 1, gap: 7, alignItems: 'flex-start' }}>
-              <TimeBadge label="출발" time={departAtLabel} />
+            <View style={{ flexShrink: 1, gap: 4 }}>
+              <Text style={[type.micro, { color: color.muted }]} numberOfLines={1}>
+                {departAtLabel} 출발
+              </Text>
               <Text
                 style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}
                 numberOfLines={1}
@@ -420,14 +422,15 @@ export function TodayScreen() {
                 {originDisplay}
               </Text>
             </View>
-            <View style={{ flex: 1, gap: 7, alignItems: 'flex-end' }}>
+            <View style={{ flex: 1, gap: 4, alignItems: 'flex-end' }}>
               {/* `경`이 이미 5분 어림임을 말한다 — 앞에 `약`까지 붙이면 '약 23:20경'이 된다.
                   추정이라는 사실은 아래 배너와 소요시간의 `약`이 그대로 지고 있다 */}
-              <TimeBadge
-                label="도착"
-                time={state.arrivedAtDest ? '완료' : formatEta(state.destArriveAt)}
-                tone="arrive"
-              />
+              <Text
+                style={[type.micro, { color: state.arrivedAtDest ? color.green : color.muted }]}
+                numberOfLines={1}
+              >
+                {state.arrivedAtDest ? '도착 완료' : `${formatEta(state.destArriveAt)} 도착`}
+              </Text>
               <Text
                 style={{
                   fontFamily: 'Pretendard-SemiBold',
@@ -545,9 +548,7 @@ export function TodayScreen() {
               <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 19, color: color.ink }}>
                 {originDisplay}
               </Text>
-              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.muted }}>
-                {departAtLabel} 출발
-              </Text>
+              <TimeBadge label="출발" time={departAtLabel} />
             </View>
           </Card>
         </TimelineRow>
@@ -586,16 +587,9 @@ export function TodayScreen() {
               <Text style={{ flex: 1, fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 20, color: color.ink }}>
                 {destinationDisplay}
               </Text>
-              {state.arrivedAtDest ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle size={16} tint={color.green} />
-                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: color.green }}>
-                    도착
-                  </Text>
-                </View>
-              ) : (
-                <Text style={[type.time, { color: color.ink }]}>{state.destArriveAt}</Text>
-              )}
+              {/* 시각은 계획의 것 그대로 쓴다 — 위 경유지 행들이 `23:03`을 쓰는데 여기만
+                  5분 어림(`23:05경`)이면 같은 목록 안에서 눈금이 달라진다 */}
+              <TimeBadge label="도착" time={state.arrivedAtDest ? '완료' : state.destArriveAt} tone="arrive" />
             </View>
           </Card>
         </TimelineRow>

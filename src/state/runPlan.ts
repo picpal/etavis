@@ -104,6 +104,13 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     const anchors: Anchor[] = itinerary ? extractAnchors(itinerary, request.origin, request.destination) : [];
     let slots: Slot[];
     try {
+      // 같은 검색어를 쓰는 슬롯이 몇 개인가 — "편의점 두 곳"은 칩을 복제해 슬롯 둘로 온다.
+      // near 가 형제 수보다 적게 남기면 enumerate 가 서로 다른 후보를 못 골라 계획이 통째로 빈다
+      const siblings = new Map<string, number>();
+      for (const s of request.stops) {
+        const k = s.queries.join('|');
+        siblings.set(k, (siblings.get(k) ?? 0) + Math.max(1, s.count));
+      }
       slots = await race(Promise.all(request.stops.map(async st => {
         // 사용자가 말한 위치가 먼저다. 말 안 했으면 물성 표(들고 대중교통을 못 타는 것)를 읽는다
         const near = resolveNear(st.near, request.mode, st.queries, st.why);
@@ -179,13 +186,15 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다).
         // 그다음 near 로 한쪽 끝만 남긴다. 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이다
         const parked = applyParkingPolicy(found.candidates, request.mode);
-        const sided = applyNear(parked, near, poly);
+        const sided = applyNear(parked, near, poly, siblings.get(st.queries.join('|')) ?? 1);
 
         return {
           id: st.id, query: used, stopKind: st.stopKind, why: st.why,
           candidates: sided.candidates.slice(0, MAX_CANDIDATES), dwellMin: dwellFor(used),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
-          near, nearRelaxed: sided.relaxed,
+          // 사용자가 말한 제약이 안 먹었을 때만 사과한다 — 코드가 물성으로 추론한 제약까지
+          // 사과하면, 목적지 얘기를 꺼낸 적 없는 사용자에게 "목적지 쪽엔 없어서"라고 말하게 된다
+          near, nearRelaxed: sided.relaxed && (st.near === 'start' || st.near === 'end'),
           searchStatus: found.status,
           searchRadiusM: found.radiusM, searchCalls: found.calls,
         } satisfies Slot;

@@ -854,3 +854,22 @@ test('물성 신호 — 차로 가면 표를 읽지 않는다. 커피는 들고 
   assert.equal(s.near, 'any');
   assert.equal(s.candidates.length, 2);
 });
+
+test('같은 검색어 슬롯이 둘인데 그쪽에 한 곳뿐이면 제약을 푼다 — 계획 전체가 사라지면 안 된다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' },
+    ]),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  const slots = slotsOf(actions);
+  // 목적지 쪽 후보는 cf-far 하나뿐이다. 그대로 좁히면 슬롯 둘이 같은 한 곳을 두고 다퉈
+  // enumerate 가 빈 배열을 내고 계획이 통째로 없어진다 — 제약을 풀어야 한다
+  assert.equal(slots[0].nearRelaxed, true);
+  assert.equal(slots[0].candidates.length, 2);
+  const last = actions[actions.length - 1];
+  assert.equal(last.type, 'RESULT', '계획이 나와야 한다');
+  assert.ok((last as { type: 'RESULT'; result: { options: unknown[] } }).result.options.length > 0, '안이 하나는 있어야 한다');
+});

@@ -55,13 +55,19 @@ export function resolveNear(
 }
 
 /**
- * 후보를 그쪽 끝으로 좁힌다. **한 곳도 안 남으면 전부 되돌리고 `relaxed` 를 세운다.**
+ * 후보를 그쪽 끝으로 좁힌다. **`need` 만큼 못 남기면 전부 되돌리고 `relaxed` 를 세운다.**
  * 입력 순서를 보존한다 — 앞 단계(주차 정책)가 매긴 우선순위를 뒤집으면 안 된다.
+ *
+ * `need` 가 1 이 아닌 이유: 같은 검색어를 쓰는 형제 슬롯이 둘이면(= "편의점 두 곳")
+ * 둘이 같은 후보 목록을 나눠 가져야 한다. near 가 1곳만 남기면 각 슬롯은 0건이 아니라
+ * 1건이라 폴백이 안 돌고, enumerate 의 중복 방지에 걸려 **계획 전체**가 빈 배열이 된다.
+ * 애초에 후보가 need 보다 적으면 near 가 원인이 아니므로 좁힌 결과를 그대로 쓴다.
  */
 export function applyNear<T extends { coord: LatLng }>(
   candidates: readonly T[],
   near: NearSide,
   poly: LatLng[],
+  need = 1,
 ): { candidates: T[]; relaxed: boolean } {
   // poly 가 2점 미만이면 진행률을 못 잰다. runPlan 은 항상 2점 이상을 주지만,
   // 못 잰 것을 '그쪽에 없다'로 말하면 거짓말이 된다 — 조용히 제약 없이 통과시킨다
@@ -69,7 +75,7 @@ export function applyNear<T extends { coord: LatLng }>(
     return { candidates: [...candidates], relaxed: false };
   }
   const kept = candidates.filter(c => matchesNear(near, projectOnCorridor(poly, c.coord).s));
-  return kept.length > 0
+  return kept.length >= Math.min(need, candidates.length)
     ? { candidates: kept, relaxed: false }
     : { candidates: [...candidates], relaxed: true };
 }

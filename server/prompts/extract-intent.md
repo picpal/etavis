@@ -151,7 +151,8 @@ LLM이 숫자를 지어내면 이 앱의 존재 이유(시간 타당성 판단)�
   "why": "샌드위치랑 커피 사기",
   "count": 1,
   "flexible": true,
-  "openNow": false
+  "openNow": false,
+  "near": "any"
 }
 ```
 

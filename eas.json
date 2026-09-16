@@ -16,7 +16,6 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "official.picpal@gmail.com",
         "ascAppId": "6812422135"
       }
     }

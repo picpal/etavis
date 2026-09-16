@@ -25,7 +25,7 @@ Credentials are not set up. Run this command again in interactive mode.
 | `eas whoami` · `env:*` · `config` · `build:list` | ✅ |
 | `eas login` | ❌ 브라우저 콜백 대기 — 터미널에서 |
 | `eas build` (첫 회) | ❌ Apple 로그인 프롬프트 |
-| `eas submit` | ❌ 첫 회는 Apple 로그인 프롬프트. 그때 만들어지는 ASC API 키가 EAS 에 남으므로 이후에는 ✅ 일 것으로 본다(§2, 아직 `!` 로 재확인 안 함) |
+| `eas submit` | 첫 회만 ❌ (Apple 로그인). 그때 ASC API 키가 EAS 에 저장되므로 **이후에는 `!` 안에서도 ✅** — 실측 §2 |
 
 ## 0. 한 번만 하는 것
 
@@ -161,6 +161,15 @@ remote 모드에서는 무시되고, 두 곳이 서로 다른 말을 하게 된�
 사용자에게 보이는 버전(`expo.version`)만 손으로 올린다.
 실패한 빌드도 번호를 가져가므로 건너뛴 번호가 생기는 건 정상이다.
 
+**같은 빌드를 두 번 submit 하면 거절된다** — 인증·업로드는 다 지나가고 마지막에 이렇게 죽는다:
+
+```
+Build number 3 for app version 1.0.0 has already been used.
+App Store Connect requires unique build numbers within each app version.
+```
+
+재제출이 목적이면 `eas build` 를 다시 돌려 새 번호를 받아야 한다.
+
 ## 2. App Store Connect API 키 — 손으로 만들 게 없었다
 
 등록되어 있으면 `eas submit` 이 Apple 비밀번호·2FA 를 묻지 않는다.
@@ -190,6 +199,26 @@ Apple ID 세션으로 키를 만들어냈다. 열어보면 그 키가 이미 목
 키를 손으로 만들고 싶다면(역할은 `App Manager` 면 충분하고, 생성 후 변경 불가):
 `npx eas-cli credentials` → iOS → production → App Store Connect API Key → Upload.
 이때 받는 `.p8` 은 **한 번만** 받을 수 있고 저장소 밖에 둔다(`.gitignore` 의 `*.p8`).
+
+### `eas.json` 에서 `appleId` 는 뺀다
+
+키가 EAS 에 있으면 `submit.production.ios` 는 `ascAppId` 하나면 된다.
+`appleId` 를 남겨두면 Apple ID 인증 경로를 쓰는 것처럼 보여 헷갈리기만 한다.
+
+```json
+"submit": { "production": { "ios": { "ascAppId": "6812422135" } } }
+```
+
+**빼고 `!` 안에서 `--non-interactive` 로 돌려 확인했다**(2026-09-16). 로그 첫 줄:
+
+```
+Using App Store Connect API Key from EAS credentials service.
+✔ App Store Connect API Key already set up.
+Using Api Key ID: JT9LBRB7GA ([Expo] EAS Submit OPyxZBewOU)
+    Key Source:  EAS servers
+```
+
+비밀번호도 2FA 도 묻지 않는다. 이제 `eas submit` 은 CI 에서도 그대로 돈다.
 
 ## 알아둘 것
 

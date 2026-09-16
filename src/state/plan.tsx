@@ -422,7 +422,9 @@ export type PlanAction =
      정하고 실어 보내야 리듀서와 로그가 같은 사실을 읽는다 */
   | { type: 'RESET_CHAT'; mode: PlanState['mode']; arriveByMin: number | null; committed: boolean };
 
-function reducer(state: PlanState, action: PlanAction): PlanState {
+/* 테스트가 부를 수 있게 내보낸다 — plan.tsx 는 react-native 를 물어 node 로 그냥은
+   못 읽는다. 스텁을 끼워 읽는 쪽은 plan.test.ts 에 있다(그쪽 주석 참고) */
+export function planReducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case 'SET_DATASET': {
       const ds = datasets.find(d => d.key === action.key) ?? datasets[0];
@@ -483,6 +485,19 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
         stopCount: null,
         planConfirmed: true,
         departMin,
+        /* 진행 상태는 새 계획 것으로 되돌린다 — 안 되돌렸더니 "새로 계획하기"로 갈아엎어도
+           진행중 탭이 옛 진행률을 말했다(arrivedAtDest 가 남아 도착한 척, passedCount 가
+           남아 앞 두 곳을 이미 지난 척).
+           '새 계획'과 '다시 계산'을 가르지 않는다: passedCount 는 stops 의 인덱스인데
+           여기서 stops 는 toLegacyPlan 이 새 결과로 처음부터 만든 배열이다 — 옛 번호를
+           그대로 얹는 건 진행을 잇는 게 아니라 다른 목록에 남의 번호를 찍는 것이다.
+           게다가 다시 계산은 이미 들른 곳의 칩을 소비하지 않아(도착해도 chips 는 그대로다)
+           그곳을 또 들르는 계획을 내놓는다 — 그 계획 기준으로도 0 이 맞는 답이다.
+           방문한 곳을 빼고 이어서 계산하려면 그건 usePlanRequest·runPlan 의 일이지
+           리듀서가 숫자로 흉내낼 일이 아니다 */
+        passedCount: 0,
+        atStop: false,
+        arrivedAtDest: false,
         ...computeChain(stops, dataset, departMin),
       };
     }
@@ -508,6 +523,10 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
         selectedOptionId: option.id,
         planConfirmed: true,
         departMin: depart,
+        // 여기도 stops 를 처음부터 다시 만든다 — 확정이면 진행 상태도 새 계획 것이다(근거는 APPLY_LIVE)
+        passedCount: 0,
+        atStop: false,
+        arrivedAtDest: false,
         ...(untouched
           ? deriveFromDataset(state.dataset, depart)
           : computeChain(stops, state.dataset, depart)),
@@ -772,7 +791,7 @@ const PlanContext = createContext<PlanApi | null>(null);
 const RECALC_DELAY = 600;
 
 export function PlanProvider({ children }: { children: React.ReactNode }) {
-  const [state, rawDispatch] = useReducer(reducer, datasets[0], initState);
+  const [state, rawDispatch] = useReducer(planReducer, datasets[0], initState);
   const here = useCurrentPlace();
   const recalcTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stateRef = useRef(state);

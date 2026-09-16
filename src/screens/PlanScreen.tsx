@@ -235,16 +235,22 @@ function DirectPrompt({ onPress }: { onPress: () => void }) {
       }}
       hitSlop={HIT_SLOP}
       accessibilityRole="button"
+      /* 퀵리플라이와 같은 규격(44 / 18 / r14 / track) — 이 화면에 이미 있는 버튼 모양을
+         또 만들지 않는다. 다만 글자는 primary 다. `아직이요` 는 미루는 버튼이라 회색이고,
+         이건 지금 할 수 있는 단 하나의 행동이라 회색으로 두면 꺼진 것처럼 읽힌다 */
       style={({ pressed }) => ({
         alignSelf: 'flex-start',
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        paddingVertical: 6,
-        opacity: pressed ? 0.6 : 1,
+        gap: 8,
+        minHeight: 44,
+        paddingHorizontal: 18,
+        borderRadius: 14,
+        backgroundColor: color.track,
+        opacity: pressed ? 0.8 : 1,
       })}
     >
-      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 14, lineHeight: 20, color: color.primary }}>
+      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 15, color: color.primary }}>
         들를 곳 없이 바로 찾기
       </Text>
       <Chevron size={7} thickness={2} color={color.primary} dir="right" />

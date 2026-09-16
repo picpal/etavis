@@ -3,6 +3,7 @@ import React from 'react';
 import { View, ViewStyle } from 'react-native';
 import Svg, { Line, Path, Circle, Rect } from 'react-native-svg';
 import { color } from '../theme/tokens';
+import { DASH_OFF, DASH_ON, fitDashV } from '../lib/dashFit';
 
 type ChevronDir = 'up' | 'down' | 'left' | 'right';
 
@@ -38,12 +39,40 @@ export function Chevron({
   );
 }
 
-/** 세로 점선 (타임라인 커넥터) — svg가 borderStyle dashed보다 안정적 */
+/**
+ * 세로 점선 (타임라인 커넥터) — svg가 borderStyle dashed보다 안정적.
+ *
+ * 높이를 재서 주기를 거기 맞춘다. 커넥터는 한 줄이 아니라 조각 여러 개라
+ * (행마다 `above`/`below` 가 따로) 조각마다 dash phase 가 0 에서 다시 시작하는데,
+ * 고정 주기로는 이음매가 dash 한가운데 떨어져 두 dash 가 붙거나 구멍이 난다.
+ * 왜 이 방법인지는 `lib/dashFit.ts` 주석에 있다.
+ */
 export function DashedLineV({ style, stroke = color.stroke }: { style?: ViewStyle; stroke?: string }) {
+  const [height, setHeight] = React.useState(0);
+  const fit = fitDashV(height);
   return (
-    <Svg style={[{ width: 2 }, style]} pointerEvents="none">
-      <Line x1={1} y1={0} x2={1} y2="100%" stroke={stroke} strokeWidth={2} strokeDasharray="5,4" />
-    </Svg>
+    <View
+      style={[{ width: 2 }, style]}
+      pointerEvents="none"
+      onLayout={e => {
+        const next = e.nativeEvent.layout.height;
+        // 소수점 떨림으로 매 프레임 다시 그리지 않는다
+        if (Math.abs(next - height) > 0.5) setHeight(next);
+      }}
+    >
+      <Svg style={{ flex: 1, width: 2 }}>
+        <Line
+          x1={1}
+          y1={0}
+          x2={1}
+          y2="100%"
+          stroke={stroke}
+          strokeWidth={2}
+          // 아직 못 잰 첫 프레임은 원안 주기로 그린다 — 비워두면 선이 한 번 깜빡인다
+          strokeDasharray={fit ? `${fit.on},${fit.off}` : `${DASH_ON},${DASH_OFF}`}
+        />
+      </Svg>
+    </View>
   );
 }
 

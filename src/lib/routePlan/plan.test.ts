@@ -192,23 +192,27 @@ function legCounting(inner = mockRouteProvider()) {
 }
 const many = (n: number) => Array.from({ length: n }, (_, i) => c(`m${i}`, at(37.5 + (i % 7) * 0.004, 127.02 + i * 0.002)));
 
-test('대중교통 V=1 — 시드는 4안, /transit 은 직행 1 + 4×2 = 9회 (예산 10 이하)', async () => {
+test('대중교통 V=1 — 겹치는 구간이 없어 4안, /transit 은 직행 1 + 4×2 = 9회', async () => {
   const p = legCounting();
   const r = await plan(base([slot('a', many(30))], { mode: 'transit' }), p);
+  // V=1 은 O→cᵢ·cᵢ→D 가 후보마다 전부 달라 중복 제거가 아낄 게 없다 — 장부와 실제가 같다
   assert.equal(p.legCalls, 9, `구간 호출 ${p.legCalls}회`);
-  assert.ok(p.legCalls <= TRANSIT_CALL_BUDGET);
   assert.equal(r.apiCalls, 9, 'apiCalls 는 실제로 나간 요청 수여야 감사에 쓸 수 있다');
+  assert.ok(r.apiCalls <= TRANSIT_CALL_BUDGET);
   assert.equal(r.options[0].visits.length, 1);
 });
 
-test('대중교통 V=2 — 시드는 3안, 2라운드까지 합쳐도 예산 10회를 넘지 않는다', async () => {
+test('대중교통 V=2 — 2라운드까지 합쳐도 예산 10회를 넘지 않는다', async () => {
   // 강 건너 후보를 넣어 2라운드 트리거를 켠다
   const barrier = { a: at(37.49, 126.9), b: at(37.49, 127.2), penaltyKm: 8 };
   const across = c('across', at(37.485, 127.05));
   const p = legCounting(mockRouteProvider({ barrier }));
-  await plan(base([slot('a', [across, near, on, far]), slot('b', [c('b1', at(37.5, 127.09)), c('b2', at(37.505, 127.085))])], { mode: 'transit' }), p);
-  assert.ok(p.legCalls <= TRANSIT_CALL_BUDGET, `예산 초과: ${p.legCalls}회`);
-  assert.equal(p.legCalls, 10, `직행 1 + 3안×3구간 = 10, 받은 값 ${p.legCalls}`);
+  const r = await plan(base([slot('a', [across, near, on, far]), slot('b', [c('b1', at(37.5, 127.09)), c('b2', at(37.505, 127.085))])], { mode: 'transit' }), p);
+  // 장부(apiCalls)는 구간 중복을 뺀 수다. 실제 요청도 같은 수라는 건 진짜 공급자를 쓰는
+  // transitLegs.regression.test.ts 가 확인한다 — 여기 legCounting 은 코얼레싱을 흉내 내지 않는다
+  assert.ok(r.apiCalls <= TRANSIT_CALL_BUDGET, `예산 초과: ${r.apiCalls}회`);
+  assert.ok(r.options.length >= 1);
+  assert.equal(r.timingSource, 'estimate', '목 공급자라 직행부터 추정');
 });
 
 test('자동차는 예산이 그대로다 — V=1 은 여전히 시드 8안', async () => {

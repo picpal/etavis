@@ -9,8 +9,9 @@
  *   하나라도 추정인 합계를 실측이라 부르면 화면이 거짓말을 한다.
  * - 서버 실패는 throw 하지 않는다. 그 구간만 추정으로 채우고(살아남은 구간의 실측은 버리지 않는다)
  *   전체를 추정으로 강등한다. 폴백 사유는 onFallback 으로 로그에만 남는다.
- * - 호출 예산은 `transitBudget.ts` 한 곳에 있다. 상한을 넘는 요청은 서버를 한 번도 안 부르고
- *   통째로 추정으로 떨어진다 — 반쪽 실측에 돈을 쓰지 않는다.
+ * - 호출 예산은 `transitBudget.ts` 한 곳에 있다. 상한(`maxLegs`)까지만 실측하고 남는 구간은
+ *   추정으로 채운다 — **잰 구간을 버리지 않는다.** 그 결과의 `source` 는 위 규칙대로 `'estimate'` 고,
+ *   쓸 수 있는 실측은 그대로 `sections` 에 남는다.
  *
  * 알려진 한계: 구간을 병렬로 부르므로 **모든 구간이 계획의 출발 시각으로 조회된다.**
  * 두 번째 구간의 실제 출발은 (1구간 소요 + 체류) 뒤라 시간표·배차가 다를 수 있다.
@@ -24,7 +25,7 @@ import type { LatLng, Mode, RouteProvider, RouteResult, TransitItinerary } from 
 export type TransitProviderOptions = ServerProviderOptions & {
   estimate: RouteProvider;
   onFallback?: (err: unknown) => void;
-  /** route() 한 번이 쪼갤 구간 수 상한. 기본 TRANSIT_MAX_LEGS_PER_ROUTE */
+  /** route() 한 번이 **실측할** 구간 수 상한. 남는 구간은 추정으로 채운다. 기본 TRANSIT_MAX_LEGS_PER_ROUTE */
   maxLegs?: number;
 };
 
@@ -153,11 +154,14 @@ export function transitRouteProvider(opts: TransitProviderOptions): RouteProvide
       const legCount = points.length - 1;
       if (legCount < 1) return opts.estimate.route(points, departAtMin, mode);
       if (legCount > maxLegs) {
-        // 예산을 넘는 안은 한 구간도 부르지 않는다 — 어차피 전체가 추정으로 강등될 값이다
-        opts.onFallback?.(new Error(`transit: 구간 ${legCount}개 > 예산 ${maxLegs}개`));
-        return opts.estimate.route(points, departAtMin, mode);
+        // 예산이 닿는 데까지만 실측하고 나머지는 추정으로 둔다. 전체를 추정으로 떨어뜨리면
+        // 이미 살 수 있었던 실측까지 버리는 것이다 — 채점은 구간마다 따로 본다(score.ts)
+        opts.onFallback?.(new Error(`transit: 구간 ${legCount}개 > 예산 ${maxLegs}개 — 앞 ${maxLegs}개만 실측`));
       }
-      const parts = await Promise.all(points.slice(1).map((to, i) => measureLeg(points[i], to, departAtMin, mode)));
+      const parts = await Promise.all(points.slice(1).map((to, i) =>
+        i < maxLegs
+          ? measureLeg(points[i], to, departAtMin, mode)
+          : opts.estimate.route([points[i], to], departAtMin, mode)));
       // 직행(2점)은 5단계 그대로 — transit(대안 itinerary)과 정류장 폴리라인을 그대로 들고 나간다
       return legCount === 1 ? parts[0] : joinLegRoutes(parts);
     },

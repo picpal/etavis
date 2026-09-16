@@ -154,15 +154,21 @@ test('구간이 여럿이면 transit(대안 itinerary)은 담지 않는다 — O
   assert.equal(r.transit, undefined);
 });
 
-test('예산 초과 — 구간 수가 상한을 넘으면 서버를 부르지 않고 통째로 추정', async () => {
-  const { fn, calls } = legFetch({});
+test('예산 초과 — 닿는 데까지 실측하고 남는 구간만 추정. 잰 구간을 버리지 않는다', async () => {
+  const { fn, calls } = legFetch({
+    [`${O.latitude}>${C.latitude}`]: { durationMin: 4, distanceM: 1000 },
+    [`${C.latitude}>${C2.latitude}`]: { durationMin: 6, distanceM: 2000 },
+    [`${C2.latitude}>${D.latitude}`]: { durationMin: 8, distanceM: 3000 },
+  });
   const est = estimateStub();
   const errs: unknown[] = [];
   const r = await mk(fn, { estimate: est, maxLegs: 2, onFallback: e => errs.push(e) }).route([O, C, C2, D], 9 * 60, 'transit');
-  assert.equal(calls.length, 0, '예산을 넘으면 한 구간도 안 부른다 — 반쪽 실측에 돈을 쓰지 않는다');
-  assert.equal(est.calls, 1);
-  assert.equal(r.source, 'estimate');
-  assert.equal(errs.length, 1);
+  assert.equal(calls.length, 2, '상한만큼만 서버에 묻는다');
+  assert.equal(est.calls, 1, '남는 구간 하나만 추정으로 채운다');
+  assert.equal(errs.length, 1, '예산에 걸렸다는 사실은 로그에 남긴다');
+  assert.equal(r.sections.length, 3);
+  assert.deepEqual(r.sections.slice(0, 2), [{ durationMin: 4, distanceKm: 1 }, { durationMin: 6, distanceKm: 2 }]);
+  assert.equal(r.source, 'estimate', '한 구간이라도 추정이면 전체가 추정이다');
 });
 
 test('같은 구간을 동시에 물으면 한 번만 나간다 — 시드끼리 겹치는 구간은 재사용', async () => {

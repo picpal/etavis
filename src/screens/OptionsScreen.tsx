@@ -200,6 +200,17 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           ))}
 
+        {/* near 로 좁혀 봤지만 그쪽에 한 곳도 없어 제약을 푼 슬롯 — 위치가 어긋난 걸 말해 준다.
+            빠진 것도 아니고 요청대로도 아닌 중간 상태라, 말하지 않으면 사용자는 앱이 말을
+            흘린 줄 안다 */}
+        {state.slots
+          .filter(s => s.nearRelaxed && result.slotStatus[s.id] !== 'none')
+          .map(s => (
+            <Text key={`near-${s.id}`} style={[type.caption, { color: color.muted }]}>
+              {s.near === 'end' ? '목적지' : '출발지'} 쪽엔 {s.query}{josa(s.query, '이/가')} 없어서 경로 중간으로 잡았어요
+            </Text>
+          ))}
+
         {/* 2. 경유지 — 이 화면의 본문. 빼기·교체 모두 여기서, 바뀌면 위 도착 시각이 다시 계산된다 */}
         <StopList
           result={result}

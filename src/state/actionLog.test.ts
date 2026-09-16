@@ -197,7 +197,7 @@ test('plan.slots — 후보 이름·반지름·검색 횟수를 남긴다', () =
   const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
   assert.equal(log?.a, 'plan.slots');
   assert.equal(log?.d?.found, '올리브영 2곳');
-  assert.equal(log?.d?.search, '올리브영 r=800 calls=5');
+  assert.equal(log?.d?.search, '올리브영 near=any r=800 calls=5');
   assert.equal(log?.d?.picks, '올리브영: 올리브영 목동점, 올리브영 국회의사당역점');
 });
 
@@ -232,6 +232,17 @@ test('plan.slots — 앵커에서 온 후보는 앵커와 도보 거리를 적�
   }] as never;
   const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
   assert.equal(log?.d?.picks, '국민은행: 국민은행 목동역점(a1 120m)');
+});
+
+test('plan.slots — near 와 제약을 푼 표시를 남긴다. 후보가 왜 줄었는지 로그만 보고 알아야 한다', () => {
+  const slots = [{
+    id: 'sl-1', query: '카페', stopKind: 'category', dwellMin: 5, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 5,
+    near: 'end', nearRelaxed: true,
+    candidates: [{ id: 'k-1', name: '회사앞 카페', coord: { latitude: 37.5, longitude: 127.1 } }],
+  }] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
+  assert.equal(log?.d?.search, '카페 near=end! r=800 calls=5');
 });
 
 test('확정 뒤의 대화 되돌리기는 버린 게 없다고 적는다', () => {

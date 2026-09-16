@@ -9,6 +9,32 @@
 
 ## 바로 다음
 
+## near 는 위치까지만 잡는다 — 결혼식 케이스는 아직 반쪽이다
+
+2026-09-17 에 `near` 축(`src/lib/nearSide.ts`)을 넣었다. 잡는 것: 사용자가 말한 위치
+("회사 근처 카페"), 그리고 대중교통에서 들고 못 타는 품목("커피 사서"). 못 잡는 것:
+
+- **머무는 경유지.** "결혼식 가는데 근처 카페 들렀다 갈게"는 위치도 시간도 못 잡는다.
+  `dwellFor`(`src/state/runPlan.ts:65`)가 **검색어**만 보고 `why` 를 안 봐서 "커피 사기"와
+  "결혼식 전에 기다리기"가 똑같이 5분이다. 12시 약속에 11시 도착이면 55분이 비는데
+  앱은 5분짜리 경유지를 넣고 "50분 일찍 도착"이라고 말한다.
+- 고치려면 `ScoreContext`(`src/lib/routePlan/score.ts:10`)에 `arriveBy` 가 들어가야 한다.
+  지금 거기엔 위치도 마감도 없다. 채점 구조를 건드리는 일이라 별도 단계다.
+- 원리: **도착 시각이 고정돼 있고 여유가 남으면 그 여유는 마지막에 쓰는 게 안전하다.**
+  앞에서 쓰면 이후 이동 전부가 지연 리스크로 남고, 뒤에서 쓰면 이미 도착해 있으니 0이다.
+
+같이 볼 것:
+- `CARRY` 표(`src/lib/nearSide.ts`)는 아직 실측으로 다듬지 않았다. 오판이 나오면
+  표를 늘리기 전에 `mode === 'transit'` 게이트부터 의심하라.
+- `NEAR_SPLIT_S = 0.6` 도 실측 없이 고른 값이다. 대중교통에서는 진행률보다
+  하차 앵커(`AnchorKind === 'alight'`)가 더 정확할 수 있다.
+- `server/run-cases.mjs` 는 `src/lib/intent.ts` **하나만** `tsc --outDir /tmp/etavia-intent` 로 떨궈
+  flat 경로 `${OUT}/intent.js` 를 import 한다(`rootDir` 미지정). 그래서 `intent.ts` 에 **로컬 import 를
+  하나라도 넣으면 러너가 깨진다** — tsc 프로그램에 파일이 늘어 rootDir 추론이 `src` 로 바뀌고 출력이
+  `${OUT}/lib/intent.js` 로 밀린다. 이 전제는 코드 어디에도 적혀 있지 않다(2026-09-17 에 한 번 밟았다).
+  게다가 실패한 뒤 `/tmp/etavia-intent` 에 옛 결과가 남아 **조용히 틀린 숫자**를 낸다 — 다시 돌리기 전에
+  `rm -rf /tmp/etavia-intent`. 고치려면 `--rootDir src` 를 주고 import 경로를 `${OUT}/lib/intent.js` 로.
+
 ### `far` 는 성공이 아니다 (2026-09-16 최종 리뷰가 미룬 것)
 
 검색어 폴백을 붙이면서 드러난 것이다. `corridorSearch.ts` 는 `far` 를 **"상한까지 0건 —

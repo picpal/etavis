@@ -180,7 +180,8 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
         a: 'plan.slots',
         d: {
           found: action.slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · '),
-          search: action.slots.map(s => `${s.query} r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`).join(' · '),
+          // near=end! 의 ! 는 그쪽에 없어서 제약을 풀었다는 뜻이다
+          search: action.slots.map(s => `${s.query} near=${s.near ?? 'any'}${s.nearRelaxed ? '!' : ''} r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`).join(' · '),
           // 슬롯마다 따로 자른다 — 전체를 한 번에 자르면 슬롯이 둘만 돼도 뒤쪽 슬롯의
           // 이름이 통째로 사라진다. 이름을 읽으려고 넣은 로그가 이름을 지우면 안 된다
           picks: action.slots.map(s => `${s.query}: ${cut(s.candidates.map(c =>

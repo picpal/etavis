@@ -60,16 +60,17 @@ const TABLE: {
   pathAny: string[];
   pathNot?: string[];
   local?: { pathAny?: string[]; pathNot?: string[] };
+  term: string;
 }[] = [
   // 실측: "가정,생활 > 편의점 > GS25 / 세븐일레븐 / CU / 이마트24" — 30/30이 이 경로
-  { re: /편의점|씨유|\bcu\b|gs25|세븐일레븐|이마트24|미니스톱/i, pathAny: ['편의점'] },
+  { re: /편의점|씨유|\bcu\b|gs25|세븐일레븐|이마트24|미니스톱/i, pathAny: ['편의점'], term: '편의점' },
   // 실측: "가정,생활 > 대형마트 > 이마트" 와 "... > 슈퍼마켓 > 대형슈퍼 > 하나로마트"
   // 두 경로가 다 있다. 대형은 둘 다 받아야 한다.
   // code: 'MT1' — kakaoCategoryFor('마트')는 일부러 null이다(placeCategory.ts의
   // 정규식이 '대형마트|이마트|...'만 잡고 '마트' 단독은 안 잡는다). 검색어를 '마트'로
   // 바꾼 뒤에도 그룹 코드가 저절로 안 붙으니, '대형마트'라고 명시적으로 물어본 이
   // 행에서만 코드를 직접 준다.
-  { re: /대형\s*마트|대형\s*슈퍼/i, query: '마트', code: 'MT1', pathAny: ['대형슈퍼', '대형마트'] },
+  { re: /대형\s*마트|대형\s*슈퍼/i, query: '마트', code: 'MT1', pathAny: ['대형슈퍼', '대형마트'], term: '대형마트' },
   // code를 절대 넣지 않는다 — 여기 넣으면 평범한 "마트" 검색에도
   // category_group_code=MT1이 실려 나가고, 그룹 코드가 없는 홈마트·우리마트
   // (실측: 빈 값)는 카카오 응답에 아예 안 잡힌다. 그러면 이 태스크를 만든 이유
@@ -92,7 +93,7 @@ const TABLE: {
   // 둬서 '마트' 단독(앞 글자가 없는 경우)도 놓치지 않는다. 룩비하인드
   // `(?<!스)마트$`가 더 짧겠지만 이 앱은 Hermes(React Native)에서 돈다 — 룩비하인드
   // 지원을 확신할 수 없어 쓰지 않는다. 룩어헤드는 별개로 Fix 4에서 안전하게 쓴다.
-  { re: /(?:^|[^스])마트$|^마트$|슈퍼마켓$|슈퍼$/i, pathAny: ['슈퍼마켓', '대형마트'], local: { pathAny: ['슈퍼마켓'], pathNot: ['대형슈퍼'] } },
+  { re: /(?:^|[^스])마트$|^마트$|슈퍼마켓$|슈퍼$/i, pathAny: ['슈퍼마켓', '대형마트'], local: { pathAny: ['슈퍼마켓'], pathNot: ['대형슈퍼'] }, term: '마트' },
   // 실측: 150건 전부 "음식점 > 간식 > 제과,베이커리". 와플대학도 여기다 —
   // 그룹 코드로도 category_name 으로도 와플가게는 못 가른다(§6.6 정정)
   //
@@ -105,24 +106,24 @@ const TABLE: {
   // `['제과,베이커리']` 조건이 붙어, 카페로 분류된 빵집(실측: 음식점 > 카페 >
   // 테마카페 > 디저트카페)을 다 떨어뜨린다. 룩어헤드라 Hermes에서도 안전하다
   // (Fix 3의 룩비하인드와 달리 룩어헤드는 지원된다).
-  { re: /^빵$|빵집|베이커리(?!카페)|제과점/i, query: '빵집', pathAny: ['제과,베이커리'] },
-  { re: /카페|커피/i, pathAny: ['카페'] },
+  { re: /^빵$|빵집|베이커리(?!카페)|제과점/i, query: '빵집', pathAny: ['제과,베이커리'], term: '빵집' },
+  { re: /카페|커피/i, pathAny: ['카페'], term: '카페' },
   // 실측 2026-09-15: "가정,생활 > 식품판매 > 정육점" 15/15 — 정육점이 3단계라
   // 경로 조각으로만 잡힌다
-  { re: /정육|고기\s*사/i, query: '정육점', pathAny: ['정육점'] },
+  { re: /정육|고기\s*사/i, query: '정육점', pathAny: ['정육점'], term: '정육점' },
   // 실측 2026-09-15: "가정,생활 > 문구,사무용품" 7건, "… > 알파", "… > 디자인문구 >
   // 아트박스", "… > 무인문구점 > 문구야놀자"
-  { re: /문구/i, pathAny: ['문구,사무용품'] },
+  { re: /문구/i, pathAny: ['문구,사무용품'], term: '문구' },
   // 실측 2026-09-15: "가정,생활 > 꽃집,꽃배달" 15/15
-  { re: /꽃집|꽃\s*사|플라워/i, query: '꽃집', pathAny: ['꽃집,꽃배달'] },
+  { re: /꽃집|꽃\s*사|플라워/i, query: '꽃집', pathAny: ['꽃집,꽃배달'], term: '꽃집' },
   // 실측 2026-09-15: "가정,생활 > 세탁소" 7건, "… > 세탁소 > 크린토피아" 3건,
   // "… > 세탁소 > 셀프빨래방 > 워시엔조이/워시테리아/크린업24" — '빨래방'·'코인빨래방'
   // 질의도 15/15가 세탁소 아래라 한 조건으로 덮인다
-  { re: /세탁소|빨래방|코인빨래/i, pathAny: ['세탁소'] },
-  { re: /서점|책방/i, pathAny: ['서점'] },
+  { re: /세탁소|빨래방|코인빨래/i, pathAny: ['세탁소'], term: '세탁소' },
+  { re: /서점|책방/i, pathAny: ['서점'], term: '서점' },
   // 실측 2026-09-15: "의료,건강 > 약국" 14건, "의료,건강 > 한약국,한약방" 1건 —
   // 둘 다 '약국'을 포함해서 한 조건으로 덮인다
-  { re: /약국/i, pathAny: ['약국'] },
+  { re: /약국/i, pathAny: ['약국'], term: '약국' },
 ];
 
 /**
@@ -197,4 +198,43 @@ export function keepPlace(placeName: string, categoryName: string | undefined, p
   if (!keepByCategoryName(categoryName, plan)) return false;
   if (plan.localOnly && FRANCHISE.some(f => placeName.includes(f))) return false;
   return true;
+}
+
+/**
+ * 검색어 후보를 넓힌다 — `'샌드위치 파는 카페'` → `['샌드위치 파는 카페', '카페']`.
+ *
+ * LLM이 조건을 검색어에 섞어 내놓는 걸 앱에서 받아내는 자리다(실측 2026-09-16:
+ * gpt-5.6-sol 이 `[샌드위치 파는 카페]` 하나만 낸다). 카카오 키워드 검색은
+ * **상호명 매칭**이라 그런 이름의 가게가 없어 0건이 되고, 0건이면 경유지가
+ * 경로에서 빠진다.
+ *
+ * 원래 질의를 지우지 않고 **뒤에 덧붙이기만** 한다 — 첫 시도는 사용자가 말한
+ * 그대로여야 하고, 업종어는 그게 0건일 때만 쓰는 그물이다.
+ *
+ * `q.includes(term)` 조건이 브랜드를 지킨다. '메가커피'는 카페 행에 걸리지만
+ * '카페'를 품지 않으므로 확장하지 않는다 — 붙였다면 브랜드가 0건일 때 엉뚱한
+ * 카페로 조용히 갈아탔을 것이다.
+ *
+ * `LOCAL_PREFIX` 배제: '동네·작은·소형' 접두사는 사용자의 의도된 좁히기다.
+ * 0건일 때 업종어로 넓히면 사용자가 명시적으로 배제한(예: 프랜차이즈) 것들이
+ * 그대로 나온다 — 조건을 푸는 것과 배제를 무시하는 것은 다르다.
+ */
+export function expandQueries(queries: string[]): string[] {
+  const out: string[] = [];
+  const push = (q: string) => { if (q && !out.includes(q)) out.push(q); };
+
+  for (const raw of queries) {
+    const q = raw.trim();
+    push(q);
+
+    // 동네·작은·소형 접두사가 붙으면 확장하지 않는다
+    if (LOCAL_PREFIX.test(q)) continue;
+
+    const hit = TABLE.find(t => t.re.test(q.replace(/\s+/g, '')));
+    if (!hit) continue;
+    if (q === hit.term) continue;
+    if (!q.includes(hit.term)) continue;
+    push(hit.term);
+  }
+  return out;
 }

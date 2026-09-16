@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { keepByCategoryName, keepPlace, planSearch } from './placeQuery.ts';
+import { expandQueries, keepByCategoryName, keepPlace, planSearch } from './placeQuery.ts';
 
 test("'동네 X' 는 검색어가 아니라 접두사다 — X 를 찾고 프랜차이즈를 뺀다", () => {
   // 실측 2026-09-15: "동네 빵집" 질의는 카카오에서 0건이다. 가게 이름이 그렇지 않으니까
@@ -180,4 +180,40 @@ test('약국 한 조건이 한약국까지 덮는다', () => {
   const p = planSearch('약국');
   assert.ok(keepByCategoryName('의료,건강 > 약국', p));
   assert.ok(keepByCategoryName('의료,건강 > 한약국,한약방', p));
+});
+
+test('expandQueries — 구가 아는 업종어로 끝나면 업종어를 후보로 덧붙인다', () => {
+  assert.deepEqual(expandQueries(['샌드위치 파는 카페']), ['샌드위치 파는 카페', '카페']);
+  assert.deepEqual(expandQueries(['조용한 카페']), ['조용한 카페', '카페']);
+  assert.deepEqual(expandQueries(['주차 되는 마트']), ['주차 되는 마트', '마트']);
+});
+
+test('expandQueries — 브랜드를 업종어로 뭉개지 않는다', () => {
+  // '메가커피'는 카페 행에 걸리지만 '카페'라는 글자를 품지 않는다.
+  // 여기서 '카페'를 붙이면 브랜드 검색이 0건일 때 엉뚱한 카페로 조용히 갈아탄다.
+  assert.deepEqual(expandQueries(['메가커피']), ['메가커피']);
+  assert.deepEqual(expandQueries(['이디야커피']), ['이디야커피']);
+});
+
+test('expandQueries — 이미 업종어면 그대로 둔다', () => {
+  assert.deepEqual(expandQueries(['카페']), ['카페']);
+  assert.deepEqual(expandQueries(['편의점']), ['편의점']);
+});
+
+test('expandQueries — 아는 업종어가 없으면 손대지 않는다', () => {
+  assert.deepEqual(expandQueries(['샌드위치 파는 곳']), ['샌드위치 파는 곳']);
+});
+
+test('expandQueries — 중복을 만들지 않고 순서를 지킨다', () => {
+  assert.deepEqual(
+    expandQueries(['샌드위치 파는 카페', '카페']),
+    ['샌드위치 파는 카페', '카페'],
+  );
+});
+
+test('expandQueries — 의도된 좁히기(동네·작은·소형)는 넓히지 않는다', () => {
+  // '동네'는 사용자가 알고 붙인 배제다. 0건일 때 '카페'로 넓히면
+  // 방금 빼 달라고 한 프랜차이즈가 그대로 나온다.
+  assert.deepEqual(expandQueries(['동네 카페']), ['동네 카페']);
+  assert.deepEqual(expandQueries(['작은 서점']), ['작은 서점']);
 });

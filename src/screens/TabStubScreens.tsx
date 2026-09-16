@@ -7,6 +7,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { useTracker } from '../state/tracker';
+import { trackerBadge } from '../state/trackerBadge';
 import { Card, haptic, MicroLabelRow } from '../components/common';
 import { CheckCircle, Chevron, Hairline, HeartIcon, PencilIcon, PersonPlusIcon } from '../components/primitives';
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
@@ -90,6 +91,17 @@ function TabPage({
 }
 
 /** 경로 이탈 확정 시 확인 시트 */
+/** 계획 구성 한 조각. 쉼표로 이은 한 줄보다 눈이 세기 쉽다 */
+function Pill({ text, tone }: { text: string; tone?: 'ok' | 'warn' }) {
+  const bg = tone === 'warn' ? color.amberBg : tone === 'ok' ? color.greenBg : color.track;
+  const fg = tone === 'warn' ? color.amberDeep : tone === 'ok' ? color.green : color.body;
+  return (
+    <View style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: bg }}>
+      <Text style={[type.micro, { color: fg }]}>{text}</Text>
+    </View>
+  );
+}
+
 function OffRouteSheet() {
   const insets = useSafeAreaInsets();
   const { state, removeStop } = usePlan();
@@ -269,6 +281,13 @@ export function TodayScreen() {
   const copy = timingCopy(state.dataset.timingSource, state.mode);
   // 추정치 위에서는 마감 초과를 판정하지 않는다 — 알림도 같이 막는다
   const verdictSlack = copy.showVerdict ? slackMin : null;
+  const badge = trackerBadge({
+    status: tracker.status,
+    mode: tracker.mode,
+    hasPosition: tracker.position != null,
+    etaDeltaMin: tracker.etaDeltaMin,
+    crossTrackText: fmtDist(tracker.crossTrackM),
+  });
   useDeadlineRiskAlert(state.planConfirmed ? verdictSlack : null, arriveByLabel);
 
   if (!state.planConfirmed) {
@@ -345,9 +364,12 @@ export function TodayScreen() {
         </>
       }
     >
-      {/* 진행 중인 계획 — 이 화면의 주인공이라 맨 위에서 elevated로 강조한다 */}
+      {/* 진행 중인 계획 — 이 화면의 주인공. 계획(소요·도착)과 주행 상태를 한 장에 담는다.
+          원래는 두 장이었는데 아래 카드가 말하는 대부분이 "정상입니다"였다(trackerBadge 주석).
+          숫자를 글로 적는 대신 진행 바로 보여준다 — `진행 5.1km / 6.4km`는 읽어야 알지만
+          바는 한눈에 들어오고, 같은 자리에서 상태 색까지 같이 말한다 */}
       <Text style={[type.label, { color: color.muted }]}>진행 중인 계획</Text>
-      <Card elevated style={{ padding: 18, gap: 12 }}>
+      <Card elevated style={{ padding: 18, gap: 14 }}>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
           <View style={{ flex: 1, gap: 5 }}>
             <Text style={[type.labelPlain, { color: color.muted }]} numberOfLines={1}>
@@ -357,90 +379,68 @@ export function TodayScreen() {
           </View>
           <Text style={[type.statS, { color: color.amber }]}>{copy.approx}+{state.totals.deltaMin}분</Text>
         </View>
-        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted }}>
-          경유지 {state.totals.stopCount}곳 · {MODE_LABELS[state.mode]} · 도착 예정 {copy.approx}{formatEta(state.destArriveAt)}
-        </Text>
-        {/* 마감이 있고 실측일 때만 여유·초과. 추정이면 그 자리에 출처 한 줄 — 마감이 있으면 라벨을 배너와 병기한다 */}
-        {copy.banner ? (
-          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 18, color: color.amberDeep }}>
+
+        {/* 진행 바 — 채운 만큼이 온 거리다. 색이 곧 상태라 점과 두 번 말하지 않는다.
+            routeLengthM 이 0이면(경로 길이를 아직 모름) 바를 비워 둔다 — 0으로 나누면 NaN 폭이 된다 */}
+        {badge && (
+          <View style={{ gap: 8 }}>
+            <View style={{ height: 8, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: `${tracker.routeLengthM > 0 ? Math.max(0, Math.min(100, (tracker.progressM / tracker.routeLengthM) * 100)) : 0}%`,
+                  borderRadius: 4,
+                  // 색은 상태가 아니라 신뢰도다 — 이유는 TrackerBadge.progressTrusted 주석에 있다
+                  backgroundColor: badge.progressTrusted ? color.primary : color.stroke,
+                }}
+              />
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: badge.tone === 'warn' ? color.amber : badge.tone === 'ok' ? color.green : color.muted,
+                }}
+              />
+              <Text style={[type.micro, { flex: 1, color: badge.tone === 'warn' ? color.amberDeep : color.body }]} numberOfLines={1}>
+                {badge.label}
+              </Text>
+              <Text style={[type.micro, { color: color.muted }]}>
+                {copy.approx}{formatEta(state.destArriveAt)} 도착
+              </Text>
+            </View>
+            {badge.note && (
+              <Text style={[type.micro, { color: color.muted, lineHeight: 15 }]}>{badge.note}</Text>
+            )}
+          </View>
+        )}
+
+        <Hairline />
+
+        {/* 계획의 구성 — 셋을 한 줄에 쉼표로 붙여 쓰면 13px 뭉치가 된다. 칩으로 떼면 눈이 센다 */}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          <Pill text={MODE_LABELS[state.mode]} />
+          <Pill text={`경유지 ${state.totals.stopCount}곳`} />
+          {copy.banner ? null : verdictSlack != null && (
+            <Pill
+              text={`${arriveByLabel} · ${verdictSlack < 0 ? `${-verdictSlack}분 초과` : `${verdictSlack}분 여유`}`}
+              tone={verdictSlack < 0 ? 'warn' : 'ok'}
+            />
+          )}
+        </View>
+
+        {/* 출처는 지우지 않는다 — 추정을 실측처럼 말하지 않는다는 약속이다(AGENTS.md) */}
+        {copy.banner && (
+          <Text style={[type.micro, { color: color.amberDeep, lineHeight: 16 }]}>
             {slackMin != null ? `${arriveByLabel} · ${copy.banner}` : copy.banner}
-          </Text>
-        ) : verdictSlack != null && (
-          <Text
-            style={{
-              fontFamily: 'Pretendard-SemiBold',
-              fontSize: 13,
-              lineHeight: 18,
-              color: verdictSlack < 0 ? color.amberDeep : color.green,
-            }}
-          >
-            {arriveByLabel} · {verdictSlack < 0 ? `${-verdictSlack}분 초과` : `${verdictSlack}분 여유`}
           </Text>
         )}
       </Card>
-
-      {/* 주행 상태 — 폴리라인 대비 수직거리로 판정. 카드 문구가 곧 제목이라 라벨은 두지 않는다 */}
-      {tracker.mode !== 'off' && (
-        <>
-          <Card
-            style={{
-              padding: 18,
-              gap: 8,
-              ...(tracker.status === 'detour' || tracker.status === 'suspect'
-                ? { backgroundColor: color.amberBg }
-                : null),
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <View
-                style={{
-                  width: 9,
-                  height: 9,
-                  borderRadius: 4.5,
-                  backgroundColor:
-                    tracker.status === 'moving'
-                      ? color.green
-                      : tracker.status === 'stalled' || tracker.status === 'faraway' || tracker.status === 'idle'
-                        ? color.muted
-                        : color.amber,
-                }}
-              />
-              <Text
-                style={{
-                  flex: 1,
-                  fontFamily: 'Pretendard-SemiBold',
-                  fontSize: 16,
-                  lineHeight: 20,
-                  color: tracker.status === 'moving' ? color.ink : color.amberDeep,
-                }}
-              >
-                {tracker.status === 'idle'
-                  ? '위치 확인 중…'
-                  : tracker.status === 'faraway'
-                  ? '경로에서 떨어진 위치예요'
-                  : tracker.status === 'moving'
-                  ? '이동중 · 경로 위'
-                  : tracker.status === 'stalled'
-                    ? '정체 중 · 경로 위'
-                    : tracker.status === 'suspect'
-                      ? '경로 확인 중…'
-                      : tracker.status === 'detour'
-                        ? `우회 중 · 도착 +${tracker.etaDeltaMin}분`
-                        : '경로를 벗어났어요'}
-              </Text>
-            </View>
-            <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
-              {!tracker.position
-                ? tracker.mode === 'live'
-                  ? 'GPS 신호를 기다리는 중이에요'
-                  : '위치 대기 중'
-                : tracker.status === 'faraway'
-                  ? `경로까지 ${fmtDist(tracker.crossTrackM)} · 계획한 지역으로 이동하면 자동으로 추적해요`
-                  : `경로에서 ${fmtDist(tracker.crossTrackM)} · 진행 ${(tracker.progressM / 1000).toFixed(1)}km / ${(tracker.routeLengthM / 1000).toFixed(1)}km`}
-            </Text>
-          </Card>
-        </>
-      )}
 
       {/* 일정 순서 — 좌측 커넥터로 순서를 잇고, 장소마다 카드 하나.
           커넥터는 행마다 조각으로 그린다: 지나온 구간은 파란 실선, 앞으로 갈 구간은 점선 */}

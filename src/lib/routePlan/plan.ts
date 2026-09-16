@@ -84,6 +84,9 @@ export async function plan(
   // (2026-09-16 실측에서 추정 1·2위가 0.2분 차이로 뒤집혔다).
   const seedR = transit ? Math.min(transitSeedCount(V), V === 1 ? SINGLE_R : R) : V === 1 ? SINGLE_R : R;
   const seeds = V === 0 ? [] : pickSeeds(ranked, seedR);
+  /** 예산으로는 한 안도 못 재는 경유지 수(대중교통 V≥9). 실측은 포기하되 계획까지 잃지는 않는다 —
+      추정 점수로 안을 세우고 출처를 낮춘다. 일부만 못 재는 경우와 달리 실측·추정이 섞이지 않는다 */
+  const noSeedFitsBudget = transit && callCost(seeds[0] ?? []) > callBudget;
   const measured: Scored[] = [];
   if (V === 0) measured.push(scorePlan([], ctx)); // 직행이 곧 계획. 이미 실측됐다
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];
@@ -92,7 +95,10 @@ export async function plan(
     // 예산이 모자라면 이 안은 실측하지 않는다 — 추정으로 남고, 실측한 안이 하나라도 있으면
     // 그쪽이 채점에서 이긴다. 2라운드 추가분이 여기서 걸린다(시드는 seedR 로 이미 맞춰 뽑았다)
     const cost = callCost(visits);
-    if (cost > callBudget) return;
+    if (cost > callBudget) {
+      if (noSeedFitsBudget) { seedEstimated = true; measured.push(scorePlan(visits, ctx)); }
+      return;
+    }
     callBudget -= cost; // await 앞에서 깎는다 — 병렬 measure 들이 같은 예산을 두 번 쓰지 못하게
     const est = scorePlan(visits, ctx); // 실측 전 추정 — 오차 계산용
     let route;

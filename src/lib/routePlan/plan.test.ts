@@ -216,3 +216,13 @@ test('자동차는 예산이 그대로다 — V=1 은 여전히 시드 8안', as
   const r = await plan(base([slot('a', many(30))]), p);
   assert.equal(r.apiCalls, 9, '직행 1 + SINGLE_R 8');
 });
+
+test('대중교통 — 예산으로 한 안도 못 재는 경유지 수면, 실측은 포기해도 계획은 남는다', async () => {
+  const p = legCounting();
+  const stops = Array.from({ length: 10 }, (_, i) => slot(`s${i}`, [c(`s${i}c`, at(37.5 + i * 0.001, 127.01 + i * 0.009))]));
+  const r = await plan(base(stops, { mode: 'transit', order: 'locked' }), p);
+  assert.equal(p.legCalls, 1, '직행 말고는 한 번도 안 부른다 — 예산을 넘겨 가며 재지 않는다');
+  assert.ok(r.options.length >= 1, '실측을 포기해도 계획까지 사라지면 안 된다');
+  assert.equal(r.options[0].visits.length, 10);
+  assert.notEqual(r.timingSource, 'provider', '한 구간도 안 쟀으면 실측이라 말할 수 없다');
+});

@@ -211,9 +211,13 @@ export function keepPlace(placeName: string, categoryName: string | undefined, p
  * 원래 질의를 지우지 않고 **뒤에 덧붙이기만** 한다 — 첫 시도는 사용자가 말한
  * 그대로여야 하고, 업종어는 그게 0건일 때만 쓰는 그물이다.
  *
- * `q.includes(term)` 조건이 브랜드를 지킨다. '메가커피'는 카페 행에 걸리지만
- * '카페'를 품지 않으므로 확장하지 않는다 — 붙였다면 브랜드가 0건일 때 엉뚱한
- * 카페로 조용히 갈아탔을 것이다.
+ * 끝 단어 경계로 term 을 지킨다(`includes`가 아니라 `endsWith(' '+term)`). '메가커피'는
+ * 카페 행에 걸리지만 '카페'를 **품지** 않아서 `includes`로도 막혔다 — 그런데 '스터디카페'는
+ * '카페'를 품는다. `includes`만 쓰면 스터디카페가 0건일 때 폴백이 조용히 일반 카페로
+ * 갈아탄다 — 일하러 가려던 사람이 일 못 하는 데로 가는 것과 같다. 이 함수가 막으려는
+ * 바로 그 해악이라 끝 경계를 요구한다: 복합명사('스터디카페'·'한약국'·'중고서점')는 term을
+ * 품어도 공백으로 안 갈라지니 걸러지고, 구(句)('샌드위치 파는 카페')는 공백 뒤에 업종어가
+ * 오니 그대로 통과한다.
  *
  * `LOCAL_PREFIX` 배제: '동네·작은·소형' 접두사는 사용자의 의도된 좁히기다.
  * 0건일 때 업종어로 넓히면 사용자가 명시적으로 배제한(예: 프랜차이즈) 것들이
@@ -221,7 +225,18 @@ export function keepPlace(placeName: string, categoryName: string | undefined, p
  */
 export function expandQueries(queries: string[]): string[] {
   const out: string[] = [];
-  const push = (q: string) => { if (q && !out.includes(q)) out.push(q); };
+  // 문자열이 아니라 planSearch()가 실제로 카카오에 보낼 검색어로 중복을 잡는다.
+  // '맛있는 빵집'과 '빵집'은 문자열이 다르지만 planSearch('맛있는 빵집').query가
+  // 이미 '빵집'이라(TABLE의 빵집 행이 query를 다시 쓴다) 카카오에는 같은 질의가
+  // 두 번 나간다 — 0건이면 똑같은 0건이 한 번 더 나올 뿐인 순수 낭비다.
+  const seen = new Set<string>();
+  const push = (q: string) => {
+    if (!q) return;
+    const key = planSearch(q).query;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(q);
+  };
 
   for (const raw of queries) {
     const q = raw.trim();
@@ -233,7 +248,7 @@ export function expandQueries(queries: string[]): string[] {
     const hit = TABLE.find(t => t.re.test(q.replace(/\s+/g, '')));
     if (!hit) continue;
     if (q === hit.term) continue;
-    if (!q.includes(hit.term)) continue;
+    if (!q.endsWith(` ${hit.term}`)) continue;
     push(hit.term);
   }
   return out;

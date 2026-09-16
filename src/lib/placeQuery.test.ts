@@ -217,3 +217,13 @@ test('expandQueries — 의도된 좁히기(동네·작은·소형)는 넓히지
   assert.deepEqual(expandQueries(['동네 카페']), ['동네 카페']);
   assert.deepEqual(expandQueries(['작은 서점']), ['작은 서점']);
 });
+
+test('expandQueries — 복합명사는 업종어로 넓히지 않는다(끝 단어 경계)', () => {
+  // '스터디카페'는 '카페'를 글자로 품지만(includes) 공백으로 갈라지지 않는다
+  // (endsWith(' 카페')는 거짓). 여기서 넓히면 스터디카페가 0건일 때 폴백이
+  // 조용히 일반 카페로 갈아탄다 — 일하러 가려던 사람이 일 못 하는 데로 간다.
+  assert.deepEqual(expandQueries(['스터디카페']), ['스터디카페']);
+  assert.deepEqual(expandQueries(['한약국']), ['한약국']);
+  assert.deepEqual(expandQueries(['중고서점']), ['중고서점']);
+  assert.deepEqual(expandQueries(['키즈카페']), ['키즈카페']);
+});

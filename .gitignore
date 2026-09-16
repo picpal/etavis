@@ -47,6 +47,8 @@ server/results.json
 
 server/bench-*.jsonl
 server/llm-results.json
+# run-llm.mjs --group <그룹> 의 결과 — 전체 기준선과 같은 생성물이다
+server/llm-results-*.json
 
 # 로컬 도구 상태
 .context/

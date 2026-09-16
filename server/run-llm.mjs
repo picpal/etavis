@@ -1,23 +1,44 @@
 /**
- * 전체 케이스를 실제 모델(codex CLI)로 돌려 기준선을 만든다.
+ * 케이스를 실제 모델(codex CLI)로 돌려 기준선을 만든다.
  *
- *   node server/run-llm.mjs [batchSize]
+ *   node server/run-llm.mjs [batchSize] [model]
+ *   node server/run-llm.mjs --group service      # 한 그룹만 — codex 호출 1회
  *
- * 목(run-cases.mjs)과 같은 채점 규칙을 쓰므로 두 숫자를 바로 비교할 수 있다.
- * 결과: server/llm-results.json (엑셀이 이걸 읽는다)
+ * 목(run-cases.mjs)과 **같은 채점기**(case-score.mjs)를 쓴다. 자가 둘이면
+ * 두 숫자를 나란히 놓는 순간 의미가 없어진다.
  *
- * 한 번에 147개를 보내면 응답이 잘리므로 배치로 쪼갠다.
+ * codex 호출 1회가 50만~145만 토큰이다. 배치 하나 = 호출 하나이므로,
+ * 새 그룹 몇 줄을 재려고 전체를 돌리지 말 것 — `--group` 이 그래서 있다.
+ *
+ * 결과: 전체면 server/llm-results.json (엑셀이 이걸 읽는다),
+ *       `--group` 이면 server/llm-results-<그룹>.json — 전체 기준선을 덮지 않는다.
+ *
+ * 한 번에 150개를 보내면 응답이 잘리므로 배치로 쪼갠다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { scoreCase, summarize, CHECKED_KEYS } from './case-score.mjs';
 
-const BATCH = Number(process.argv[2] ?? 40);
-const MODEL = process.argv[3] ?? 'gpt-5.6-sol';
+const argv = process.argv.slice(2);
+const gi = argv.indexOf('--group');
+const ONLY = gi >= 0 ? argv[gi + 1] : null;
+// gi 가 -1 일 때 gi+1 은 0 이다 — 가드 없이 쓰면 그룹을 안 줬을 때 batchSize 를 잡아먹는다
+const pos = argv.filter((a, i) => !a.startsWith('--') && !(gi >= 0 && i === gi + 1));
+const BATCH = Number(pos[0] ?? 40);
+const MODEL = pos[1] ?? 'gpt-5.6-sol';
 
-const all = readFileSync('server/prompts/cases.jsonl', 'utf8')
+const cases = readFileSync('server/prompts/cases.jsonl', 'utf8')
   .split('\n')
   .filter(Boolean)
   .map(l => JSON.parse(l));
+
+// 번호는 **거르기 전에** 매긴다 — cases.jsonl 줄 번호와 그대로 맞아야 추적이 된다
+cases.forEach((c, i) => (c.__i = i + 1));
+const all = ONLY ? cases.filter(c => c.g === ONLY) : cases;
+if (ONLY && all.length === 0) {
+  console.error(`'${ONLY}' 그룹이 cases.jsonl 에 없다.`);
+  process.exit(1);
+}
 
 const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
 const rules = md.slice(md.indexOf('## System'), md.indexOf('## 인젝션')).trim();
@@ -65,53 +86,52 @@ function callModel(prompt) {
   return { text, tokens };
 }
 
-/** run-cases.mjs 와 같은 채점 규칙 */
-function grade(out, e = {}) {
-  const fails = [];
-  const stops = (out.stops ?? []).filter(s => s.op !== 'remove');
-  const flat = stops.flatMap(s => s.queries ?? []);
-  let at = out.arriveBy;
-  if (typeof at === 'string' && /^\d{1,2}:\d{2}$/.test(at)) {
-    const [h, m] = at.split(':').map(Number);
-    at = h * 60 + m;
+/**
+ * 모델 출력 → Intent 모양. 채점은 case-score.mjs 가 하고, 여기서는 **모양만** 맞춘다.
+ * 목·서버는 필드가 다 채워진 Intent 를 주지만 모델은 빼먹고 낸다 — 빠진 필드를
+ * 채점기가 만나면 터지거나 엉뚱한 실패가 되므로 기본값을 여기서 메운다.
+ * arriveBy 는 모델이 "9:00" 으로 낼 때가 있어 분으로 되돌린다.
+ */
+function toIntent(out) {
+  let at = out.arriveBy ?? null;
+  if (typeof at === 'string') {
+    const m = at.match(/^(\d{1,2}):(\d{2})$/);
+    at = m ? Number(m[1]) * 60 + Number(m[2]) : null;
   }
-  if (e.qhas && !e.qhas.some(q => flat.includes(q))) fails.push(`qhas ${e.qhas}`);
-  if (e.qmulti && !stops.some(s => (s.queries ?? []).length > 1)) fails.push('qmulti');
-  if (e.qnot && e.qnot.some(q => flat.includes(q))) fails.push(`qnot ${e.qnot}`);
-  if (e.nostop && flat.length) fails.push(`환각:${flat.join(',')}`);
-  if (e.nstops != null && stops.length !== e.nstops) fails.push(`stops=${stops.length}≠${e.nstops}`);
-  if (e.minstops != null && stops.length < e.minstops) fails.push(`stops=${stops.length}<${e.minstops}`);
-  if ('at' in e && (at ?? null) !== e.at) fails.push(`at=${at}≠${e.at}`);
-  if ('m' in e && (out.mode ?? null) !== e.m) fails.push(`m=${out.mode}≠${e.m}`);
-  if (e.op === 'remove' && !(out.stops ?? []).some(s => s.op === 'remove')) fails.push('remove 없음');
-  if (e.swap && !((out.stops ?? []).some(s => s.op === 'remove') && stops.length)) fails.push('교체 아님');
-  if (e.reset && !out.resetStops) fails.push('resetStops 아님');
-  if (e.dest && out.endpoints?.destination !== e.dest) fails.push(`dest=${out.endpoints?.destination}≠${e.dest}`);
-  if (e.origin && out.endpoints?.origin !== e.origin) fails.push(`origin=${out.endpoints?.origin}≠${e.origin}`);
-  if (e.order && out.order !== e.order) fails.push(`order=${out.order}≠${e.order}`);
-  if ('lock' in e && (out.order === 'locked') !== e.lock) fails.push(`order=${out.order}`);
-  if ('flex' in e && stops.length && stops[0].flexible !== e.flex) fails.push(`flex=${stops[0].flexible}`);
-  if (e.open && !stops.some(s => s.openNow)) fails.push('open');
-  if (e.rej === true && !out.reject) fails.push('reject 안함');
-  if (e.rej === false && out.reject) fails.push('잘못 거절');
-  if (e.amb && !(out.ambiguous ?? []).length) fails.push('되묻지 않음');
-  if (e.n != null && stops.some(s => s.count !== e.n)) fails.push(`n≠${e.n}`);
-  return fails;
+  return {
+    resetStops: !!out.resetStops,
+    stops: (out.stops ?? []).map(s => ({
+      op: s.op ?? 'add',
+      queries: s.queries ?? [],
+      kind: s.kind ?? 'category',
+      why: s.why ?? '',
+      count: s.count ?? 1,
+      flexible: s.flexible ?? true,
+      openNow: !!s.openNow,
+    })),
+    endpoints: out.endpoints ?? {},
+    order: out.order ?? 'auto',
+    arriveBy: typeof at === 'number' ? at : null,
+    mode: out.mode ?? null,
+    reject: out.reject ?? null,
+    ambiguous: (out.ambiguous ?? []).map(a => ({
+      field: a.field ?? '',
+      question: a.question ?? '',
+      options: a.options ?? [],
+    })),
+  };
 }
 
-const CHECK_KEYS = [
-  'qhas','qmulti','qnot','nostop','nstops','minstops','at','m','op','swap','reset',
-  'dest','origin','order','lock','flex','open','rej','amb','n',
-];
-
-all.forEach((c, i) => (c.__i = i + 1));
 const got = {};
 let totalTokens = 0;
+// 배치 하나 = codex 호출 하나. 몇 번 태웠는지는 보고에 꼭 남긴다
+let calls = 0;
 
 for (let i = 0; i < all.length; i += BATCH) {
   const chunk = all.slice(i, i + BATCH);
   process.stderr.write(`배치 ${i / BATCH + 1} — ${chunk.length}건 요청 중...\n`);
   const { text, tokens } = callModel(buildPrompt(chunk));
+  calls++;
   totalTokens += tokens;
   let n = 0;
   for (const line of text.split('\n')) {
@@ -127,31 +147,50 @@ for (let i = 0; i < all.length; i += BATCH) {
   process.stderr.write(`  응답 ${n}/${chunk.length} · ${tokens} 토큰\n`);
 }
 
-const rows = all.map(c => {
+// 채점은 목·서버 러너와 같은 자로 한다. 무응답은 채점 대상이 아니라 별도로 센다
+const scored = all.map(c => ({ c, r: got[c.__i] ? scoreCase(c, toIntent(got[c.__i])) : null }));
+
+const rows = scored.map(({ c, r }) => {
   const out = got[c.__i];
-  const checked = CHECK_KEYS.some(k => k in (c.expect ?? {}));
-  const fails = out ? grade(out, c.expect) : ['응답 없음'];
+  const checked = CHECKED_KEYS.some(k => k in (c.expect ?? {}));
+  const fails = r ? r.fails : ['응답 없음'];
+  const i = r?.got;
   return {
     group: c.g,
     text: c.text,
-    stops: out ? (out.stops ?? []).filter(s => s.op !== 'remove').flatMap(s => s.queries ?? []).join(', ') : '',
-    arriveBy: out?.arriveBy ?? null,
-    mode: out?.mode ?? null,
-    order: out?.order ?? '',
-    reject: out?.reject?.say ?? '',
-    ambiguous: (out?.ambiguous ?? []).map(a => a.question).join(' / '),
+    stops: r ? r.flat.join(', ') : '',
+    arriveBy: i?.arriveBy ?? null,
+    mode: i?.mode ?? null,
+    order: i?.order ?? '',
+    reject: i?.reject?.say ?? '',
+    ambiguous: (i?.ambiguous ?? []).map(a => a.question).join(' / '),
     verdict: !out ? '무응답' : !checked ? '미검증' : fails.length ? '실패' : '통과',
     fails: fails.join(' · '),
     note: c.expect?.note ?? '',
   };
 });
 
-writeFileSync('server/llm-results.json', JSON.stringify(rows, null, 2));
+/* 그룹만 돌렸으면 전체 기준선 파일을 덮지 않는다 — 7줄짜리 결과가
+   150개 기준선인 척하면 엑셀 숫자가 조용히 거짓말을 한다 */
+const outFile = ONLY ? `server/llm-results-${ONLY}.json` : 'server/llm-results.json';
+writeFileSync(outFile, JSON.stringify(rows, null, 2));
 
+const sum = summarize(scored.map(({ c, r }) => r ?? { g: c.g, text: c.text, fails: ['응답 없음'], flat: [], got: {}, checked: true }));
 const c = v => rows.filter(r => r.verdict === v).length;
-console.log(`\n모델 ${MODEL} · 총 ${totalTokens} 토큰`);
-console.log(`전체 ${rows.length} · 통과 ${c('통과')} · 실패 ${c('실패')} · 미검증 ${c('미검증')} · 무응답 ${c('무응답')}`);
+console.log(`\n모델 ${MODEL}${ONLY ? ` · 그룹 ${ONLY}` : ''} · codex 호출 ${calls}회 · 총 ${totalTokens} 토큰`);
+console.log(`→ ${outFile}`);
+console.log('\n그룹별 (실패 / 미검증 / 전체)');
+for (const [g, v] of Object.entries(sum.byGroup)) {
+  const mark = v.bad === 0 ? (v.un ? '⚠️ ' : '✅') : '❌';
+  console.log(`  ${mark} ${g.padEnd(10)} ${v.bad} / ${v.un} / ${v.n}`);
+}
+console.log(`\n전체 ${rows.length} · 통과 ${c('통과')} · 실패 ${c('실패')} · 미검증 ${c('미검증')} · 무응답 ${c('무응답')}`);
 console.log('\n--- 실패 ---');
 for (const r of rows.filter(r => r.verdict === '실패')) {
-  console.log(`[${r.group}] "${r.text}"\n   → ${r.fails}`);
+  console.log(`[${r.group}] "${r.text}"\n   → ${r.fails}${r.note ? `  (${r.note})` : ''}`);
 }
+console.log('\n--- 케이스별 ---');
+for (const r of rows) {
+  console.log(`[${r.verdict}] "${r.text}" → stops=[${r.stops}]${r.ambiguous ? ` ask="${r.ambiguous}"` : ''}`);
+}
+console.log('\n같은 자로 잰 목 기준선: node server/run-cases.mjs' + (ONLY ? ` ${ONLY}` : ''));

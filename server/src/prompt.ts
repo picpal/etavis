@@ -1,5 +1,5 @@
 /** extract-intent.md 를 코드로 옮긴 것. 문서가 원본이고 여기는 사본이다.
-    v6 (2026-09-16) — why 가 화면에 뜨는 할 일이 됐다 */
+    v7 (2026-09-16) — 조건은 queries 가 아니라 prefers 로 뺀다 */
 export const SYSTEM_PROMPT = `너는 이동 계획 앱의 입력 파서다. 사용자 문장에서 들를 곳과 조건을 뽑아 JSON으로만 답한다.
 
 규칙:

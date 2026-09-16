@@ -112,6 +112,7 @@ LLM이 숫자를 지어내면 이 앱의 존재 이유(시간 타당성 판단)�
     {
       "op": "add | remove",
       "queries": ["우체국", "편의점"],
+      "prefers": [],
       "kind": "brand | category | specific",
       "why": "택배 부치기",
       "count": 1,

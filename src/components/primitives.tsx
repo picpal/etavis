@@ -404,6 +404,20 @@ export function GearIcon({ size = 20, tint = color.body }: { size?: number; tint
   );
 }
 
+/**
+ * 전구 — A2 의 접힌 팁 버튼. 이 앱은 이모지를 쓰지 않는다(폰트·플랫폼마다 모양이 달라
+ * 디자인이 흔들린다). 유리알은 원, 소켓은 짧은 가로선 둘로 그린다.
+ */
+export function BulbIcon({ size = 16, tint = color.primary }: { size?: number; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20">
+      <Circle cx={10} cy={8} r={5} stroke={tint} strokeWidth={2} fill="none" />
+      <Rect x={7} y={14} width={6} height={1.9} rx={0.95} fill={tint} />
+      <Rect x={8} y={17} width={4} height={1.9} rx={0.95} fill={tint} />
+    </Svg>
+  );
+}
+
 /** 진행 상태에 따른 노드 표현 — 지나옴 / 지금 여기 / 예정 */
 export type NodeState = 'passed' | 'current' | 'upcoming';
 

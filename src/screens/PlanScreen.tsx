@@ -1,17 +1,17 @@
 /** A2 — 자연어 입력 (채팅 전용). 조건은 A1에서 받고 헤더에 요약만 표시.
  *  경로 계산은 어시스턴트가 묻고 퀵리플라이로 확정한다. */
 import React, { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NavigationAction } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { color, type } from '../theme/tokens';
+import { color, HIT_SLOP, type } from '../theme/tokens';
 import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
 import { RECENT_DESTINATIONS } from '../data/mockData';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
-import { Chevron, DottedLineH } from '../components/primitives';
+import { BulbIcon, Chevron, DottedLineH } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -19,6 +19,7 @@ import { TabBar } from '../components/TabBar';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { SLOT_STATUS_HELP, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
 import { introCopy } from '../lib/timingCopy';
+import { getPref, setPref } from '../lib/prefs';
 import type { SlotStatus } from '../lib/routePlan/types';
 import type { RootStackParamList } from '../../App';
 
@@ -115,20 +116,101 @@ function AssistantShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** 어시스턴트 안내 버블 — 예시 문장 제시 */
+/**
+ * 어시스턴트 안내 버블 — 예시 문장 제시.
+ *
+ * 처음 온 사람에게는 이 카드가 사용법 전부다. 하지만 두 번째부터는 같은 글이 대화 맨 위를
+ * 차지하고 앉아, 정작 읽어야 할 내 말과 알아들은 결과를 아래로 민다.
+ *
+ * 그래서 한 번 본 사람에게는 접어서 버튼 하나로 둔다. **없애지는 않는다** — 예시 문장은
+ * "무엇을 말해도 되나"를 알려주는 유일한 자리라, 찾으면 나와야 한다.
+ *
+ * 펼친 상태는 이 화면에서만 산다. 다음에 다시 들어오면 접힌 채로 시작한다 — 한 번 접은
+ * 사람에게 매번 다시 펼쳐 보이면 접은 뜻이 없다.
+ */
 function AssistantBubble({ mode }: { mode: 'car' | 'walk' | 'transit' }) {
+  const [open, setOpen] = useState(() => !getPref('tipSeen'));
+
+  /* '봤다'는 첫 렌더에 펼쳐져 있었는지로 정한다 — 눌러서 펼친 건 '처음 봄'이 아니다.
+     그래서 open 이 아니라 빈 배열에 건다 */
+  useEffect(() => {
+    if (open) setPref('tipSeen', true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = () => {
+    haptic();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen(v => !v);
+  };
+
+  if (!open) {
+    return (
+      <Pressable
+        onPress={toggle}
+        hitSlop={HIT_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel="팁 보기"
+        style={({ pressed }) => ({ alignSelf: 'flex-start', opacity: pressed ? 0.7 : 1 })}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 7,
+            paddingVertical: 9,
+            paddingHorizontal: 13,
+            // 알약 모양 — 버블(카드)과 종류가 다르다는 걸 모양으로 먼저 말한다
+            borderRadius: 999,
+            backgroundColor: color.surface,
+          }}
+        >
+          <BulbIcon size={15} />
+          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 13, color: color.primary }}>
+            팁 보기
+          </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
   return (
-    <AssistantShell>
-      <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 20, color: color.body }}>
-        들를 곳과 조건을 말하면 계획에 반영해 드려요. 한 문장이면 충분해요.
-      </Text>
-      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 21, color: color.primary }}>
-        “가는 길에 올리브영 들르고 빵도 사가고 싶어”
-      </Text>
-      <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
-        {introCopy(mode)}
-      </Text>
-    </AssistantShell>
+    <View style={{ alignSelf: 'flex-start' }}>
+      <AssistantShell>
+        {/* 접기 단추는 글에 겹치지 않게 오른쪽 위 모서리. 버블 폭이 좁아 안쪽에 두면 줄이 밀린다 */}
+        <View style={{ paddingRight: 22 }}>
+          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 20, color: color.body }}>
+            들를 곳과 조건을 말하면 계획에 반영해 드려요. 한 문장이면 충분해요.
+          </Text>
+        </View>
+        <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 15, lineHeight: 21, color: color.primary }}>
+          “가는 길에 올리브영 들르고 빵도 사가고 싶어”
+        </Text>
+        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
+          {introCopy(mode)}
+        </Text>
+      </AssistantShell>
+      <Pressable
+        onPress={toggle}
+        hitSlop={HIT_SLOP}
+        accessibilityRole="button"
+        accessibilityLabel="팁 접기"
+        style={({ pressed }) => ({
+          position: 'absolute',
+          top: 9,
+          right: 9,
+          width: 24,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor: color.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: pressed ? 0.6 : 1,
+        })}
+      >
+        <Chevron size={7} thickness={2} color={color.stroke} dir="up" style={{ marginTop: 2 }} />
+      </Pressable>
+    </View>
   );
 }
 

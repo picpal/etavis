@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mockRouteProvider } from './mockProvider';
 import { plan } from './plan';
+import { TRANSIT_CALL_BUDGET } from './transitBudget';
 import type { PlaceCandidate, PlanInput, Slot } from './types';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -174,4 +175,44 @@ test('timingSource — 직행만 provider 고 시드가 estimate 면 provider_di
   // 경유지가 없으면 직행이 곧 계획 — provider
   const r0 = await plan(base([]), directOnly);
   assert.equal(r0.timingSource, 'provider');
+});
+
+// --- 7단계: 대중교통은 구간마다 /transit 한 번이라 호출 예산을 따로 센다 ---
+
+/** transitProvider 가 하는 일을 흉내 낸다 — route() 한 번이 구간 수만큼 나간다 */
+function legCounting(inner = mockRouteProvider()) {
+  const self = {
+    legCalls: 0,
+    async route(points: { latitude: number; longitude: number }[], departAtMin: number, mode: 'car' | 'walk' | 'transit') {
+      self.legCalls += points.length - 1;
+      return inner.route(points, departAtMin, mode);
+    },
+  };
+  return self;
+}
+const many = (n: number) => Array.from({ length: n }, (_, i) => c(`m${i}`, at(37.5 + (i % 7) * 0.004, 127.02 + i * 0.002)));
+
+test('대중교통 V=1 — 시드는 4안, /transit 은 직행 1 + 4×2 = 9회 (예산 10 이하)', async () => {
+  const p = legCounting();
+  const r = await plan(base([slot('a', many(30))], { mode: 'transit' }), p);
+  assert.equal(p.legCalls, 9, `구간 호출 ${p.legCalls}회`);
+  assert.ok(p.legCalls <= TRANSIT_CALL_BUDGET);
+  assert.equal(r.apiCalls, 9, 'apiCalls 는 실제로 나간 요청 수여야 감사에 쓸 수 있다');
+  assert.equal(r.options[0].visits.length, 1);
+});
+
+test('대중교통 V=2 — 시드는 3안, 2라운드까지 합쳐도 예산 10회를 넘지 않는다', async () => {
+  // 강 건너 후보를 넣어 2라운드 트리거를 켠다
+  const barrier = { a: at(37.49, 126.9), b: at(37.49, 127.2), penaltyKm: 8 };
+  const across = c('across', at(37.485, 127.05));
+  const p = legCounting(mockRouteProvider({ barrier }));
+  await plan(base([slot('a', [across, near, on, far]), slot('b', [c('b1', at(37.5, 127.09)), c('b2', at(37.505, 127.085))])], { mode: 'transit' }), p);
+  assert.ok(p.legCalls <= TRANSIT_CALL_BUDGET, `예산 초과: ${p.legCalls}회`);
+  assert.equal(p.legCalls, 10, `직행 1 + 3안×3구간 = 10, 받은 값 ${p.legCalls}`);
+});
+
+test('자동차는 예산이 그대로다 — V=1 은 여전히 시드 8안', async () => {
+  const p = legCounting();
+  const r = await plan(base([slot('a', many(30))]), p);
+  assert.equal(r.apiCalls, 9, '직행 1 + SINGLE_R 8');
 });

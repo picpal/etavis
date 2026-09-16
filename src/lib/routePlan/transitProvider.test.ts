@@ -65,14 +65,119 @@ test('2점 — /transit 을 부르고 1위 경로를 RouteResult 로', async () 
   assert.equal(r.polyline[1].latitude, 37.526097);
 });
 
-test('3점 이상 — 서버를 부르지 않고 추정 공급자로 위임한다', async () => {
-  const { fn, calls } = fakeFetch(() => ({ status: 200, body: fixture }));
+// --- 7단계: N점은 구간마다 2점으로 쪼개 병렬 실측한다 ---
+
+const C = { latitude: 37.52, longitude: 126.9 };
+const C2 = { latitude: 37.54, longitude: 126.88 };
+
+/** 요청 OD 를 보고 구간마다 다른 itinerary 를 돌려주는 스텁 */
+function legFetch(table: Record<string, { durationMin: number; distanceM: number } | 'fail' | 'demoted'>) {
+  return fakeFetch((_url, init) => {
+    const b = JSON.parse(init.body as string) as { origin: { lat: number }; destination: { lat: number } };
+    const k = `${b.origin.lat}>${b.destination.lat}`;
+    const hit = table[k];
+    if (hit === undefined) return { status: 404, body: { error: `모르는 구간 ${k}` } };
+    if (hit === 'fail') return { status: 502, body: { error: 'upstream' } };
+    const it = hit === 'demoted' ? { durationMin: 5, distanceM: 1000 } : hit;
+    return {
+      status: 200,
+      body: {
+        provider: 'google',
+        source: hit === 'demoted' ? 'estimate' : 'provider',
+        itineraries: [{ durationMin: it.durationMin, distanceM: it.distanceM, legs: [] }],
+      },
+    };
+  });
+}
+
+test('3점 — 구간마다 /transit 을 부른다. sections 2개, durationMin 은 구간 합', async () => {
+  const { fn, calls } = legFetch({ [`${O.latitude}>${C.latitude}`]: { durationMin: 9.8, distanceM: 1930 }, [`${C.latitude}>${D.latitude}`]: { durationMin: 25.5, distanceM: 4900 } });
   const est = estimateStub();
-  const p = mk(fn, { estimate: est });
-  const r = await p.route([O, { latitude: 37.52, longitude: 126.9 }, D], 9 * 60, 'transit');
-  assert.equal(calls.length, 0);
+  const r = await mk(fn, { estimate: est }).route([O, C, D], 9 * 60, 'transit');
+  assert.equal(calls.length, 2, '구간마다 한 번');
+  assert.equal(est.calls, 0, '실측이 되면 추정은 부르지 않는다');
+  assert.deepEqual(r.sections, [{ durationMin: 9.8, distanceKm: 1.93 }, { durationMin: 25.5, distanceKm: 4.9 }]);
+  assert.ok(Math.abs(r.durationMin - 35.3) < 1e-9);
+  assert.ok(Math.abs(r.distanceKm - 6.83) < 1e-9);
+  assert.equal(r.source, 'provider');
+  // 두 번째 구간의 출발지는 첫 구간의 도착지다
+  const bodies = calls.map(c => JSON.parse(c.init.body as string));
+  assert.deepEqual(bodies[0].destination, { lat: C.latitude, lng: C.longitude });
+  assert.deepEqual(bodies[1].origin, { lat: C.latitude, lng: C.longitude });
+});
+
+test('3점 — 폴리라인은 구간 폴리라인을 이어 붙이고 이음매의 중복점을 지운다', async () => {
+  const { fn } = legFetch({ [`${O.latitude}>${C.latitude}`]: { durationMin: 9.8, distanceM: 1930 }, [`${C.latitude}>${D.latitude}`]: { durationMin: 25.5, distanceM: 4900 } });
+  const r = await mk(fn).route([O, C, D], 9 * 60, 'transit');
+  assert.deepEqual(r.polyline.map(p => [p.latitude, p.longitude]), [
+    [O.latitude, O.longitude], [C.latitude, C.longitude], [D.latitude, D.longitude],
+  ]);
+});
+
+test('4점 — 구간 3개를 병렬로 부른다', async () => {
+  const { fn, calls } = legFetch({
+    [`${O.latitude}>${C.latitude}`]: { durationMin: 4, distanceM: 1000 },
+    [`${C.latitude}>${C2.latitude}`]: { durationMin: 6, distanceM: 2000 },
+    [`${C2.latitude}>${D.latitude}`]: { durationMin: 8, distanceM: 3000 },
+  });
+  const r = await mk(fn).route([O, C, C2, D], 9 * 60, 'transit');
+  assert.equal(calls.length, 3);
+  assert.equal(r.sections.length, 3);
+  assert.equal(r.durationMin, 18);
+  assert.equal(r.source, 'provider');
+});
+
+test('한 구간이 실패하면 그 구간만 추정으로 채우고 전체는 estimate 로 강등된다', async () => {
+  const { fn, calls } = legFetch({ [`${O.latitude}>${C.latitude}`]: { durationMin: 9.8, distanceM: 1930 }, [`${C.latitude}>${D.latitude}`]: 'fail' });
+  const est = estimateStub();
+  const errs: unknown[] = [];
+  const r = await mk(fn, { estimate: est, onFallback: e => errs.push(e) }).route([O, C, D], 9 * 60, 'transit');
+  assert.equal(calls.length, 2);
+  assert.equal(est.calls, 1, '실패한 구간만 추정으로 다시 잰다');
+  assert.equal(errs.length, 1);
+  assert.equal(r.sections.length, 2);
+  assert.equal(r.sections[0].durationMin, 9.8, '살아남은 구간의 실측은 버리지 않는다');
+  assert.equal(r.source, 'estimate', '한 구간이라도 추정이면 전체가 추정이다');
+});
+
+test('한 구간이 서버 자진 강등(source:estimate)이면 전체가 estimate', async () => {
+  const { fn } = legFetch({ [`${O.latitude}>${C.latitude}`]: { durationMin: 9.8, distanceM: 1930 }, [`${C.latitude}>${D.latitude}`]: 'demoted' });
+  const r = await mk(fn).route([O, C, D], 9 * 60, 'transit');
+  assert.equal(r.source, 'estimate');
+  assert.deepEqual(r.sections, [{ durationMin: 9.8, distanceKm: 1.93 }, { durationMin: 5, distanceKm: 1 }],
+    '강등은 출처만 낮춘다 — 서버가 준 구간 값은 그대로 쓴다');
+});
+
+test('구간이 여럿이면 transit(대안 itinerary)은 담지 않는다 — OD 전체의 대안이 아니다', async () => {
+  const { fn } = legFetch({ [`${O.latitude}>${C.latitude}`]: { durationMin: 9.8, distanceM: 1930 }, [`${C.latitude}>${D.latitude}`]: { durationMin: 25.5, distanceM: 4900 } });
+  const r = await mk(fn).route([O, C, D], 9 * 60, 'transit');
+  assert.equal(r.transit, undefined);
+});
+
+test('예산 초과 — 구간 수가 상한을 넘으면 서버를 부르지 않고 통째로 추정', async () => {
+  const { fn, calls } = legFetch({});
+  const est = estimateStub();
+  const errs: unknown[] = [];
+  const r = await mk(fn, { estimate: est, maxLegs: 2, onFallback: e => errs.push(e) }).route([O, C, C2, D], 9 * 60, 'transit');
+  assert.equal(calls.length, 0, '예산을 넘으면 한 구간도 안 부른다 — 반쪽 실측에 돈을 쓰지 않는다');
   assert.equal(est.calls, 1);
   assert.equal(r.source, 'estimate');
+  assert.equal(errs.length, 1);
+});
+
+test('같은 구간을 동시에 물으면 한 번만 나간다 — 시드끼리 겹치는 구간은 재사용', async () => {
+  const { fn, calls } = legFetch({
+    [`${O.latitude}>${C.latitude}`]: { durationMin: 4, distanceM: 1000 },
+    [`${C.latitude}>${D.latitude}`]: { durationMin: 6, distanceM: 2000 },
+    [`${C.latitude}>${C2.latitude}`]: { durationMin: 5, distanceM: 1500 },
+    [`${C2.latitude}>${D.latitude}`]: { durationMin: 8, distanceM: 3000 },
+  });
+  const p = mk(fn);
+  // 두 안 모두 O→C 로 시작한다. 구간 요청은 2+3=5번이지만 서로 다른 구간은 4개다
+  const [a, b] = await Promise.all([p.route([O, C, D], 9 * 60, 'transit'), p.route([O, C, C2, D], 9 * 60, 'transit')]);
+  assert.equal(calls.length, 4, `O→C 가 두 번 나갔다: ${calls.length}`);
+  assert.equal(a.durationMin, 10);
+  assert.equal(b.durationMin, 17);
 });
 
 test('서버 실패·모양 불량·타임아웃은 추정으로 폴백하고 onFallback 을 부른다', async () => {

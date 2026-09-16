@@ -3,6 +3,9 @@
  *
  *   직행 1회 → 회랑 투영 → 열거·추정 → 시드 R회(V=1은 SINGLE_R회) 병렬 실측
  *   → section에서 leg 학습 → 전체 재채점 → 조건부 2라운드 → Q=3 → 슬롯 status
+ *
+ * 대중교통만 호출 셈법이 다르다 — 공급자가 경유지를 못 받아 안 하나가 구간 수만큼 나간다.
+ * 그래서 시드 수와 2라운드 추가분이 `transitBudget.ts` 의 예산(직행 포함 10회)에 묶인다.
  */
 import { polylineLengthM } from '../geo';
 import { destinationPoint, estimateA, estimateB, estimateC, originPoint, projectOnCorridor, type CorridorPoint } from './corridor';
@@ -10,6 +13,7 @@ import { enumeratePlans, totalVisits } from './enumerate';
 import { DEST_ID, LegStore, learnLegs, ORIGIN_ID } from './legs';
 import { allClosedAtArrival, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
 import { pickOptions, pickSeeds, round2Plan, type Ranked } from './select';
+import { TRANSIT_SEED_BUDGET, transitCallCost, transitSeedCount } from './transitBudget';
 import type { Alternative, LatLng, PlanInput, PlanOption, PlanResult, Rescored, RouteProvider, RouteResult, SlotStatus, Visit } from './types';
 
 const DEFAULT_R = 4;
@@ -25,10 +29,16 @@ export async function plan(
   opts: { R?: number; beamWidth?: number; direct?: RouteResult } = {},
 ): Promise<PlanResult> {
   const R = opts.R ?? DEFAULT_R;
+  // 대중교통은 공급자가 경유지를 못 실어 구간마다 한 번씩 나간다(transitProvider) —
+  // 자동차는 경유지를 그대로 싣고 route() 한 번이면 /route 한 번이다.
+  const transit = input.mode === 'transit';
+  const callCost = (visits: Visit[]) => (transit ? transitCallCost(visits.length) : 1);
+  /** 경유 조합이 더 쓸 수 있는 공급자 호출 수. 직행 몫은 이미 빠져 있다 */
+  let callBudget = transit ? TRANSIT_SEED_BUDGET : Infinity;
   let apiCalls = 0;
   let measuredCount = 0; // 성공한 라우팅 호출 수(직행 포함) — call() 성공 시마다 +1
   const call = async (visits: Visit[]) => {
-    apiCalls++;
+    apiCalls += callCost(visits); // 실제로 나간 요청 수다 — 로그가 사용량을 축소해서 말하면 안 된다
     const points = [input.origin, ...visits.map(v => v.candidate.coord), input.destination];
     const result = await provider.route(points, input.departAtMin, input.mode);
     measuredCount++;
@@ -69,12 +79,21 @@ export async function plan(
   });
 
   // 3. 1라운드 실측
-  const seeds = V === 0 ? [] : pickSeeds(ranked, V === 1 ? SINGLE_R : R);
+  // 대중교통은 안 하나가 구간 수만큼 호출을 먹는다 — 예산(직행 포함 10회)이 시드 수를 정한다.
+  // V=1 이면 8안 → 4안. 8곳을 5분 오차로 재는 것보다 4곳을 구간 단위로 제대로 재는 게 낫다
+  // (2026-09-16 실측에서 추정 1·2위가 0.2분 차이로 뒤집혔다).
+  const seedR = transit ? Math.min(transitSeedCount(V), V === 1 ? SINGLE_R : R) : V === 1 ? SINGLE_R : R;
+  const seeds = V === 0 ? [] : pickSeeds(ranked, seedR);
   const measured: Scored[] = [];
   if (V === 0) measured.push(scorePlan([], ctx)); // 직행이 곧 계획. 이미 실측됐다
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];
   let seedEstimated = false; // 시드 중 하나라도 추정이면 true
   const measure = async (visits: Visit[]) => {
+    // 예산이 모자라면 이 안은 실측하지 않는다 — 추정으로 남고, 실측한 안이 하나라도 있으면
+    // 그쪽이 채점에서 이긴다. 2라운드 추가분이 여기서 걸린다(시드는 seedR 로 이미 맞춰 뽑았다)
+    const cost = callCost(visits);
+    if (cost > callBudget) return;
+    callBudget -= cost; // await 앞에서 깎는다 — 병렬 measure 들이 같은 예산을 두 번 쓰지 못하게
     const est = scorePlan(visits, ctx); // 실측 전 추정 — 오차 계산용
     let route;
     try {

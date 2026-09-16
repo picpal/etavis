@@ -23,12 +23,16 @@ export type KVLike = {
   put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
 };
 
-/** 기기당 분당 상한. /route는 계획 하나에 5~9회가 나가므로 더 넉넉하다 */
-export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 20 };
+/** 기기당 분당 상한. /route는 계획 하나에 5~9회가 나가므로 더 넉넉하다.
+    /transit도 2026-09-16(7단계)부터 계획 하나에 최대 10회가 나간다 — 경유지를 못 실어
+    구간마다 한 번씩 부른다(`src/lib/routePlan/transitBudget.ts`). 20이면 1분에 두 번만
+    계획할 수 있어 경로를 다시 짜는 정상 사용이 막힌다. /route와 같은 근거로 40으로 둔다.
+    분당 상한은 폭주 방어선이지 돈줄이 아니다 — 돈은 아래 PER_DAY가 막는다 */
+export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 40 };
 
 /** IP당 분당 상한. 기기당의 3배 — 사무실·모바일 NAT로 여럿이 한 IP를 쓰는 걸
     감안하되, 기기 id만 갈아끼우는 우회는 막는다 */
-export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 60 };
+export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 120 };
 
 /**
  * 전역 일일 상한. 값의 근거는 2026-09-14 기준 각 API 요금표다.
@@ -40,6 +44,11 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  * | `/enrich`       | 구글 Places — `enrich.ts`에 월 900 카운터가 따로 있다 | | 600 |
  * | `/extract`      | OpenAI, 무료분 없음 | 문장당 | 1,200 |
  * | `/transit`      | Google Routes — Compute Routes Essentials 월 10,000 무료·$5/1,000 (2026-09-15 공식 요금·SKU 문서 확인: TRANSIT·transitDetails·대안 경로는 Pro/Enterprise 트리거가 아님) | | 300 |
+
+ * `/transit` 300/일은 월 10,000 무료분을 30일로 나눈 선이다. **이 숫자는 그대로 두되 뜻이 바뀌었다** —
+ * 7단계(2026-09-16)부터 대중교통 계획 하나가 1회가 아니라 최대 10회를 쓴다(구간마다 한 번).
+ * 즉 무료분 안에서 도는 대중교통 계획이 월 ~10,000건에서 **월 ~1,000건**이 됐다.
+ * 이 상한을 올리는 건 무료분을 나가는 결정이라 값만 고쳐선 안 된다.
  *
  * 상한에 닿으면 429를 낸다. 앱은 서버 실패를 이미 로컬 목으로 폴백하므로
  * (`src/lib/intent.ts`) 화면이 죽지는 않는다 — 대신 추정값이 보인다.

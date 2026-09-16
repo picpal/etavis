@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mockRouteProvider } from './mockProvider';
 import { plan } from './plan';
+import { TRANSIT_CALL_BUDGET, transitCallCost, transitSeedFloor } from './transitBudget';
 import type { PlaceCandidate, PlanInput, Slot } from './types';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -174,4 +175,60 @@ test('timingSource — 직행만 provider 고 시드가 estimate 면 provider_di
   // 경유지가 없으면 직행이 곧 계획 — provider
   const r0 = await plan(base([]), directOnly);
   assert.equal(r0.timingSource, 'provider');
+});
+
+// --- 7단계: 대중교통은 구간마다 /transit 한 번이라 호출 예산을 따로 센다 ---
+
+/** transitProvider 가 하는 일을 흉내 낸다 — route() 한 번이 구간 수만큼 나간다 */
+function legCounting(inner = mockRouteProvider()) {
+  const self = {
+    legCalls: 0,
+    async route(points: { latitude: number; longitude: number }[], departAtMin: number, mode: 'car' | 'walk' | 'transit') {
+      self.legCalls += points.length - 1;
+      return inner.route(points, departAtMin, mode);
+    },
+  };
+  return self;
+}
+const many = (n: number) => Array.from({ length: n }, (_, i) => c(`m${i}`, at(37.5 + (i % 7) * 0.004, 127.02 + i * 0.002)));
+
+test('대중교통 V=1 — 겹치는 구간이 없어 4안, /transit 은 직행 1 + 4×2 = 9회', async () => {
+  const p = legCounting();
+  const r = await plan(base([slot('a', many(30))], { mode: 'transit' }), p);
+  // V=1 은 O→cᵢ·cᵢ→D 가 후보마다 전부 달라 중복 제거가 아낄 게 없다 — 장부와 실제가 같고,
+  // 실측 안 수는 겹침 0 일 때의 보장 하한(transitSeedFloor)과 정확히 같다
+  assert.equal(p.legCalls, 9, `구간 호출 ${p.legCalls}회`);
+  assert.equal(r.apiCalls, 1 + transitSeedFloor(1) * transitCallCost(1), '직행 1 + 4안 × 구간 2개');
+  assert.equal(r.apiCalls, 9, 'apiCalls 는 실제로 나간 요청 수여야 감사에 쓸 수 있다');
+  assert.ok(r.apiCalls <= TRANSIT_CALL_BUDGET);
+  assert.equal(r.options[0].visits.length, 1);
+});
+
+test('대중교통 V=2 — 2라운드까지 합쳐도 예산 10회를 넘지 않는다', async () => {
+  // 강 건너 후보를 넣어 2라운드 트리거를 켠다
+  const barrier = { a: at(37.49, 126.9), b: at(37.49, 127.2), penaltyKm: 8 };
+  const across = c('across', at(37.485, 127.05));
+  const p = legCounting(mockRouteProvider({ barrier }));
+  const r = await plan(base([slot('a', [across, near, on, far]), slot('b', [c('b1', at(37.5, 127.09)), c('b2', at(37.505, 127.085))])], { mode: 'transit' }), p);
+  // 장부(apiCalls)는 구간 중복을 뺀 수다. 실제 요청도 같은 수라는 건 진짜 공급자를 쓰는
+  // transitLegs.regression.test.ts 가 확인한다 — 여기 legCounting 은 코얼레싱을 흉내 내지 않는다
+  assert.ok(r.apiCalls <= TRANSIT_CALL_BUDGET, `예산 초과: ${r.apiCalls}회`);
+  assert.ok(r.options.length >= 1);
+  assert.equal(r.timingSource, 'estimate', '목 공급자라 직행부터 추정');
+});
+
+test('자동차는 예산이 그대로다 — V=1 은 여전히 시드 8안', async () => {
+  const p = legCounting();
+  const r = await plan(base([slot('a', many(30))]), p);
+  assert.equal(r.apiCalls, 9, '직행 1 + SINGLE_R 8');
+});
+
+test('대중교통 — 예산으로 한 안도 못 재는 경유지 수면, 실측은 포기해도 계획은 남는다', async () => {
+  const p = legCounting();
+  const stops = Array.from({ length: 10 }, (_, i) => slot(`s${i}`, [c(`s${i}c`, at(37.5 + i * 0.001, 127.01 + i * 0.009))]));
+  const r = await plan(base(stops, { mode: 'transit', order: 'locked' }), p);
+  assert.equal(p.legCalls, 1, '직행 말고는 한 번도 안 부른다 — 예산을 넘겨 가며 재지 않는다');
+  assert.ok(r.options.length >= 1, '실측을 포기해도 계획까지 사라지면 안 된다');
+  assert.equal(r.options[0].visits.length, 10);
+  assert.notEqual(r.timingSource, 'provider', '한 구간도 안 쟀으면 실측이라 말할 수 없다');
 });

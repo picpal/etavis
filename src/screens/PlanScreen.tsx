@@ -225,7 +225,7 @@ export function PlanScreen({ navigation }: Props) {
       })
       .then(({ intent, source }) => {
         if (seq !== seqRef.current) return; // 지나간 요청의 답은 버린다
-        applyIntent(intent);
+        applyIntent(intent, source);
         flow.reset(); // 칩이 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
         // options 를 방어적으로 읽는다 — intentClient.ts 는 서버 응답을 Intent로 그대로
         // 캐스팅하고, looksLikeIntent 도 ambiguous 원소별로는 들여다보지 않는다. Task 1의

@@ -57,6 +57,10 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
       return {
         a: 'chat.extract',
         d: {
+          // 서버 LLM이냐 로컬 목이냐. 2026-09-16 '옷수선'이 통째로 빠진 줄을 보고도
+          // 목이 모르는 말이라 그런 건지 프롬프트가 흘린 건지 갈라낼 수가 없었다 —
+          // 대응이 완전히 다른데 로그가 그걸 안 적고 있었다. 모르면 null
+          src: action.source ?? null,
           add: i.stops.filter(s => s.op === 'add').length,
           remove: i.stops.filter(s => s.op === 'remove').length,
           queries: i.stops.map(s => s.queries[0] ?? '?').join(' · '),

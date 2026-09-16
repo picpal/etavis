@@ -8,6 +8,7 @@ import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
+import type { ExtractSource } from '../lib/intentClient';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
 import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
@@ -408,7 +409,9 @@ export type PlanAction =
   | { type: 'DEPART_STOP' }
   | { type: 'ARRIVE_AT_DESTINATION' }
   | { type: 'SET_STOP_COUNT'; count: number }
-  | { type: 'APPLY_INTENT'; intent: Intent }
+  /* `source` 는 상태로 가지 않는다 — 행동 로그만 읽는다(actionLog.ts). 안 실어 보내는
+     호출부가 있어도 되게 optional 이다 */
+  | { type: 'APPLY_INTENT'; intent: Intent; source?: ExtractSource }
   | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'NARROW_STOP'; chipId: string; query: string }
   | { type: 'PUSH_CHAT'; text: string }
@@ -754,7 +757,7 @@ type PlanApi = {
   arriveAtDestination: () => void;
   /** 목 데이터 경유지 개수 변경 — 채팅에서 'N개'를 말했을 때 */
   setStopCount: (count: number) => void;
-  applyIntent: (intent: Intent) => void;
+  applyIntent: (intent: Intent, source?: ExtractSource) => void;
   removeChip: (id: string) => void;
   /** 되묻기 선택지를 골랐을 때 — 그 경유지의 검색어를 고른 값 하나로 좁힌다 */
   narrowStop: (chipId: string, query: string) => void;
@@ -865,7 +868,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'ARRIVE_AT_DESTINATION' });
       },
       setStopCount: count => dispatch({ type: 'SET_STOP_COUNT', count }),
-      applyIntent: intent => dispatch({ type: 'APPLY_INTENT', intent }),
+      applyIntent: (intent, source) => dispatch({ type: 'APPLY_INTENT', intent, source }),
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
       pushChat: text => {

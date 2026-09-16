@@ -70,6 +70,31 @@ test('추출 결과는 개수로 요약된다 — 원문과 무엇을 알아들�
   assert.equal(log?.d?.arriveBy, 1080);
 });
 
+test('추출 출처가 로그에 남는다 — 목인지 서버인지 모르면 진단이 막힌다', () => {
+  /* 2026-09-16 실기기 로그에서 '옷수선' 이 통째로 사라졌는데, 목이 못 잡은 건지
+     서버 프롬프트가 흘린 건지 로그만으로는 갈라지지 않았다. 대응이 완전히 다르다 */
+  const applyIntent = (source?: 'server' | 'local') =>
+    ({
+      type: 'APPLY_INTENT',
+      source,
+      intent: {
+        resetStops: false,
+        stops: [{ op: 'add', queries: ['이마트'], kind: 'brand', why: '', count: 1, flexible: false, openNow: false }],
+        endpoints: {},
+        order: 'auto',
+        arriveBy: null,
+        mode: null,
+        reject: null,
+        ambiguous: [],
+      },
+    }) as PlanAction;
+
+  assert.equal(describePlanAction(applyIntent('server'), planState())?.d?.src, 'server');
+  assert.equal(describePlanAction(applyIntent('local'), planState())?.d?.src, 'local');
+  // 출처를 안 싣는 옛 호출부가 남아 있어도 줄은 남아야 한다 — 모르면 null 로 적는다
+  assert.equal(describePlanAction(applyIntent(), planState())?.d?.src, null);
+});
+
 test('채팅 원문을 남긴다 — 추출을 다듬으려면 실제로 뭐라고 쳤는지가 제일 값지다', () => {
   const log = describePlanAction({ type: 'PUSH_CHAT', text: '가는 길에 카페' } as PlanAction, planState());
   assert.equal(log?.a, 'chat.send');

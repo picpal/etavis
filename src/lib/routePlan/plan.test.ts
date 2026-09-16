@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mockRouteProvider } from './mockProvider';
 import { plan } from './plan';
-import { TRANSIT_CALL_BUDGET } from './transitBudget';
+import { TRANSIT_CALL_BUDGET, transitCallCost, transitSeedFloor } from './transitBudget';
 import type { PlaceCandidate, PlanInput, Slot } from './types';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -195,8 +195,10 @@ const many = (n: number) => Array.from({ length: n }, (_, i) => c(`m${i}`, at(37
 test('대중교통 V=1 — 겹치는 구간이 없어 4안, /transit 은 직행 1 + 4×2 = 9회', async () => {
   const p = legCounting();
   const r = await plan(base([slot('a', many(30))], { mode: 'transit' }), p);
-  // V=1 은 O→cᵢ·cᵢ→D 가 후보마다 전부 달라 중복 제거가 아낄 게 없다 — 장부와 실제가 같다
+  // V=1 은 O→cᵢ·cᵢ→D 가 후보마다 전부 달라 중복 제거가 아낄 게 없다 — 장부와 실제가 같고,
+  // 실측 안 수는 겹침 0 일 때의 보장 하한(transitSeedFloor)과 정확히 같다
   assert.equal(p.legCalls, 9, `구간 호출 ${p.legCalls}회`);
+  assert.equal(r.apiCalls, 1 + transitSeedFloor(1) * transitCallCost(1), '직행 1 + 4안 × 구간 2개');
   assert.equal(r.apiCalls, 9, 'apiCalls 는 실제로 나간 요청 수여야 감사에 쓸 수 있다');
   assert.ok(r.apiCalls <= TRANSIT_CALL_BUDGET);
   assert.equal(r.options[0].visits.length, 1);

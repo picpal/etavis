@@ -133,12 +133,34 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
 
         // 검색어 폴백 — LLM이 조건을 섞은 구를 내놓아도(실측: `샌드위치 파는 카페`)
         // 업종어 후보로 넘어가 경유지를 살린다. 호출 수는 모든 시도를 합산한다.
-        const queries = st.queries.length > 0 ? st.queries : [''];
+        //
+        // queries가 비면(expandQueries(['   '])가 []를 돌려줄 수 있다) 검색 자체를
+        // 건너뛴다 — 빈 문자열로 카카오를 부르면 400이 라운드마다(최대 25회) 돌아온다.
+        if (st.queries.length === 0) {
+          return {
+            id: st.id, query: '', stopKind: st.stopKind, why: st.why,
+            candidates: [], dwellMin: dwellFor(''),
+            count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: 'none',
+            searchRadiusM: 0, searchCalls: 0,
+          } satisfies Slot;
+        }
+        // 시도 후보를 3개로 제한한다 — 후보 하나당 최대 25콜(반지름 4라운드 + far
+        // 1라운드, 라운드마다 최대 5점 동시 조회)이 **순차로** 나간다. 상한이 없으면
+        // 슬롯당 최악 10후보(LLM 5개 × expandQueries 최대 2배) × 25콜 = 250콜, 순차
+        // 라운드 50개가 DEFAULT_TIMEOUT_MS(12초)를 넘겨 계획 전체가 FAIL('timeout')로
+        // 끝난다 — 폴백이 살리려던 경유지를 폴백 자체가 죽이는 경로다.
+        const queries = st.queries.slice(0, 3);
         let used = queries[0];
         let found = await runSearch(used);
         let calls = found.calls;
         for (const next of queries.slice(1)) {
           if (found.candidates.length > 0) break;
+          // 남은 예산의 절반을 넘겼으면 더 시도하지 않는다(아래 보강 단계의
+          // remainMs와 같은 패턴) — 슬롯 하나의 폴백이 다른 슬롯·플래너 몫까지 다
+          // 먹으면 안 된다. 경유지 하나를 잃는 게 계획 전체를 타임아웃으로 잃는
+          // 것보다 낫다.
+          const remainMs = timeoutMs - (Date.now() - startedMs);
+          if (remainMs < timeoutMs * 0.5) break;
           const retry = await runSearch(next);
           calls += retry.calls;
           used = next;

@@ -734,13 +734,16 @@ test('검색어 폴백 — 첫 후보가 잡히면 뒤 후보는 검색하지 �
     { provider: mockRouteProvider(), search: spy, dispatch },
   );
 
+  // tried 가 비어도 every()는 통과한다(vacuous) — 실제로 검색이 나갔는지부터 본다
+  assert.ok(tried.length > 0, '검색이 한 번도 나가지 않았다');
   assert.ok(tried.every(q => q === '올리브영'), `'화장품'까지 검색했다: ${[...new Set(tried)].join(',')}`);
   const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { query: string }[] }).slots;
   assert.equal(slots[0].query, '올리브영');
 });
 
 test('검색어 폴백 — 모든 후보가 0건이면 status none, query 는 첫 후보', async () => {
-  const empty: SearchFn = async () => [];
+  const tried: string[] = [];
+  const empty: SearchFn = async q => { tried.push(q); return []; };
   const { actions, dispatch } = collect();
 
   await runPlan(
@@ -752,4 +755,26 @@ test('검색어 폴백 — 모든 후보가 0건이면 status none, query 는 �
   assert.equal(slots[0].searchStatus, 'none');
   assert.equal(slots[0].query, '샌드위치 파는 카페');   // 사용자가 말한 그대로를 보여 준다
   assert.ok((slots[0].searchCalls ?? 0) > 0, '호출 수가 0이면 감사 로그가 사용량을 축소해 말한다');
+  // searchCalls > 0 만으로는 두 후보 전부의 합산인지, 첫 후보 몫만인지 못 가른다 —
+  // 실제로 나간 카카오 요청 수(tried.length)와 정확히 같아야 한다
+  assert.equal(slots[0].searchCalls, tried.length, 'searchCalls는 두 후보 시도를 합산해야 한다');
+});
+
+test('검색어 폴백 — dwellMin은 구가 아니라 실제로 쓴 검색어 기준', async () => {
+  // '커피 파는 마트'는 DWELL의 카페|커피 행(5분)에 먼저 걸리지만, 첫 후보가 0건이라
+  // 실제로 쓴 검색어는 폴백된 '마트'다. DWELL 표(runPlan.ts) 확인: 카페|커피 행=5분,
+  // 마트 행=15분 — dwellFor(used)가 구 전체가 아니라 실제 검색어를 봐야 15분이 맞다.
+  const martCatalog: PlaceCandidate[] = [{ id: 'mt1', name: '마트 A', coord: at(37.5, 127.05) }];
+  const martSearch: SearchFn = async (q, near, r) =>
+    martCatalog.filter(c => c.name.startsWith(q) && haversineM(near, c.coord) <= r);
+  const { actions, dispatch } = collect();
+
+  await runPlan(
+    req([{ id: 's-1', queries: ['커피 파는 마트', '마트'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { query: string; dwellMin: number }[] }).slots;
+  assert.equal(slots[0].query, '마트');
+  assert.equal(slots[0].dwellMin, 15, 'dwellFor는 구가 아니라 실제로 쓴 검색어(마트)를 봐야 한다');
 });

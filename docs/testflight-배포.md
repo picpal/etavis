@@ -130,6 +130,29 @@ npx eas-cli submit --platform ios --profile production --latest
 **내부 테스터(최대 100명)는 Beta App Review 없이 바로** 받는다.
 외부 테스터(최대 10,000명)는 Beta App Review 를 거친다.
 
+### 테스터 — 손으로 만들 게 없다
+
+**EAS 가 내부 그룹까지 만들어 둔다.** 첫 제출이 끝난 뒤 들어가 보면 이미 이렇다:
+
+| | |
+|---|---|
+| 그룹 | `Team (Expo)` (내부 그룹) |
+| 테스터 | `official.picpal@gmail.com` — 상태 `초대됨` |
+| 빌드 | `1.0.0 (2)` — 상태 `테스트 중` |
+| 빌드 배포 | `자동 - Xcode 빌드` |
+
+그래서 **다음 빌드부터는 아무것도 안 해도 이 그룹에 자동으로 붙는다.**
+`자동` 이라 EAS 가 올린 빌드도 그대로 잡힌다(실측).
+
+찾아가는 경로가 헷갈린다 — 상단의 `TestFlight ⌄` 는 앱 단위 메뉴(배포·분석·TestFlight)고,
+테스터·그룹은 그 아래 **`iOS 빌드 ⌄`** 를 눌러야 나온다.
+
+`초대됨` 은 아직 수락 전이라는 뜻이다. 메일을 못 찾겠으면 테스터를 체크하고
+**`다시 초대`** → `재전송`. **초대 메일은 `official.picpal@gmail.com` 로 간다** —
+평소 쓰는 `pic.vamos@gmail.com` 이 아니다.
+
+폰에서는 App Store 에서 **TestFlight** 앱을 깔고 메일의 링크(또는 리딤 코드)를 연다.
+
 ### 버전
 
 `eas.json` 이 `appVersionSource: "remote"` + `autoIncrement: true` 라
@@ -182,3 +205,4 @@ Holder 라 보통 즉시 활성화된다. 그 뒤:
 | 번들 ID | `com.etavia.app` |
 | `ascAppId` | `6812422135` (`eas.json` 에 기록됨) |
 | TestFlight | https://appstoreconnect.apple.com/apps/6812422135/testflight/ios |
+| 내부 그룹 | `Team (Expo)` · `a4de7bf1-4c5c-49c4-b8de-87915f80f866` |

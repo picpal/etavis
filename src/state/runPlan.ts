@@ -9,6 +9,7 @@ import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
+import { applyNear, resolveNear } from '../lib/nearSide';
 import type { EnrichFn } from '../lib/enrich/enrichClient';
 import { scoreTrend } from '../lib/trendScore';
 
@@ -104,6 +105,8 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     let slots: Slot[];
     try {
       slots = await race(Promise.all(request.stops.map(async st => {
+        // 사용자가 말한 위치가 먼저다. 말 안 했으면 물성 표(들고 대중교통을 못 타는 것)를 읽는다
+        const near = resolveNear(st.near, request.mode, st.queries, st.why);
         const need = Math.max(1, st.count);
         const target = Math.max(st.count, KC);
 
@@ -140,7 +143,9 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           return {
             id: st.id, query: '', stopKind: st.stopKind, why: st.why,
             candidates: [], dwellMin: dwellFor(''),
-            count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: 'none',
+            count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+            near, nearRelaxed: false,
+            searchStatus: 'none',
             searchRadiusM: 0, searchCalls: 0,
           } satisfies Slot;
         }
@@ -171,11 +176,17 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         // "…는 경로 근처에서 못 찾아 뺐어요"(OptionsScreen)에 찍히는 값이다
         if (found.candidates.length === 0) used = queries[0];
 
+        // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다).
+        // 그다음 near 로 한쪽 끝만 남긴다. 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이다
+        const parked = applyParkingPolicy(found.candidates, request.mode);
+        const sided = applyNear(parked, near, poly);
+
         return {
-          // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
           id: st.id, query: used, stopKind: st.stopKind, why: st.why,
-          candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, MAX_CANDIDATES), dwellMin: dwellFor(used),
-          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: found.status,
+          candidates: sided.candidates.slice(0, MAX_CANDIDATES), dwellMin: dwellFor(used),
+          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          near, nearRelaxed: sided.relaxed,
+          searchStatus: found.status,
           searchRadiusM: found.radiusM, searchCalls: found.calls,
         } satisfies Slot;
       })));

@@ -33,5 +33,7 @@ export function requestStopsFromChips(chips: IntentChip[]): PlanRequest['stops']
       stopKind: (c.kind === 'stop' ? c.stopKind : undefined) ?? 'category',
       // 공백뿐인 why 는 없는 것으로 본다 — 글자 없는 할 일 한 줄이 카드에 남는다
       why: (c.kind === 'stop' ? c.why?.trim() : undefined) || undefined,
+      // 옛 상태의 칩에는 없을 수 있다 — 없으면 제약 없음
+      near: (c.kind === 'stop' ? c.near : undefined) ?? 'any',
     }));
 }

@@ -40,6 +40,10 @@ export type Slot = {
   openNow: boolean;
   /** 추출이 정한 경유지 종류. 'category' 일 때만 보강·추천이 돈다 */
   stopKind: 'brand' | 'category' | 'specific';
+  /** 경로의 어느 쪽 끝에 붙어야 하나. 없으면 'any'(제약 없음)로 본다 */
+  near?: NearSide;
+  /** near 로 걸렀더니 한 곳도 안 남아 제약을 푼 것. 화면이 "그쪽엔 없어서…"라고 말한다 */
+  nearRelaxed?: boolean;
   /** 여기서 할 일. 추출의 `why`. 계획이 확정될 때 그 경유지의 할 일 한 줄이 된다 —
       계산에는 쓰이지 않는다(순서·시간에 영향을 주면 안 된다) */
   why?: string;

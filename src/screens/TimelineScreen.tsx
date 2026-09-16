@@ -194,16 +194,17 @@ export function TimelineScreen({ navigation, route }: Props) {
                 <Text style={[type.time, { color: color.ink }, pendingStyle]}>{item.arriveAt}</Text>
               </View>
 
-              {!isActive && (item.tasks.length > 0 || hasCandidates) && (
+              {/* 할 일 칩은 비어 있어도 그린다 — 카드 탭은 롱프레스 드래그가 쓰고 있어서
+                  이 칩이 할 일 시트로 가는 유일한 입구다. 없으면 여기서 만든 계획의
+                  경유지에는 영영 할 일을 못 붙인다 */}
+              {!isActive && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {item.tasks.length > 0 && (
-                    <SmallChip
-                      label={`할 일 ${doneCount} / ${item.tasks.length}`}
-                      tint={color.primary}
-                      background={color.primaryTint}
-                      onPress={() => setTaskStopId(item.id)}
-                    />
-                  )}
+                  <SmallChip
+                    label={item.tasks.length > 0 ? `할 일 ${doneCount} / ${item.tasks.length}` : '+ 할 일'}
+                    tint={color.primary}
+                    background={color.primaryTint}
+                    onPress={() => setTaskStopId(item.id)}
+                  />
                   {hasCandidates && <SmallChip label="매장 교체" onPress={() => setCandidateStopId(item.id)} />}
                 </View>
               )}

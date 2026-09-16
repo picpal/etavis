@@ -69,6 +69,37 @@ test('toLegacyPlan — stops·legs·candidates·options가 기존 형식으로',
   assert.equal(p.selectedOptionId, p.dataset.options[0].id);
 });
 
+/* 할 일 — 추출이 잡은 용무(slot.why)가 **장소가 정해지는 이 시점에** 경유지의
+   할 일로 내려앉는다. toLegacyPlan 은 후보가 확정된 visits 로만 돌기 때문에,
+   여기서 붙이면 "수선집이 선택됐을 때 수선 맡기기가 생긴다"가 그대로 성립한다. */
+
+test('toLegacyPlan — slot.why 가 그 경유지의 할 일 한 줄이 된다', async () => {
+  const withWhy: Slot[] = slots.map(s => (s.id === 's-1' ? { ...s, why: '옷 수선 맡기기' } : s));
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: withWhy, order: 'auto' }, mockRouteProvider());
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: withWhy });
+  s = planFlowReducer(s, { type: 'RESULT', result });
+
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  const mended = p.stops.find(st => st.baseId === 's-1')!;
+  assert.deepEqual(mended.tasks.map(t => ({ text: t.text, done: t.done })), [{ text: '옷 수선 맡기기', done: false }]);
+  assert.ok(mended.tasks[0].id, '할 일에는 id 가 있어야 체크·수정·삭제가 붙는다');
+  // why 가 없는 슬롯은 빈 채로 — 없는 용무를 지어내지 않는다
+  assert.deepEqual(p.stops.find(st => st.baseId === 's-2')!.tasks, []);
+});
+
+test('toLegacyPlan — 두 경유지의 할 일 id 가 겹치지 않는다', async () => {
+  const withWhy: Slot[] = slots.map(s => ({ ...s, why: `${s.query} 들르기` }));
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: withWhy, order: 'auto' }, mockRouteProvider());
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: withWhy });
+  s = planFlowReducer(s, { type: 'RESULT', result });
+
+  const ids = toLegacyPlan({ flow: s, departMin: 480 }).stops.flatMap(st => st.tasks.map(t => t.id));
+  assert.equal(ids.length, 2);
+  assert.equal(new Set(ids).size, 2, '할 일 id 가 겹치면 한 곳을 체크할 때 다른 곳도 같이 체크된다');
+});
+
 test('toLegacyPlan — 2안을 고르면 후보에 중복이 없고 recommended는 2안의 후보', async () => {
   const s0 = await ready();
   assert.ok(s0.result!.options.length >= 2, '픽스처가 2안 이상을 내야 이 테스트가 뜻이 있다');

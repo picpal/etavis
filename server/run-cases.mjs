@@ -44,6 +44,8 @@ if (asJson) {
         group: r.g,
         text: r.text,
         stops: r.flat.join(', '),
+        // why 는 그대로 화면의 할 일이 된다 — 숫자만 보고는 문장이 쓸 만한지 알 수 없다
+        tasks: r.got.stops.filter(s => s.op !== 'remove').map(s => s.why).filter(Boolean).join(' / '),
         arriveBy: r.got.arriveBy,
         mode: r.got.mode,
         order: r.got.order,

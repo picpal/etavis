@@ -68,11 +68,20 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
 
   const departAt = stop ? toHHMM(toMin(stop.arriveAt) + stop.dwellMin) : '';
   const remainMin = stop ? Math.max(stop.dwellMin - 6, 1) : 0;
+  const stopIdx = stop ? state.stops.findIndex(s => s.id === stop.id) : -1;
   // 실제로 이 경유지에 도착해 체류 중인지 (진행중 탭의 '도착했어요'로 전환)
-  const dwelling = !!stop && state.atStop && state.stops[state.passedCount]?.id === stop.id;
-  // 도착해 체류 중이고 아직 제보 전일 때만 혼잡도를 묻는다.
-  // devAnyCongestion은 개발 메뉴의 테스트 스위치 — 도착 전에도 열어 본다
-  const askCongestion = (dwelling || state.devAnyCongestion) && !stop?.congestion;
+  const dwelling = stopIdx >= 0 && state.atStop && stopIdx === state.passedCount;
+  // 이미 지나온 곳. 떠났어도 붐볐는지는 안다 — 오히려 그때가 제일 잘 안다
+  const departed = stopIdx >= 0 && stopIdx < state.passedCount;
+  /*
+    가 본 곳이고 아직 제보를 안 했으면 계속 묻는다.
+    전에는 `dwelling`만 봤다. 체류 중에 시트를 안 열고 지나가면 그 경유지의 혼잡도를
+    물어볼 창이 영영 닫혔다 — 체류는 몇 분이고, 그 몇 분 안에 시트를 열 이유가
+    사용자에겐 없다. 가보지 않은 곳을 막는 규칙은 그대로다(그건 제보가 아니라 소음이다).
+    devAnyCongestion은 개발 메뉴의 테스트 스위치 — 도착 전에도 열어 본다
+  */
+  const visited = dwelling || departed;
+  const askCongestion = (visited || state.devAnyCongestion) && !stop?.congestion;
 
   /* 제보하면 그 자리에서 고맙다고 하고 시트가 닫힌다.
      dispatch 즉시 askCongestion이 꺼지므로, 인사를 띄우는 동안은
@@ -135,10 +144,12 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     ? GRABBAR_H + topH + SCROLL_PAD_TOP + listH + bottomH
     : SHEET_CHROME_H + listH + (showCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
 
-  // 경유지에 도착(시트 열림)하면 출발 5분 전 알림을 자동 예약
+  /* 경유지에 도착(시트 열림)하면 출발 5분 전 알림을 자동 예약.
+     이미 떠나온 곳은 뺀다 — 혼잡도를 제보하러 여는 일이 생겼는데, 그때마다
+     지나간 시각으로 출발 알림을 다시 걸면 안 된다 */
   const stopName = stop?.name;
   React.useEffect(() => {
-    if (!stopId || !stopName) return;
+    if (!stopId || !stopName || departed) return;
     let cancelled = false;
     scheduleDepartureReminder(stopName, departAt).then(id => {
       if (cancelled) cancelScheduled(id);
@@ -213,7 +224,13 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                 }}
                 numberOfLines={1}
               >
-                {dwelling ? `체류 중 · ${departAt} 출발` : `도착 예정 ${stop.arriveAt} · ${departAt} 출발`}
+                {/* 이미 떠나온 곳에 '도착 예정'이라고 쓰면 안 된다 — 혼잡도를
+                    '붐볐나요'로 묻는 카드 바로 위에서 앞뒤가 어긋난다 */}
+                {dwelling
+                  ? `체류 중 · ${departAt} 출발`
+                  : departed
+                    ? `${stop.arriveAt} 들름 · ${departAt} 출발`
+                    : `도착 예정 ${stop.arriveAt} · ${departAt} 출발`}
               </Text>
               {dwelling && (
                 <View style={{ backgroundColor: color.primaryTint, paddingVertical: 7, paddingHorizontal: 10, borderRadius: 9 }}>
@@ -393,18 +410,22 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             onLayout={e => setBottomH(e.nativeEvent.layout.height)}
             style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}
           >
-          {/* 출발 5분 전 알림은 도착하면 자동 예약 — 별도 토글 없음 */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
-            <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color.stroke }} />
-            <Text style={{ flex: 1, fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
-              출발 5분 전({departAt} 출발)에 알려드릴게요
-            </Text>
-          </View>
+          {/* 출발 5분 전 알림은 도착하면 자동 예약 — 별도 토글 없음.
+              떠나온 곳에는 예약도 안 하므로(위 useEffect) 약속도 하지 않는다 */}
+          {!departed && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
+              <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color.stroke }} />
+              <Text style={{ flex: 1, fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
+                출발 5분 전({departAt} 출발)에 알려드릴게요
+              </Text>
+            </View>
+          )}
 
           {/* 혼잡도 제보 — '다 했어요' 자리를 대신한다.
               그 버튼은 시트를 닫기만 했다. 떠나는 순간은 여기가 얼마나 붐볐는지
               사용자가 아는 유일한 시점이라, 같은 자리에서 그걸 받는 편이 값이 있다.
-              도착해 체류 중일 때만 연다 — 가보지도 않은 곳의 혼잡도는 제보가 아니라 소음이다.
+              가 본 곳(체류 중이거나 이미 지나온 곳)에만 연다 — 가보지도 않은 곳의
+              혼잡도는 제보가 아니라 소음이다. 제보를 마치면 다시 묻지 않는다.
               카드 높이는 고정 — 인사로 바뀔 때 시트가 출렁이면 안 된다 */}
           {showCongestion && (
             <Card style={{ padding: 16, height: CONGESTION_CARD_H, justifyContent: 'center' }}>
@@ -422,8 +443,9 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                 </Animated.View>
               ) : (
                 <View style={{ gap: 12 }}>
+                  {/* 떠나온 곳에 '붐비나요'라고 물으면 지금 거기 있는 줄 안다 */}
                   <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>
-                    여기 얼마나 붐비나요?
+                    {departed ? '여기 얼마나 붐볐나요?' : '여기 얼마나 붐비나요?'}
                   </Text>
                   {/* 폭을 4등분해 꽉 채운다 — 한 번 스치듯 누르고 지나갈 자리라 표적이 커야 한다 */}
                   <View style={{ flexDirection: 'row', gap: 8 }}>

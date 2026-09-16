@@ -228,6 +228,18 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
   if (!result || !request) throw new Error('toLegacyPlan: 결과가 없다');
   const { visits, timing } = effectiveVisits(result, slots, flow.selectedOptionIdx, flow.overrides);
   const queryOf = (slotId: string) => slots.find(s => s.id === slotId)?.query ?? '';
+  /*
+    추출이 잡은 용무를 할 일 한 줄로 내린다. **여기가 맞는 자리인 이유**: 이 함수는
+    후보가 확정된 visits 로만 돈다 — 수선집이 정해지는 바로 그 순간에 '옷 수선 맡기기'가
+    생긴다. 슬롯 단계에서 미리 만들면 장소도 없는 할 일이 먼저 떠 있게 된다.
+
+    한 줄만 만든다. LLM 이 여러 줄을 지어내게 하면 "우유·계란·휴지"처럼 사용자가 말한
+    적 없는 목록이 붙는다 — 나머지는 사용자가 시트에서 직접 넣는다.
+  */
+  const tasksOf = (slotId: string) => {
+    const why = slots.find(s => s.id === slotId)?.why?.trim();
+    return why ? [{ id: `why-${slotId}`, text: why, done: false }] : [];
+  };
   /** timing.arrivals 가 기준으로 삼은 시각. 구간을 차이로 뽑을 때 이걸 써야 한다 */
   const timingBase = request.departAtMin;
   /** 화면 시계와 계산 시계의 차이. 재클럭은 전 구간을 같은 폭으로 민다 */
@@ -244,7 +256,7 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     return {
       id: v.slotId, baseId: v.slotId, name: v.candidate.name, category: queryOf(v.slotId), coord: v.candidate.coord,
       dwellMin: v.dwellMin, arriveAt: toHHMM(arrive + shift), legMin: Math.round(legMin), legKm, openState,
-      openNote: `체류 ${v.dwellMin}분 · ${openNoteOf(openState)}`, tasks: [],
+      openNote: `체류 ${v.dwellMin}분 · ${openNoteOf(openState)}`, tasks: tasksOf(v.slotId),
       replaceDeltaMin: 0, selectedCandidateId: v.candidate.id,
     };
   });

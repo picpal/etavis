@@ -28,5 +28,7 @@ export function requestStopsFromChips(chips: IntentChip[]): PlanRequest['stops']
       flexible: (c.kind === 'stop' ? c.flexible : undefined) ?? true,
       openNow: (c.kind === 'stop' ? c.openNow : undefined) ?? false,
       stopKind: (c.kind === 'stop' ? c.stopKind : undefined) ?? 'category',
+      // 공백뿐인 why 는 없는 것으로 본다 — 글자 없는 할 일 한 줄이 카드에 남는다
+      why: (c.kind === 'stop' ? c.why?.trim() : undefined) || undefined,
     }));
 }

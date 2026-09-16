@@ -42,6 +42,9 @@ export type IntentChip =
       narrowed?: boolean;
       /** LLM이 뽑은 '문 연 곳만' — runPlan 의 슬롯으로 그대로 내려간다 */
       openNow: boolean;
+      /** 여기서 할 일 — '옷수선 맡기고'의 '맡기고'. 장소가 정해지는 순간
+          (`toLegacyPlan`) 그 경유지의 할 일 한 줄이 된다 */
+      why?: string;
       /** false면 특정 지점 고정. 최적화 대상에서 뺀다 */
       flexible: boolean;
     }
@@ -218,6 +221,7 @@ function initState(ds: Dataset, seed = false): PlanState {
     stopKind: st.kind,
     openNow: st.openNow,
     flexible: st.flexible,
+    why: st.why,
   }));
   return {
     departMin,
@@ -604,7 +608,7 @@ function reducer(state: PlanState, action: PlanAction): PlanState {
         for (let k = 0; k < Math.max(1, st.count); k++) {
           chips.push({
             id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries,
-            stopKind: st.kind, openNow: st.openNow, flexible: st.flexible,
+            stopKind: st.kind, openNow: st.openNow, flexible: st.flexible, why: st.why,
           });
         }
       }

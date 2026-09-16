@@ -159,6 +159,8 @@ const rows = scored.map(({ c, r }) => {
     group: c.g,
     text: c.text,
     stops: r ? r.flat.join(', ') : '',
+    // why 는 그대로 화면의 할 일이 된다 — 숫자만 보고는 문장이 쓸 만한지 알 수 없다
+    tasks: (i?.stops ?? []).filter(s => s.op !== 'remove').map(s => s.why).filter(Boolean).join(' / '),
     arriveBy: i?.arriveBy ?? null,
     mode: i?.mode ?? null,
     order: i?.order ?? '',

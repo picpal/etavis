@@ -127,7 +127,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         }
         return {
           // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다)
-          id: st.id, query: st.query, stopKind: st.stopKind,
+          id: st.id, query: st.query, stopKind: st.stopKind, why: st.why,
           candidates: applyParkingPolicy(found.candidates, request.mode).slice(0, MAX_CANDIDATES), dwellMin: dwellFor(st.query),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow, searchStatus: found.status,
           searchRadiusM: found.radiusM, searchCalls: found.calls,

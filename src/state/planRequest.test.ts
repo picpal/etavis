@@ -72,3 +72,18 @@ test('좁혀진 모양의 칩(queries 한 개·stopKind는 category 유지) — 
   assert.equal(s.query, '파리바게뜨');
   assert.equal(s.stopKind, 'category');
 });
+
+/* why — 추출이 잡은 용무. '옷수선 맡기고'의 '맡기고'가 여기서 죽으면, 수선집을
+   찾아 주고도 무엇을 하러 가는지는 화면 어디에도 안 남는다. openNow 와 같은
+   종류의 누수(받을 쪽은 준비돼 있는데 값이 안 온다)라 같은 자리에 묶어 둔다 */
+
+test('why 가 슬롯까지 내려간다 — 장소가 정해지면 그 경유지의 할 일이 된다', () => {
+  const [s] = requestStopsFromChips([stop({ queries: ['옷수선', '수선집'], why: '옷 수선 맡기기' })]);
+  assert.equal(s.why, '옷 수선 맡기기');
+});
+
+test('빈 why 는 내려가지 않는다 — 글자 없는 할 일 한 줄을 만들면 안 된다', () => {
+  assert.equal(requestStopsFromChips([stop()])[0].why, undefined);
+  assert.equal(requestStopsFromChips([stop({ why: '' })])[0].why, undefined);
+  assert.equal(requestStopsFromChips([stop({ why: '   ' })])[0].why, undefined);
+});

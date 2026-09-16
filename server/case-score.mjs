@@ -12,6 +12,7 @@
 export const CHECKED_KEYS = [
   'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
   'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops', 'ambopt',
+  'whyhas', 'whynot', 'why1',
 ];
 
 /**
@@ -67,6 +68,24 @@ export function scoreCase(c, got) {
         fails.push(`없는 경유지를 가리킨다: ${a.field}`);
     }
   }
+
+  /*
+    할 일(why) — 이제 화면에 뜨는 문장이라 채점 대상이다.
+
+    `whyhas`: add 경유지 중 **하나라도** why에 이 조각들을 전부 품어야 한다.
+      부분 문자열로 본다 — '수선'과 '맡기'를 요구하면 '옷 수선 맡기기'도
+      '수선 맡기기'도 통과한다. 어미까지 고정하면 채점기가 문체를 강요하게 된다.
+    `whynot`: 이 말이 why에 들어가면 실패. 사용자가 말하지 않은 걸 불려 쓰는 걸 잡는다.
+    `why1`: add 경유지 전부가 why 한 줄짜리여야 한다 — 쉼표·가운뎃점으로 이은
+      나열은 허용하되(`우유·계란 사기`는 한 행동이다) 줄바꿈으로 쪼갠 목록은 막는다.
+  */
+  const addWhys = got.stops.filter(s => s.op !== 'remove').map(s => s.why ?? '');
+  if (e.whyhas && !addWhys.some(w => e.whyhas.every(frag => w.includes(frag))))
+    fails.push(`whyhas ${e.whyhas} (why=${JSON.stringify(addWhys)})`);
+  if (e.whynot && addWhys.some(w => e.whynot.some(frag => w.includes(frag))))
+    fails.push(`whynot ${e.whynot} (why=${JSON.stringify(addWhys)})`);
+  if (e.why1 && addWhys.some(w => /[\n;]/.test(w)))
+    fails.push(`why 가 여러 줄: ${JSON.stringify(addWhys)}`);
 
   /* note만 있고 검증 조건이 없는 케이스는 '통과'가 아니라 '미검증'이다.
      자동 통과를 통과로 세면 합격률이 부풀려진다 */

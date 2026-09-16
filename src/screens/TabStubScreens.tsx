@@ -218,16 +218,18 @@ function StopCard({
         )}
       </View>
 
-      {stop.tasks.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          <SmallChip
-            label={`할 일 ${doneCount} / ${stop.tasks.length}`}
-            tint={color.primary}
-            background={color.primaryTint}
-            onPress={onOpenTasks}
-          />
-        </View>
-      )}
+      {/* 할 일이 없어도 칩은 남는다 — 이게 시트로 가는 유일한 입구다.
+          예전엔 `tasks.length > 0`으로 걸어 뒀는데, 확정된 계획의 경유지는 할 일이
+          비어 시작할 수 있어서 "앞으로 갈 곳에는 할 일을 못 넣는" 상태가 됐다.
+          혼잡도 제보도 이 시트 안에 있으니, 입구가 막히면 그것까지 같이 막힌다 */}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <SmallChip
+          label={stop.tasks.length > 0 ? `할 일 ${doneCount} / ${stop.tasks.length}` : '+ 할 일'}
+          tint={color.primary}
+          background={color.primaryTint}
+          onPress={onOpenTasks}
+        />
+      </View>
 
       {/* 도착·출발은 GPS 지오펜스로 자동 전환한다 (네이버 길찾기 방식) */}
       {active && (

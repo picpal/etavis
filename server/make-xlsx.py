@@ -36,16 +36,16 @@ def style_header(ws, ncols):
 # ---------- 1. 케이스 결과 ----------
 ws = wb.active
 ws.title = '케이스 결과'
-cols = ['범주','물음(입력)','뽑은 경유지','도착 마감','이동수단','순서','거절','되묻기','판정','실패 사유','메모']
+cols = ['범주','물음(입력)','뽑은 경유지','뽑은 할 일','도착 마감','이동수단','순서','거절','되묻기','판정','실패 사유','메모']
 ws.append(cols)
 for r in rows:
     ws.append([
-        r['group'], r['text'], r['stops'],
+        r['group'], r['text'], r['stops'], r.get('tasks', ''),
         '' if r['arriveBy'] is None else f"{r['arriveBy']//60:02d}:{r['arriveBy']%60:02d}",
         r['mode'] or '', r['order'], r['reject'], r['ambiguous'],
         r['verdict'], r['fails'], r['note'],
     ])
-widths = [11, 44, 30, 10, 10, 10, 26, 30, 8, 26, 34]
+widths = [11, 44, 30, 26, 10, 10, 10, 26, 30, 8, 26, 34]
 for i, w in enumerate(widths, 1):
     ws.column_dimensions[get_column_letter(i)].width = w
 for row in ws.iter_rows(min_row=2, max_row=ws.max_row, max_col=len(cols)):
@@ -107,7 +107,7 @@ if os.path.exists('server/llm-results.json'):
     L.append(cols)
     for r in lrows:
         L.append([
-            r['group'], r['text'], r['stops'],
+            r['group'], r['text'], r['stops'], r.get('tasks', ''),
             '' if r['arriveBy'] is None else str(r['arriveBy']),
             r['mode'] or '', r['order'], r['reject'], r['ambiguous'],
             r['verdict'], r['fails'], r['note'],

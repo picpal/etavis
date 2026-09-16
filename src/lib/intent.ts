@@ -60,7 +60,7 @@ export type IntentContext = {
    AGENTS.md 대로 목의 한계를 제품 사양으로 굳히지 않는다 — cases.jsonl 의 기대값은
    제품이 해야 할 일로 쓰고, 목이 더 실패하는 건 정직한 신호다 */
 const NEAR_END = /(회사|목적지|식장|학교|사무실)\s*(근처|앞)|도착해서|내려서/;
-const NEAR_START = /(집|여기)\s*(근처|앞)|나가는\s*길|출발\s*전/;
+const NEAR_START = /(?:^|[^가-힣])(집|여기)\s*(근처|앞)|나가는\s*길|출발\s*전/;
 
 function nearFromText(text: string): 'start' | 'end' | 'any' {
   if (NEAR_END.test(text)) return 'end';

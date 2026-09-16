@@ -79,3 +79,10 @@ test('near — 위치를 말하지 않으면 any. 목이 제약을 지어내면 
   assert.equal(extractIntent('커피 사서 회사 가려고', { currentStops: [] }).stops[0].near, 'any');
   assert.equal(extractIntent('올리브영 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
 });
+
+test("near — '빵집 앞'의 '집'에 걸리면 안 된다. 틀리게 잡는 건 못 잡는 것보다 나쁘다", () => {
+  assert.equal(extractIntent('빵집 앞 편의점 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
+  assert.equal(extractIntent('고깃집 앞 편의점 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
+  // 진짜 '집 앞'은 계속 잡혀야 한다
+  assert.equal(extractIntent('집 앞 편의점 들렀다가 출발할게', { currentStops: [] }).stops[0].near, 'start');
+});

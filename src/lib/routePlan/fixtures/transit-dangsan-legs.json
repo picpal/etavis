@@ -1,0 +1,39 @@
+{
+  "note": "2026-09-16 서버 /transit 9회 실측(출발 2026-09-17 11:03 KST). 표 원본은 docs/transit-추정-오차.md.",
+  "warning": "durationMin·distanceKm 만 실측이다. 승하차역 좌표는 이 스파이크가 남기지 않아 legs 는 비워 둔다 — 지어내지 않는다.",
+  "origin": { "lat": 37.52965055021622, "lng": 126.918961967742 },
+  "destination": { "lat": 37.52448713315888, "lng": 126.86070728532043 },
+  "departAtMin": 663,
+  "dwellMin": 15,
+  "direct": { "durationMin": 24.2, "distanceKm": 7.25 },
+  "candidates": [
+    {
+      "id": "homeplus-dangsan",
+      "name": "홈플러스익스프레스 당산점",
+      "lat": 37.531871, "lng": 126.901061,
+      "in": { "durationMin": 9.8, "distanceKm": 1.93 },
+      "out": { "durationMin": 25.5, "distanceKm": 4.9 }
+    },
+    {
+      "id": "hanaro-dangsan",
+      "name": "영등포농협 하나로마트 당산역점",
+      "lat": 37.533245, "lng": 126.902291,
+      "in": { "durationMin": 7.1, "distanceKm": 1.76 },
+      "out": { "durationMin": 22.5, "distanceKm": 4.72 }
+    },
+    {
+      "id": "gs-seonyudo",
+      "name": "GS더프레시 선유도역점",
+      "lat": 37.5375132918972, "lng": 126.895068183548,
+      "in": { "durationMin": 10.7, "distanceKm": 2.72 },
+      "out": { "durationMin": 27.5, "distanceKm": 9.59 }
+    },
+    {
+      "id": "emart-mokdong",
+      "name": "이마트 목동점",
+      "lat": 37.526084, "lng": 126.870355,
+      "in": { "durationMin": 32.4, "distanceKm": 6.07 },
+      "out": { "durationMin": 15.0, "distanceKm": 1.79 }
+    }
+  ]
+}

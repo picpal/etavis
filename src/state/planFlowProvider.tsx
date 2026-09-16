@@ -85,8 +85,9 @@ function timedEnrich(enrich: EnrichFn): EnrichFn {
 }
 
 /**
- * 모드별 공급자. 자동차는 카카오(/route), 대중교통은 직행만 Google(/transit)이고 경유 조합은
- * transitProvider 안에서 목으로 위임된다. 도보는 아직 목. 출처는 결과의 source 가 말한다.
+ * 모드별 공급자. 자동차는 카카오(/route), 대중교통은 Google(/transit)이다 — 직행도 경유 조합도
+ * 실측이고, 경유 조합은 transitProvider 가 구간마다 쪼개 부른다(7단계). 도보는 아직 목.
+ * 출처는 결과의 source 가 말한다 — 구간 하나라도 실패하면 전체가 estimate 로 내려온다.
  */
 function hybridProvider(server: RouteProvider, transit: RouteProvider, mock: RouteProvider): RouteProvider {
   return {

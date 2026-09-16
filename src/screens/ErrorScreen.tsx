@@ -21,7 +21,7 @@ export function ErrorScreen({ navigation }: Props) {
 
   // 실측 전에 실패했으니 확정된 계획이 없다 — 보여줄 건 실패한 요청이 뭘 찾으려 했는가뿐
   const planRows = flow.state.request
-    ? flow.state.request.stops.map(s => ({ key: s.id, name: s.query }))
+    ? flow.state.request.stops.map(s => ({ key: s.id, name: s.queries[0] }))
     : [];
 
   return (

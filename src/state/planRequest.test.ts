@@ -25,9 +25,9 @@ test('flexible=false 가 슬롯까지 내려간다 — 특정 지점 고정은 �
   assert.equal(s.stopKind, 'specific');
 });
 
-test('검색어는 첫 후보를 쓴다', () => {
+test('검색어 후보를 전부 나른다 — 뒤 후보는 앞이 0건일 때 쓰는 폴백이다', () => {
   const [s] = requestStopsFromChips([stop({ queries: ['우체국', '편의점'] })]);
-  assert.equal(s.query, '우체국');
+  assert.deepEqual(s.queries, ['우체국', '편의점']);
 });
 
 test('count 는 항상 1 — 개수는 APPLY_INTENT 가 칩을 복제해 표현한다', () => {
@@ -69,7 +69,7 @@ test('빈 칩 목록이면 빈 슬롯', () => {
 test('좁혀진 모양의 칩(queries 한 개·stopKind는 category 유지) — 검색어가 그대로 내려간다', () => {
   const narrowed = stop({ queries: ['파리바게뜨'], stopKind: 'category', narrowed: true });
   const [s] = requestStopsFromChips([narrowed]);
-  assert.equal(s.query, '파리바게뜨');
+  assert.deepEqual(s.queries, ['파리바게뜨']);
   assert.equal(s.stopKind, 'category');
 });
 
@@ -86,4 +86,13 @@ test('빈 why 는 내려가지 않는다 — 글자 없는 할 일 한 줄을 �
   assert.equal(requestStopsFromChips([stop()])[0].why, undefined);
   assert.equal(requestStopsFromChips([stop({ why: '' })])[0].why, undefined);
   assert.equal(requestStopsFromChips([stop({ why: '   ' })])[0].why, undefined);
+});
+
+test('requestStopsFromChips — 칩의 검색어 후보를 전부 나르고 업종어로 넓힌다', () => {
+  const chips = [
+    { id: 'c1', kind: 'stop' as const, label: '샌드위치 파는 카페', queries: ['샌드위치 파는 카페'],
+      flexible: true, openNow: false, stopKind: 'category' as const, why: '샌드위치 사기' },
+  ];
+  const [s] = requestStopsFromChips(chips as never);
+  assert.deepEqual(s.queries, ['샌드위치 파는 카페', '카페']);
 });

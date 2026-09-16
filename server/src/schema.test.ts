@@ -58,3 +58,54 @@ test('ambiguous options — 없거나 이상하면 빈 배열', () => {
   // 문자열 아닌 건 버리지만, 남은 문자열 옵션이 하나라도 있으면 옵트아웃이 붙는다
   assert.deepEqual(junk!.ambiguous[0].options, ['카페', '상관없어요'], '문자열 아닌 건 버린다');
 });
+
+test('prefers — 문자열만 받고 3개·20자로 자른다', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '샌드위치 사기', count: 1,
+              flexible: true, openNow: false,
+              prefers: ['샌드위치', 123, '조용한', '주차', '다섯번째'] }],
+  });
+  assert.deepEqual(i!.stops[0].prefers, ['샌드위치', '조용한', '주차']);
+});
+
+test('prefers — 20자를 넘으면 자른다', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: ['가'.repeat(50)] }],
+  });
+  assert.equal(i!.stops[0].prefers[0].length, 20);
+});
+
+test('prefers — 없으면 빈 배열', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false }],
+  });
+  assert.deepEqual(i!.stops[0].prefers, []);
+});
+
+test('prefers — 배열 자체가 아니거나(단일 문자열·null) 배열 안에 중첩 객체가 섞여도 안전하다', () => {
+  const single = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: '샌드위치' }],
+  });
+  assert.deepEqual(single!.stops[0].prefers, [], '배열이 아니면 통째로 버린다');
+
+  const nullish = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: null }],
+  });
+  assert.deepEqual(nullish!.stops[0].prefers, [], 'null 도 배열이 아니면 버린다');
+
+  const nested = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: [null, { a: 1 }, '조용한'] }],
+  });
+  assert.deepEqual(nested!.stops[0].prefers, ['조용한'], '문자열 아닌 항목은 버리고 남은 것만 쓴다');
+});

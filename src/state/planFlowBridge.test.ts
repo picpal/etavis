@@ -17,7 +17,7 @@ const slots: Slot[] = [
   { id: 's-2', query: '파리바게뜨', dwellMin: 5, count: 1, flexible: true, openNow: false, stopKind: 'category', searchStatus: 'ok',
     candidates: [c('pb1', '파리바게뜨 A', at(37.5, 127.09)), c('pb2', '파리바게뜨 B', at(37.495, 127.08))] },
 ];
-const req: PlanRequest = { origin: O, destination: D, originName: '집', destinationName: '회사', mode: 'car', arriveByMin: 560, departAtMin: 480, stops: slots.map(s => ({ id: s.id, query: s.query, count: 1, flexible: true, openNow: false, stopKind: 'category' as const })), order: 'auto' };
+const req: PlanRequest = { origin: O, destination: D, originName: '집', destinationName: '회사', mode: 'car', arriveByMin: 560, departAtMin: 480, stops: slots.map(s => ({ id: s.id, queries: [s.query], count: 1, flexible: true, openNow: false, stopKind: 'category' as const })), order: 'auto' };
 
 async function ready(): Promise<PlanFlowState> {
   const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots, order: 'auto' }, mockRouteProvider());

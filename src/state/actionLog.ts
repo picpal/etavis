@@ -163,7 +163,7 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
       return {
         a: 'plan.start',
         d: {
-          stops: r.stops.map(s => s.query).join(' · ') || '(없음)',
+          stops: r.stops.map(s => s.queries[0]).join(' · ') || '(없음)',
           count: r.stops.length,
           from: r.originName ?? '내 위치',
           dest: r.destinationName,

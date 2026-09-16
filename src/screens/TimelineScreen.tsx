@@ -335,7 +335,7 @@ export function TimelineScreen({ navigation, route }: Props) {
           chevron
           height={56}
           borderRadius={18}
-          onPress={() => navigation.navigate('Plan')}
+          onPress={() => navigation.popTo('Plan')}
         />
         </View>
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>

@@ -118,7 +118,10 @@ export function OptionsScreen({ navigation }: Props) {
     return (
       <View style={{ flex: 1, backgroundColor: color.bg }}>
         <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
-        <Text style={[type.body, { color: color.muted, padding: 20 }]}>계산된 경로가 없어요. 계획 화면에서 다시 시작해 주세요.</Text>
+        {/* 늘어나는 요소가 없으면 탭바가 글 바로 밑에 붙어 화면 한가운데 뜬다 — flex:1 로 아래로 민다 */}
+        <View style={{ flex: 1 }}>
+          <Text style={[type.body, { color: color.muted, padding: 20 }]}>계산된 경로가 없어요. 계획 화면에서 다시 시작해 주세요.</Text>
+        </View>
         <TabBar />
       </View>
     );
@@ -214,7 +217,7 @@ export function OptionsScreen({ navigation }: Props) {
 
       <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>
         <PrimaryButton label={`${approx}${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
-        <Pressable onPress={() => { haptic(); navigation.navigate('Plan'); }} hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}>
+        <Pressable onPress={() => { haptic(); navigation.popTo('Plan'); }} hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
             확정 전이라 언제든 대화로 바꿀 수 있어요 · <Text style={{ fontFamily: 'Pretendard-SemiBold', color: color.primary }}>대화로 바꾸기</Text>
           </Text>

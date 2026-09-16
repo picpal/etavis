@@ -78,7 +78,7 @@ export function ErrorScreen({ navigation }: Props) {
             <Pressable
               onPress={() => {
                 haptic();
-                navigation.navigate('Plan');
+                navigation.popTo('Plan');
               }}
               style={({ pressed }) => ({
                 minHeight: 52,

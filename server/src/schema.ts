@@ -17,6 +17,8 @@ export type IntentStop = {
   flexible: boolean;
   openNow: boolean;
   prefers: string[];
+  /** 경로의 어느 쪽 끝에 붙어야 하나. 사용자가 위치를 말했을 때만 start/end 다 */
+  near: 'start' | 'end' | 'any';
 };
 
 export type Intent = {
@@ -56,6 +58,9 @@ function parseStop(raw: unknown): IntentStop | null {
   const prefers = Array.isArray(r.prefers)
     ? r.prefers.filter(isStr).map(p => p.slice(0, 20)).slice(0, MAX_PREFERS)
     : [];
+  // 세 값뿐이다. LLM 이 '목적지 근처' 같은 말이나 거리(m)를 뱉어도 여기서 떨어진다 —
+  // 몇 미터인지는 코드가 정한다(AGENTS.md: LLM은 '무엇을'만 뽑는다)
+  const near = r.near === 'start' || r.near === 'end' ? r.near : 'any';
   return {
     op: r.op === 'remove' ? 'remove' : 'add',
     queries,
@@ -65,6 +70,7 @@ function parseStop(raw: unknown): IntentStop | null {
     flexible: r.flexible !== false,
     openNow: r.openNow === true,
     prefers,
+    near,
   };
 }
 

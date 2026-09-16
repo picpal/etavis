@@ -12,7 +12,7 @@
 export const CHECKED_KEYS = [
   'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
   'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops', 'ambopt',
-  'whyhas', 'whynot', 'why1',
+  'whyhas', 'whynot', 'why1', 'near',
 ];
 
 /**
@@ -47,6 +47,9 @@ export function scoreCase(c, got) {
   if ('lock' in e && (got.order === 'locked') !== e.lock) fails.push(`order=${got.order}`);
   if ('flex' in e && got.stops.length && got.stops[0].flexible !== e.flex) fails.push(`flex=${got.stops[0].flexible}`);
   if (e.open && !got.stops.some(s => s.openNow)) fails.push('open');
+  // 위치 — 사용자가 말한 쪽 끝을 뽑았나. 말하지 않았으면 any 여야 한다(지어내지 않는가)
+  if (e.near && !got.stops.some(s => s.op !== 'remove' && (s.near ?? 'any') === e.near))
+    fails.push(`near≠${e.near}`);
   if (e.rej === true && !got.reject) fails.push('reject 안 함');
   if (e.rej === false && got.reject) fails.push('잘못 거절');
   if (e.amb && got.ambiguous.length === 0) fails.push('되묻지 않음');

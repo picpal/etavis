@@ -71,6 +71,9 @@ export function itineraryToRoute(it: TransitItinerary, origin: LatLng, destinati
  *
  * - `sections[i]` 는 i번째 구간 전체다 — 구간 응답의 durationMin·distanceKm 을 그대로 쓴다.
  * - 폴리라인은 이어 붙이고 이음매의 중복점을 지운다(`itineraryToRoute` 와 같은 방식).
+ * - `legJoined: true` 를 찍는다 — **여기가 "실제로 쪼갰나"를 아는 유일한 자리다.** 화면은 이걸 보고
+ *   등급을 `provider_legs` 로 낮춰 마감 판정을 끈다(아래 '알려진 한계'). `source` 와 섞지 않는다:
+ *   쪼갰는지와 쟀는지는 다른 질문이고, 섞으면 `source === 'provider'` 검사가 전부 조용히 거짓이 된다.
  * - `transit`(대안 itinerary)은 담지 않는다. 그 필드의 뜻은 "이 OD 전체의 대안 경로들"인데,
  *   구간이 여럿이면 그런 건 없다 — 구간별 2위끼리 이어 붙인 여정은 공급자가 준 적 없는
  *   지어낸 경로다. 구간별 대안을 합치는 건 8단계(대안 itinerary 병합)의 일이고 모양도 다르다.
@@ -91,6 +94,8 @@ export function joinLegRoutes(parts: RouteResult[]): RouteResult {
     sections,
     // 전부 provider 여야 provider. 강등은 받아들이고 승격은 못 한다
     source: parts.every(p => p.source === 'provider') ? 'provider' : 'estimate',
+    // 쪼갠 건 쪼갠 거다 — source 가 강등돼도 이 사실은 그대로다
+    legJoined: true,
   };
 }
 

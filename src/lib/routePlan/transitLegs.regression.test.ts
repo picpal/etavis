@@ -94,7 +94,7 @@ test('실측 구간을 넣으면 1위가 하나로마트로 바뀐다 — 추정
   assert.equal(r.options[0].visits[0].candidate.name, '영등포농협 하나로마트 당산역점');
   // 7.1 + 체류 15 + 22.5
   assert.ok(Math.abs(r.options[0].totalMin - 44.6) < 0.05, `총 ${r.options[0].totalMin}분`);
-  assert.equal(r.timingSource, 'provider', '구간이 전부 실측이면 직행만 실측이 아니다');
+  assert.equal(r.timingSource, 'provider_legs', '구간이 전부 실측이면 직행만 실측이 아니다 — 다만 구간을 쪼개 이어 붙였다');
   // 직행 1 + 시드 4안 × 구간 2개 = 9. V=1 은 O→cᵢ·cᵢ→D 가 후보마다 달라 중복 제거가 아낄 게 없다
   assert.equal(asked.length, 9);
   assert.equal(new Set(asked).size, asked.length, '같은 구간을 두 번 불렀다');
@@ -168,6 +168,6 @@ test('V=2 — 여러 안이 공유하는 구간은 한 번만 부른다', async 
   assert.equal(asked.length, 9, '직행 1 + 서로 다른 구간 8. 중복 제거가 없으면 13이다');
   assert.equal(r.apiCalls, asked.length, '장부와 실제 요청 수가 같아야 예산이 의미가 있다');
   assert.ok(asked.length <= TRANSIT_CALL_BUDGET);
-  assert.equal(r.timingSource, 'provider', '네 안 모두 구간이 다 실측됐다');
+  assert.equal(r.timingSource, 'provider_legs', '네 안 모두 구간이 다 실측됐다 — 쪼개 이어 붙인 실측이다');
   assert.equal(r.options[0].visits.length, 2);
 });

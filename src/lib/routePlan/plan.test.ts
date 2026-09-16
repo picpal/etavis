@@ -232,3 +232,26 @@ test('대중교통 — 예산으로 한 안도 못 재는 경유지 수면, 실�
   assert.equal(r.options[0].visits.length, 10);
   assert.notEqual(r.timingSource, 'provider', '한 구간도 안 쟀으면 실측이라 말할 수 없다');
 });
+
+test('timingSource — 구간을 쪼개 이어 붙인 실측은 provider_legs 다', async () => {
+  const mock = mockRouteProvider();
+  // transitProvider 처럼: 2점은 한 번에, 3점 이상은 쪼개 이어 붙였다고(legJoined) 찍는다
+  const legs = { route: async (...args: Parameters<typeof mock.route>) => {
+    const r = await mock.route(...args);
+    return args[0].length === 2
+      ? { ...r, source: 'provider' as const }
+      : { ...r, source: 'provider' as const, legJoined: true };
+  } };
+  const r = await plan(base([slot('a', [on, near])], { mode: 'transit' }), legs);
+  assert.equal(r.timingSource, 'provider_legs');
+  // 경유지가 없으면 쪼갤 게 없다 — 직행이 곧 계획이라 provider
+  const r0 = await plan(base([], { mode: 'transit' }), legs);
+  assert.equal(r0.timingSource, 'provider');
+});
+
+test('timingSource — 자동차는 경유지를 한 번에 실어 보내 절대 provider_legs 가 안 된다', async () => {
+  const mock = mockRouteProvider();
+  const oneCall = { route: async (...args: Parameters<typeof mock.route>) => ({ ...(await mock.route(...args)), source: 'provider' as const }) };
+  const r = await plan(base([slot('a', [on, near])], { mode: 'car' }), oneCall);
+  assert.equal(r.timingSource, 'provider');
+});

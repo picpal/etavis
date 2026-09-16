@@ -61,8 +61,19 @@ export type PlanInput = {
   order: 'auto' | 'locked';
 };
 
-/** 시간의 출처. provider = 전부 공급자 응답, provider_direct_only = 직행만 공급자·경유 조합은 추정(대중교통 5단계), estimate = 하버사인 목 */
-export type TimingSource = 'provider' | 'provider_direct_only' | 'estimate';
+/**
+ * 시간의 출처 — 화면 등급이다(`timingCopy`). 낮은 쪽이 이긴다.
+ *
+ * - `provider`            전부 공급자 응답을 **한 번에** 받았다. 마감 판정을 낼 수 있는 유일한 등급
+ * - `provider_legs`       전부 공급자 응답이지만 **구간을 쪼개 이어 붙였다**(대중교통 7단계).
+ *                         구간을 병렬로 불러 2구간 이후도 계획의 출발 시각으로 조회됐다 —
+ *                         체류 뒤의 시간표·배차는 다르다. 숫자는 실측이라 '약'을 안 붙이되,
+ *                         같은 O→D가 출발 시각만 달라져 20% 흔들린 적이 있어 판정은 안 한다
+ *                         (`docs/transit-추정-오차.md`). 실제 출발 시각 재조회는 9단계
+ * - `provider_direct_only` 직행만 공급자·경유 조합은 추정(대중교통 5단계)
+ * - `estimate`            하버사인 목
+ */
+export type TimingSource = 'provider' | 'provider_legs' | 'provider_direct_only' | 'estimate';
 
 export type TransitStop = { name: string; lat: number; lng: number };
 export type TransitLeg =
@@ -77,8 +88,15 @@ export type RouteResult = {
   polyline: LatLng[];
   /** points.length - 1 개. 경유지 사이 구간 */
   sections: RouteSection[];
-  /** 없으면 estimate 로 본다 — 찍지 않은 쪽이 실측을 주장할 수 없다 */
+  /** 없으면 estimate 로 본다 — 찍지 않은 쪽이 실측을 주장할 수 없다. 여기선 실측이냐 아니냐만 말한다 */
   source?: TimingSource;
+  /**
+   * 이 결과가 **구간을 쪼개 따로 부른 응답을 이어 붙인 것**인가(`joinLegRoutes`).
+   * `source` 와 직교한다 — 쪼갰는지와 쟀는지는 다른 질문이고, 쪼갰어도 한 구간이 추정이면
+   * `source` 는 estimate 로 떨어진다. 이걸 아는 자리는 실제로 쪼갠 공급자뿐이다.
+   * 화면 등급 `provider_legs` 의 유일한 근거(plan.ts).
+   */
+  legJoined?: boolean;
   /** 대중교통 직행일 때 서버가 준 경로들(1위가 [0]). 앵커(6단계)의 재료 */
   transit?: TransitItinerary[];
 };

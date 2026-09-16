@@ -234,3 +234,27 @@ test('대중교통 외 모드는 거절', async () => {
   const p = mk(fakeFetch(() => ({ status: 200, body: fixture })).fn);
   await assert.rejects(() => p.route([O, D], 540, 'car'), /transit/);
 });
+
+// --- legJoined: 구간을 쪼개 이어 붙였다는 사실. 화면 등급(provider_legs)의 유일한 근거 ---
+
+test('구간을 쪼개 이어 붙이면 legJoined 를 찍는다 — 2구간 이후가 계획 출발 시각으로 조회됐다는 표시', async () => {
+  const W = { latitude: 37.5266, longitude: 126.8887 };
+  const r = await mk(fakeFetch(() => ({ status: 200, body: fixture })).fn).route([O, W, D], 9 * 60 + 30, 'transit');
+  assert.equal(r.source, 'provider');
+  assert.equal(r.legJoined, true);
+});
+
+test('직행(2점)은 쪼갠 적이 없다 — legJoined 를 찍지 않는다', async () => {
+  const r = await mk(fakeFetch(() => ({ status: 200, body: fixture })).fn).route([O, D], 9 * 60 + 30, 'transit');
+  assert.equal(r.source, 'provider');
+  assert.notEqual(r.legJoined, true);
+});
+
+test('쪼갰어도 한 구간이 추정이면 legJoined 는 찍되 source 는 estimate — 등급은 낮은 쪽이 이긴다', async () => {
+  const W = { latitude: 37.5266, longitude: 126.8887 };
+  let n = 0;
+  const fn = fakeFetch(() => (n++ === 0 ? { status: 200, body: fixture } : { status: 502, body: {} })).fn;
+  const r = await mk(fn, { estimate: estimateStub() }).route([O, W, D], 9 * 60 + 30, 'transit');
+  assert.equal(r.source, 'estimate');
+  assert.equal(r.legJoined, true);
+});

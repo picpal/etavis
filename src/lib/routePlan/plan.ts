@@ -107,6 +107,8 @@ export async function plan(
   if (V === 0) measured.push(scorePlan([], ctx)); // 직행이 곧 계획. 이미 실측됐다
   const legErrors: { measuredMin: number; estimatedMin: number }[] = [];
   let seedEstimated = false; // 시드 중 하나라도 추정이면 true
+  /** 시드 중 하나라도 구간을 쪼개 이어 붙였으면 true — 나중 구간이 잘못된 출발 시각으로 조회됐다는 뜻 */
+  let seedLegJoined = false;
   const measure = async (visits: Visit[]) => {
     // 예산이 모자라면 이 안은 실측하지 않는다 — 추정으로 남고, 실측한 안이 하나라도 있으면
     // 그쪽이 채점에서 이긴다. 2라운드 추가분이 여기서 걸린다(시드는 seedR 로 이미 맞춰 뽑았다)
@@ -126,6 +128,7 @@ export async function plan(
       return; // 시드 하나 실패는 그 안만 버린다. 직행은 위에서 이미 성공했다
     }
     if (route.source !== 'provider') seedEstimated = true;
+    if (route.legJoined) seedLegJoined = true;
     const ids = [ORIGIN_ID, ...visits.map(v => v.candidate.id), DEST_ID];
     learnLegs(legs, ids, route, input.departAtMin, visits.map(v => v.dwellMin), input.mode);
     route.sections.forEach((sec, i) => {
@@ -226,8 +229,14 @@ export async function plan(
     }
   }
 
-  // 직행이 공급자여도 시드가 추정이면 도착 시각의 대부분이 추정이다 — 그걸 provider 라 부르면 화면이 거짓말한다
+  // 직행이 공급자여도 시드가 추정이면 도착 시각의 대부분이 추정이다 — 그걸 provider 라 부르면 화면이 거짓말한다.
+  // 전부 실측이어도 구간을 쪼개 이어 붙였으면 한 단계 낮춘다(provider_legs): 구간을 병렬로 불러
+  // 2구간 이후도 계획의 출발 시각으로 조회됐다. 체류 뒤의 배차는 다르고, 그 위에서 "3분 여유"를
+  // 말하면 뒤집힐 수 있다. 쪼갰는지는 공급자만 안다 — 여기서 mode·V 로 추측하면 공급자가
+  // 경유지를 한 번에 받게 되는 날 조용히 거짓말이 된다(자동차 카카오가 이미 그렇다).
   const timingSource: PlanResult['timingSource'] =
-    direct.source !== 'provider' ? 'estimate' : seedEstimated ? 'provider_direct_only' : 'provider';
+    direct.source !== 'provider' ? 'estimate'
+      : seedEstimated ? 'provider_direct_only'
+        : seedLegJoined ? 'provider_legs' : 'provider';
   return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
 }

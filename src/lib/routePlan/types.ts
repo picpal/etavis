@@ -109,6 +109,9 @@ export interface RouteProvider {
 /** 계획 속 한 방문 */
 export type Visit = { slotId: string; candidate: PlaceCandidate; dwellMin: number };
 
+/** 경유지가 경로의 어느 쪽 끝에 붙어야 하나. 'any'면 제약 없음 — 규칙은 src/lib/nearSide.ts */
+export type NearSide = 'start' | 'end' | 'any';
+
 export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short';
 
 export type PlanOption = {

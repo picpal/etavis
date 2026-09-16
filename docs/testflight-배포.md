@@ -102,7 +102,54 @@ the "production" environment on EAS: APP_TOKEN, KAKAO_REST_KEY, SERVER_URL.
 어차피 이 키들은 **앱 번들에 인라인되어 추출 가능**하다(`app.config.js` 주석).
 진짜로 숨겨야 하는 키는 앱이 아니라 `server/` 뒤에 둬야 한다.
 
-## 1. 매번 하는 것
+## 1. 매번 하는 것 — 태그 하나
+
+```bash
+npm run release -- 1.2.0
+```
+
+`scripts/release.mjs` 가 app.json 의 `version` 을 올리고, 커밋하고, 같은 이름의 태그
+`v1.2.0` 을 밀어 `.github/workflows/testflight.yml` 을 깨운다. `--` 가 필요한 이유는
+npm 이 뒤의 플래그를 자기 것으로 먹기 때문이다. `--dry-run` 을 붙이면 아무것도 밀지 않고
+계획만 보여준다.
+
+**main 에 커밋·머지하는 것만으로는 아무 일도 일어나지 않는다.** 태그가 유일한 트리거다.
+
+| | |
+|---|---|
+| 트리거 | `v[0-9]+.[0-9]+.[0-9]+` 태그 푸시 |
+| 게이트 A | 태그 ≠ `app.json` 의 `expo.version` 이면 빌드 전에 실패 |
+| 게이트 B | `npm test` |
+| 배포 | `eas build --platform ios --profile production --non-interactive --auto-submit` |
+| 로그 | https://github.com/picpal/etavis/actions/workflows/testflight.yml |
+
+게이트 두 개는 **공짜 GitHub 러너**에서 돈다. EAS 빌드 크레딧은 둘 다 통과한 뒤에만 나간다.
+
+릴리즈 스크립트가 먼저 막는 것들: main 이 아닌 브랜치, 커밋되지 않은 변경, 이미 있는 태그,
+뒤로 가는 버전. 규칙은 `scripts/release-version.mjs`·`scripts/release-preflight.mjs` 에
+있고 테스트가 붙어 있다.
+
+### 한 번만 — `EXPO_TOKEN`
+
+CI 는 Apple 로그인 대신 Expo 토큰으로 인증한다.
+
+1. https://expo.dev/settings/access-tokens → **Create token** (이름 아무거나)
+2. GitHub 저장소 → Settings → Secrets and variables → Actions → **New repository secret**
+3. 이름 `EXPO_TOKEN`, 값은 1번에서 받은 토큰
+
+토큰은 만들 때 한 번만 보인다. ASC API 키는 이미 EAS 서버에 있으므로(§2) Apple 쪽
+비밀은 GitHub 에 넣을 게 없다.
+
+### 태그를 잘못 밀었다면
+
+```bash
+git push --delete origin v1.2.0
+git tag -d v1.2.0
+```
+
+빌드가 이미 시작됐으면 expo.dev 에서 취소한다. app.json 을 되돌리는 커밋은 따로 해야 한다.
+
+### 손으로 돌릴 때
 
 ```bash
 npx eas-cli build  --platform ios --profile production
@@ -158,7 +205,7 @@ npx eas-cli submit --platform ios --profile production --latest
 `eas.json` 이 `appVersionSource: "remote"` + `autoIncrement: true` 라
 **빌드 번호는 EAS 가 올린다.** `app.json` 에 `ios.buildNumber` 를 적지 말 것 —
 remote 모드에서는 무시되고, 두 곳이 서로 다른 말을 하게 된다.
-사용자에게 보이는 버전(`expo.version`)만 손으로 올린다.
+사용자에게 보이는 버전(`expo.version`)은 `npm run release` 가 태그와 함께 올린다.
 실패한 빌드도 번호를 가져가므로 건너뛴 번호가 생기는 건 정상이다.
 
 **같은 빌드를 두 번 submit 하면 거절된다** — 인증·업로드는 다 지나가고 마지막에 이렇게 죽는다:

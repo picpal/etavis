@@ -1,0 +1,49 @@
+# 태그를 밀면 TestFlight 까지 간다. main 커밋·머지로는 아무 일도 일어나지 않는다.
+#
+#   npm run release -- 1.2.0   →   태그 v1.2.0   →   이 워크플로
+#
+# 돈이 나가는 건 마지막 스텝(EAS 빌드 1회)뿐이라, 그 앞의 두 게이트는
+# 공짜 러너에서 먼저 죽으라고 있다.
+name: TestFlight
+
+on:
+  push:
+    # 마케팅 버전(CFBundleShortVersionString)이 숫자 3마디만 받으므로 태그도 그 형식만.
+    # 이 패턴을 빠져나가더라도 게이트 A 가 한 번 더 막는다.
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # EAS 빌드 5분 + 무료 플랜 큐 대기. 큐가 길어질 때를 감안한 상한이다.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: 게이트 A — 태그와 app.json 의 version 이 같은가
+        run: node scripts/check-tag-version.mjs "$GITHUB_REF_NAME"
+
+      - name: 게이트 B — 테스트
+        run: npm test
+
+      # 빌드 번호는 eas.json 의 appVersionSource: remote + autoIncrement 가 올린다.
+      # --auto-submit 은 같은 이름의 submit 프로필(production)로 TestFlight 에 올린다.
+      # 내부 그룹 `Team (Expo)` 가 `빌드 배포: 자동` 이라 테스터 폰까지 알아서 간다.
+      - name: EAS 빌드 → TestFlight 제출
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest build --platform ios --profile production --non-interactive --auto-submit

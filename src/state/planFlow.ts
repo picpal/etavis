@@ -17,7 +17,7 @@ export type PlanRequest = {
   arriveByMin: number | null;
   departAtMin: number;
   /** 칩에서. id는 칩 id 그대로 — 슬롯 status를 칩에 되돌릴 때 쓴다 */
-  stops: { id: string; query: string; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string }[];
+  stops: { id: string; queries: string[]; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string }[];
   order: 'auto' | 'locked';
 };
 
@@ -72,7 +72,7 @@ export const isBusy = (phase: Phase): boolean =>
  */
 export function requestKey(r: PlanRequest): string {
   const c = (p: LatLng) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
-  const stops = r.stops.map(s => `${s.query}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`).join('|');
+  const stops = r.stops.map(s => `${s.queries.join('>')}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`).join('|');
   return [c(r.origin), c(r.destination), r.mode, r.arriveByMin ?? '-', r.order, stops].join('#');
 }
 

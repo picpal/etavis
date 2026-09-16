@@ -152,8 +152,8 @@ test('계획 시작은 무엇을 요청했는지 남긴다', () => {
         originName: '집', destinationName: '회사', mode: 'car',
         arriveByMin: null, departAtMin: 540, order: 'auto',
         stops: [
-          { id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-          { id: 's2', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+          { id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+          { id: 's2', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
         ],
       },
     } as PlanFlowAction,

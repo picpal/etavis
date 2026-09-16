@@ -32,7 +32,7 @@ test('후보가 2곳뿐이면 상한까지 넓혀 찾고 status 는 ok — Kc=8 
   const radii: number[] = [];
   const spy: SearchFn = async (q, near, r) => { radii.push(r); return search(q, near, r); };
   const { actions, dispatch } = collect();
-  await runPlan(req([{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'brand' }]), { provider: mockRouteProvider(), search: spy, dispatch });
+  await runPlan(req([{ id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false, stopKind: 'brand' }]), { provider: mockRouteProvider(), search: spy, dispatch });
   const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { searchStatus?: string; candidates: unknown[] }[] }).slots;
   assert.equal(slots[0].searchStatus, 'ok'); // count=1 은 채웠다
   assert.equal(slots[0].candidates.length, 2);
@@ -45,7 +45,7 @@ test('후보가 2곳뿐이면 상한까지 넓혀 찾고 status 는 ok — Kc=8 
 test('정상 — START·PROGRESS×3·SLOTS·RESULT 순서, 직행은 한 번만', async () => {
   const provider = mockRouteProvider();
   const { actions, dispatch } = collect();
-  await runPlan(req([{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'brand' }, { id: 's-2', query: '파리바게뜨', count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider, search, dispatch });
+  await runPlan(req([{ id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false, stopKind: 'brand' }, { id: 's-2', queries: ['파리바게뜨'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider, search, dispatch });
   const types = actions.map(a => a.type);
   assert.deepEqual(types.slice(0, 2), ['START', 'PROGRESS']);
   assert.ok(types.includes('SLOTS'));
@@ -64,7 +64,7 @@ test('정상 — START·PROGRESS×3·SLOTS·RESULT 순서, 직행은 한 번만'
 
 test('검색 0건 슬롯은 none으로 남고 계획은 진행된다', async () => {
   const { actions, dispatch } = collect();
-  await runPlan(req([{ id: 's-1', query: '없는가게', count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider: mockRouteProvider(), search, dispatch });
+  await runPlan(req([{ id: 's-1', queries: ['없는가게'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider: mockRouteProvider(), search, dispatch });
   const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { searchStatus?: string }[] }).slots;
   assert.equal(slots[0].searchStatus, 'none');
   assert.equal(actions[actions.length - 1].type, 'RESULT');
@@ -89,7 +89,7 @@ test('타임아웃 → FAIL(timeout)', async () => {
 
 test('PROGRESS search detail은 "올리브영 2곳 · 파리바게뜨 1곳"', async () => {
   const { actions, dispatch } = collect();
-  await runPlan(req([{ id: 's-1', query: '올리브영', count: 1, flexible: true, openNow: false, stopKind: 'category' }, { id: 's-2', query: '파리바게뜨', count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider: mockRouteProvider(), search, dispatch });
+  await runPlan(req([{ id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false, stopKind: 'category' }, { id: 's-2', queries: ['파리바게뜨'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]), { provider: mockRouteProvider(), search, dispatch });
   const p = actions.find(a => a.type === 'PROGRESS' && a.key === 'search') as { detail?: string };
   assert.equal(p.detail, '올리브영 2곳 · 파리바게뜨 1곳');
 });
@@ -119,10 +119,10 @@ test('실측 호출 수는 후보 수와 무관하다 — 단일·2스톱 각각
     };
     const stops =
       stopCount === 1
-        ? [{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' as const }]
+        ? [{ id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' as const }]
         : [
-            { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' as const },
-            { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' as const },
+            { id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' as const },
+            { id: 's2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' as const },
           ];
     const actions: { type: string }[] = [];
     await runPlan(
@@ -164,7 +164,7 @@ async function runTrend(o: {
     {
       origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.6, longitude: 127.0 },
       originName: '출발', destinationName: '도착', mode: 'car', arriveByMin: null, departAtMin: 540,
-      stops: [{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: o.stopKind }],
+      stops: [{ id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: o.stopKind }],
       order: 'auto',
     },
     {
@@ -237,7 +237,7 @@ async function runTrendSwap(arriveByMin: number | null): Promise<PlanFlowAction[
   };
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
+    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
       origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.1 },
       departAtMin: 540, arriveByMin,
     }),
@@ -295,7 +295,7 @@ test('마감이 없어도 추가시간이 10분을 넘으면 트렌드 1위로 �
   };
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
+    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
       origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.1 },
       departAtMin: 540, arriveByMin: null,
     }),
@@ -337,8 +337,8 @@ test('업종 슬롯 두 곳 — 각자는 마감을 지켜도 합치면 넘기�
   await runPlan(
     req(
       [
-        { id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-        { id: 's2', query: '베이커리', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's2', queries: ['베이커리'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
       ],
       { origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.2 }, departAtMin: 540, arriveByMin: 598, order: 'locked' },
     ),
@@ -383,8 +383,8 @@ test('마감이 없는 업종 슬롯 두 곳 — 각자는 총 +10분 이내여�
   await runPlan(
     req(
       [
-        { id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-        { id: 's2', query: '베이커리', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+        { id: 's2', queries: ['베이커리'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
       ],
       { origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.2 }, departAtMin: 540, arriveByMin: null, order: 'locked' },
     ),
@@ -397,7 +397,7 @@ test('마감이 없는 업종 슬롯 두 곳 — 각자는 총 +10분 이내여�
 test('보강이 응답 없이 걸려도(hang) 파이프라인은 12초 예산 안에서 끝난다', async () => {
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    req([{ id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
     {
       provider: mockRouteProvider(),
       search: async () => Array.from({ length: 6 }, (_, i) => ({
@@ -420,7 +420,7 @@ test('남은 시간이 플래너 몫에도 못 미치면 보강을 아예 건너
   const seen: unknown[] = [];
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    req([{ id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
     {
       provider: mockRouteProvider(),
       search: async () => Array.from({ length: 6 }, (_, i) => ({
@@ -442,8 +442,8 @@ const sixCandidates: SearchFn = async () =>
 
 const twoCategorySlots = () =>
   req([
-    { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-    { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    { id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    { id: 's2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
   ]);
 
 test('슬롯마다 그 시점에 남은 예산 전부를 준다 — 나눠 주면 어느 슬롯도 한 건을 못 끝낸다', async () => {
@@ -508,8 +508,8 @@ test('업종 슬롯 한 곳의 보강이 실패해도 다른 슬롯의 신호는
   const actions: PlanFlowAction[] = [];
   await runPlan(
     req([
-      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
     ]),
     { provider: mockRouteProvider(), search: twoSlotSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
   );
@@ -546,8 +546,8 @@ test('업종 슬롯 여러 곳이면 보강을 슬롯마다 순차로 부른다 
   const actions: PlanFlowAction[] = [];
   await runPlan(
     req([
-      { id: 's1', query: '빵집', count: 1, flexible: true, openNow: false, stopKind: 'category' },
-      { id: 's2', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+      { id: 's2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
     ]),
     { provider: mockRouteProvider(), search: twoSlotSearch, enrich, dispatch: a => actions.push(a) },
   );
@@ -577,7 +577,7 @@ test('트렌드 1위의 타이밍이 추정치(estimated)면 스왑하지 않는
   const estSearch: SearchFn = async () => cands;
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
+    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
       origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.6, longitude: 127.0 },
       departAtMin: 540, arriveByMin: null,
     }),
@@ -611,7 +611,7 @@ test('신호 하나가 망가진 모양이어도(google.rating이 숫자가 아�
   };
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
     { provider: mockRouteProvider(), search: brokenSearch, enrich: enrich as never, dispatch: a => actions.push(a) },
   );
   assert.ok(actions.some(a => a.type === 'RESULT'), 'RESULT는 나가야 한다');
@@ -650,7 +650,7 @@ test('대중교통 — itinerary 가 있으면 앵커에서 찾는다', async ()
   await runPlan(
     { origin: { latitude: 37.5188, longitude: 126.8575 }, destination: { latitude: 37.5285, longitude: 126.9187 },
       departAtMin: 9 * 60, arriveByMin: null, mode: 'transit', order: 'auto',
-      stops: [{ id: 'sl-1', query: '국민은행', count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
+      stops: [{ id: 'sl-1', queries: ['국민은행'], count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
     { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
   );
 
@@ -694,7 +694,7 @@ test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다'
   await runPlan(
     { origin: { latitude: 37.5188, longitude: 126.8575 }, destination: { latitude: 37.5285, longitude: 126.9187 },
       departAtMin: 9 * 60, arriveByMin: null, mode: 'transit', order: 'auto',
-      stops: [{ id: 'sl-1', query: '카페', count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
+      stops: [{ id: 'sl-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }] } as never,
     { provider: provider as never, search: search as never, dispatch: a => actions.push(a) },
   );
 
@@ -704,4 +704,52 @@ test('대중교통 — 앵커에서 0건이면 회랑 검색으로 떨어진다'
   // 앵커 조회(0건으로 끝남)와 회랑 재조회, 둘 다 실제로 나간 요청이다 — 로그의 calls는
   // 회랑 몫만이 아니라 실제 발신 총량이어야 감사 목적에 맞는다
   assert.equal(slots[0].searchCalls, calls.length, 'searchCalls는 앵커 조회 + 회랑 재조회를 합친 실제 요청 수여야 한다');
+});
+
+test('검색어 폴백 — 첫 후보가 0건이면 다음 후보로 넘어가고 slot.query 는 실제로 쓴 검색어', async () => {
+  // 카탈로그에 '샌드위치 파는 카페'로 시작하는 이름은 없다. '카페'는 있다.
+  const cafeCatalog: PlaceCandidate[] = [{ id: 'cf1', name: '카페 A', coord: at(37.5, 127.05) }];
+  const cafeSearch: SearchFn = async (q, near, r) =>
+    cafeCatalog.filter(c => c.name.startsWith(q) && haversineM(near, c.coord) <= r);
+  const { actions, dispatch } = collect();
+
+  await runPlan(
+    req([{ id: 's-1', queries: ['샌드위치 파는 카페', '카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    { provider: mockRouteProvider(), search: cafeSearch, dispatch },
+  );
+
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { query: string; candidates: unknown[]; searchStatus?: string }[] }).slots;
+  assert.equal(slots[0].candidates.length, 1);
+  assert.equal(slots[0].query, '카페');           // 화면에 찍히는 건 실제로 쓴 검색어
+  assert.equal(slots[0].searchStatus, 'ok');
+});
+
+test('검색어 폴백 — 첫 후보가 잡히면 뒤 후보는 검색하지 않는다', async () => {
+  const tried: string[] = [];
+  const spy: SearchFn = async (q, near, r) => { tried.push(q); return search(q, near, r); };
+  const { actions, dispatch } = collect();
+
+  await runPlan(
+    req([{ id: 's-1', queries: ['올리브영', '화장품'], count: 1, flexible: true, openNow: false, stopKind: 'brand' }]),
+    { provider: mockRouteProvider(), search: spy, dispatch },
+  );
+
+  assert.ok(tried.every(q => q === '올리브영'), `'화장품'까지 검색했다: ${[...new Set(tried)].join(',')}`);
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { query: string }[] }).slots;
+  assert.equal(slots[0].query, '올리브영');
+});
+
+test('검색어 폴백 — 모든 후보가 0건이면 status none, query 는 첫 후보', async () => {
+  const empty: SearchFn = async () => [];
+  const { actions, dispatch } = collect();
+
+  await runPlan(
+    req([{ id: 's-1', queries: ['샌드위치 파는 카페', '카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }]),
+    { provider: mockRouteProvider(), search: empty, dispatch },
+  );
+
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { query: string; searchStatus?: string; searchCalls?: number }[] }).slots;
+  assert.equal(slots[0].searchStatus, 'none');
+  assert.equal(slots[0].query, '샌드위치 파는 카페');   // 사용자가 말한 그대로를 보여 준다
+  assert.ok((slots[0].searchCalls ?? 0) > 0, '호출 수가 0이면 감사 로그가 사용량을 축소해 말한다');
 });

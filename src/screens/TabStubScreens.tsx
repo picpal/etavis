@@ -102,6 +102,37 @@ function Pill({ text, tone }: { text: string; tone?: 'ok' | 'warn' }) {
   );
 }
 
+/**
+ * 출발·도착 배지 — 라벨이 먼저 읽히고 시각이 굵게. 숫자만 서 있으면 무슨 시각인지 모른다.
+ * 모양은 후보 시트의 도착 배지(StopList)와 같게 맞췄다 — 같은 뜻을 두 가지 모양으로 말하면
+ * 읽는 사람이 둘을 다른 것으로 본다.
+ *
+ * 초록은 도착 하나만 가져간다. 출발은 이미 지나간 사실이라 회색이고,
+ * 둘 다 물들이면 눈이 어느 쪽을 봐야 할지 모른다.
+ */
+function TimeBadge({ label, time, tone }: { label: string; time: string; tone?: 'arrive' }) {
+  const bg = tone === 'arrive' ? color.greenBg : color.track;
+  const fg = tone === 'arrive' ? color.green : color.body;
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingHorizontal: 9,
+        paddingVertical: 4,
+        borderRadius: 8,
+        backgroundColor: bg,
+      }}
+    >
+      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 14, color: fg, opacity: 0.85 }}>
+        {label}
+      </Text>
+      <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 14, lineHeight: 16, color: fg }}>{time}</Text>
+    </View>
+  );
+}
+
 function OffRouteSheet() {
   const insets = useSafeAreaInsets();
   const { state, removeStop } = usePlan();
@@ -380,10 +411,8 @@ export function TodayScreen() {
             도착 시각은 원래 바 아래 11px 회색에 묻혀 있었다 — 기다리는 사람이 묻는 건 그 숫자다. */}
         <View style={{ gap: 10 }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
-            <View style={{ flexShrink: 1, gap: 4 }}>
-              <Text style={[type.micro, { color: color.muted }]} numberOfLines={1}>
-                {departAtLabel} 출발
-              </Text>
+            <View style={{ flexShrink: 1, gap: 7, alignItems: 'flex-start' }}>
+              <TimeBadge label="출발" time={departAtLabel} />
               <Text
                 style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}
                 numberOfLines={1}
@@ -391,15 +420,14 @@ export function TodayScreen() {
                 {originDisplay}
               </Text>
             </View>
-            <View style={{ flex: 1, gap: 4, alignItems: 'flex-end' }}>
+            <View style={{ flex: 1, gap: 7, alignItems: 'flex-end' }}>
               {/* `경`이 이미 5분 어림임을 말한다 — 앞에 `약`까지 붙이면 '약 23:20경'이 된다.
                   추정이라는 사실은 아래 배너와 소요시간의 `약`이 그대로 지고 있다 */}
-              <Text
-                style={[type.micro, { color: state.arrivedAtDest ? color.green : color.muted }]}
-                numberOfLines={1}
-              >
-                {state.arrivedAtDest ? '도착 완료' : `${formatEta(state.destArriveAt)} 도착`}
-              </Text>
+              <TimeBadge
+                label="도착"
+                time={state.arrivedAtDest ? '완료' : formatEta(state.destArriveAt)}
+                tone="arrive"
+              />
               <Text
                 style={{
                   fontFamily: 'Pretendard-SemiBold',
@@ -416,7 +444,11 @@ export function TodayScreen() {
           </View>
 
           {/* 채운 만큼이 온 거리다. 색이 곧 상태라 아래 점과 두 번 말하지 않는다.
-              routeLengthM 이 0이면(경로 길이를 아직 모름) 바를 비워 둔다 — 0으로 나누면 NaN 폭이 된다 */}
+              routeLengthM 이 0이면(경로 길이를 아직 모름) 바를 비워 둔다 — 0으로 나누면 NaN 폭이 된다.
+
+              뱃지가 없으면(추적 꺼짐) 채우지 않는다. 추적기는 마지막 주행의 progressM 을
+              그대로 들고 있어서, 그냥 그리면 아직 출발도 안 한 계획이 '다 왔다'고 말한다.
+              레일 자체는 남긴다 — 출발·도착을 잇는 구조라 진행률이 없어도 할 일이 있다 */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color.primary }} />
             <View style={{ flex: 1, height: 7, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
@@ -426,7 +458,7 @@ export function TodayScreen() {
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  width: `${tracker.routeLengthM > 0 ? Math.max(0, Math.min(100, (tracker.progressM / tracker.routeLengthM) * 100)) : 0}%`,
+                  width: `${badge && tracker.routeLengthM > 0 ? Math.max(0, Math.min(100, (tracker.progressM / tracker.routeLengthM) * 100)) : 0}%`,
                   borderRadius: 4,
                   // 색은 상태가 아니라 신뢰도다 — 이유는 TrackerBadge.progressTrusted 주석에 있다
                   backgroundColor: badge && !badge.progressTrusted ? color.stroke : color.primary,

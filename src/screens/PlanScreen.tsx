@@ -11,7 +11,7 @@ import { RECENT_DESTINATIONS } from '../data/mockData';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
-import { BulbIcon, Chevron, DottedLineH } from '../components/primitives';
+import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -165,9 +165,10 @@ function AssistantBubble({ mode }: { mode: 'car' | 'walk' | 'transit' }) {
             backgroundColor: color.surface,
           }}
         >
-          <BulbIcon size={15} />
-          <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 13, color: color.primary }}>
-            팁 보기
+          <SparkIcon size={14} />
+          {/* 라벨은 `Tip` — 한글 두 단어보다 짧아 대화 맨 위에서 자리를 덜 먹는다 */}
+          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 13, lineHeight: 13, color: color.primary }}>
+            Tip
           </Text>
         </View>
       </Pressable>

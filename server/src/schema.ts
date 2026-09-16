@@ -16,6 +16,7 @@ export type IntentStop = {
   count: number;
   flexible: boolean;
   openNow: boolean;
+  prefers: string[];
 };
 
 export type Intent = {
@@ -35,6 +36,7 @@ export type Intent = {
 const MAX_STOPS = 12;
 const MAX_QUERIES = 5;
 const MAX_TEXT = 120;
+const MAX_PREFERS = 3;
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const clampText = (v: unknown, fallback = ''): string =>
@@ -49,6 +51,11 @@ function parseStop(raw: unknown): IntentStop | null {
   if (queries.length === 0) return null; // 검색어 없는 경유지는 쓸모가 없다
   const kind = r.kind === 'brand' || r.kind === 'specific' ? r.kind : 'category';
   const n = Number(r.count);
+  // 조건은 검색어가 아니다 — queries 에 섞이면 카카오 상호명 매칭에서 0건이 되고
+  // 0건이면 경유지가 경로에서 빠진다(2026-09-16 실측). 갈 곳을 만들어 준다.
+  const prefers = Array.isArray(r.prefers)
+    ? r.prefers.filter(isStr).map(p => p.slice(0, 20)).slice(0, MAX_PREFERS)
+    : [];
   return {
     op: r.op === 'remove' ? 'remove' : 'add',
     queries,
@@ -57,6 +64,7 @@ function parseStop(raw: unknown): IntentStop | null {
     count: Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), MAX_STOPS) : 1,
     flexible: r.flexible !== false,
     openNow: r.openNow === true,
+    prefers,
   };
 }
 

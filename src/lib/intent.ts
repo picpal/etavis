@@ -23,6 +23,8 @@ export type IntentStop = {
   /** false면 특정 지점 고정 — 최적화 대상에서 뺀다 */
   flexible: boolean;
   openNow: boolean;
+  /** 조건. 검색어가 아니다 — '샌드위치 파는', '조용한' 같은 수식은 여기로 온다 */
+  prefers: string[];
 };
 
 export type Intent = {
@@ -220,7 +222,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
       return {
         ...base,
         stops: [
-          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false },
+          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [] },
           ...add,
         ],
       };
@@ -233,7 +235,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     if (target) {
       return {
         ...base,
-        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false }],
+        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [] }],
       };
     }
   }
@@ -312,6 +314,7 @@ function extractStops(text: string, openNow: boolean, count: number): IntentStop
       count,
       flexible: !specific,
       openNow,
+      prefers: [],
     });
   }
 
@@ -319,7 +322,7 @@ function extractStops(text: string, openNow: boolean, count: number): IntentStop
     if (!cat.keys.some(k => text.includes(k))) continue;
     if (cat.queries.some(q => seen.has(q))) continue;
     cat.queries.forEach(q => seen.add(q));
-    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow });
+    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [] });
   }
   return found;
 }

@@ -58,3 +58,31 @@ test('ambiguous options — 없거나 이상하면 빈 배열', () => {
   // 문자열 아닌 건 버리지만, 남은 문자열 옵션이 하나라도 있으면 옵트아웃이 붙는다
   assert.deepEqual(junk!.ambiguous[0].options, ['카페', '상관없어요'], '문자열 아닌 건 버린다');
 });
+
+test('prefers — 문자열만 받고 3개·20자로 자른다', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '샌드위치 사기', count: 1,
+              flexible: true, openNow: false,
+              prefers: ['샌드위치', 123, '조용한', '주차', '다섯번째'] }],
+  });
+  assert.deepEqual(i!.stops[0].prefers, ['샌드위치', '조용한', '주차']);
+});
+
+test('prefers — 20자를 넘으면 자른다', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: ['가'.repeat(50)] }],
+  });
+  assert.equal(i!.stops[0].prefers[0].length, 20);
+});
+
+test('prefers — 없으면 빈 배열', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false }],
+  });
+  assert.deepEqual(i!.stops[0].prefers, []);
+});

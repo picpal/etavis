@@ -215,6 +215,43 @@ function AssistantBubble({ mode }: { mode: 'car' | 'walk' | 'transit' }) {
   );
 }
 
+/**
+ * 아직 아무 말도 안 했을 때의 '바로 찾기'.
+ *
+ * 전에는 이 자리에도 어시스턴트 말풍선이 "조건은 준비됐어요. 이제 경로를 찾아볼까요?"
+ * 하고 떠 있었다. 듣지도 않고 준비됐다고 말하는 셈이라 앞뒤가 안 맞았고, 옆의 `아직이요`는
+ * 미룰 대화가 없는데 미루라고 했다.
+ *
+ * 말풍선을 지우고 조용한 줄 하나만 남긴다. 대화가 없는 화면에서 어시스턴트가 먼저 말을
+ * 거는 것 자체가 없는 대화를 지어내는 일이다. 직행으로 가는 길은 그대로 열어 둔다 —
+ * 들를 곳이 없는 사람에게는 이 화면에서 할 일이 그것뿐이다(chatPrompt.ts 주석).
+ */
+function DirectPrompt({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={() => {
+        haptic();
+        onPress();
+      }}
+      hitSlop={HIT_SLOP}
+      accessibilityRole="button"
+      style={({ pressed }) => ({
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 14, lineHeight: 20, color: color.primary }}>
+        들를 곳 없이 바로 찾기
+      </Text>
+      <Chevron size={7} thickness={2} color={color.primary} dir="right" />
+    </Pressable>
+  );
+}
+
 /** 경로 탐색 확인 — 어시스턴트 질문 + 퀵리플라이 */
 function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
   return (
@@ -565,9 +602,13 @@ export function PlanScreen({ navigation }: Props) {
             );
           })}
 
-          {promptVisible && (
-            <CalculatePrompt onYes={startSearch} onNo={() => setDismissedAt(state.chat.length)} />
-          )}
+          {promptVisible &&
+            (state.chat.length === 0 ? (
+              /* 말이 오간 뒤에야 "조건은 준비됐어요"가 참이 된다. 그 전에는 조용한 줄 하나 */
+              <DirectPrompt onPress={startSearch} />
+            ) : (
+              <CalculatePrompt onYes={startSearch} onNo={() => setDismissedAt(state.chat.length)} />
+            ))}
         </ScrollView>
 
         <BottomInputBar

@@ -23,5 +23,8 @@ test('미룬 뒤 새 메시지를 보내도, 추출 중이면 아직 아니다',
 });
 
 test('대화가 없어도 직행은 찾을 수 있다', () => {
+  /* 이때 화면에 뜨는 건 어시스턴트 말풍선이 아니라 조용한 줄 하나다(PlanScreen.DirectPrompt).
+     듣지도 않고 "조건은 준비됐어요"라고 말하면 앞뒤가 안 맞는다. 보여주느냐(여기)와
+     무엇을 보여주느냐(화면)는 다른 판단이라, 이 규칙은 그대로 둔다 */
   assert.equal(calcPromptVisible({ pending: false, chatLength: 0, dismissedAt: -1 }), true);
 });

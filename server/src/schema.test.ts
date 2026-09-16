@@ -86,3 +86,26 @@ test('prefers — 없으면 빈 배열', () => {
   });
   assert.deepEqual(i!.stops[0].prefers, []);
 });
+
+test('prefers — 배열 자체가 아니거나(단일 문자열·null) 배열 안에 중첩 객체가 섞여도 안전하다', () => {
+  const single = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: '샌드위치' }],
+  });
+  assert.deepEqual(single!.stops[0].prefers, [], '배열이 아니면 통째로 버린다');
+
+  const nullish = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: null }],
+  });
+  assert.deepEqual(nullish!.stops[0].prefers, [], 'null 도 배열이 아니면 버린다');
+
+  const nested = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, prefers: [null, { a: 1 }, '조용한'] }],
+  });
+  assert.deepEqual(nested!.stops[0].prefers, ['조용한'], '문자열 아닌 항목은 버리고 남은 것만 쓴다');
+});

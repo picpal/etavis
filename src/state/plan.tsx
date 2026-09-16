@@ -835,7 +835,13 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SWAP_ENDPOINTS', myLocation: here.coord });
       },
       destinationDisplay: state.destinationName ?? state.dataset.destination.name,
-      originDisplay: state.originName ?? (here.coord ? '내 위치' : state.dataset.origin.name),
+      /*
+        출발지 이름 — 직접 고른 곳이 없으면 지금 있는 곳의 짧은 주소를 쓴다.
+        `내 위치`는 라벨이지 장소가 아니라, 일정 순서에서 아래 행들(가맹점명)과 종류가 다르다.
+        주소를 아직 못 받았으면 그때만 `내 위치`로 버틴다 — 빈칸을 두는 것보다 낫다.
+      */
+      originDisplay:
+        state.originName ?? (here.coord ? here.shortAddress ?? '내 위치' : state.dataset.origin.name),
       departAtLabel: toHHMM(state.departMin).padStart(5, '0'),
       /*
         마감 후보는 '지금' 이후만 보여준다. 목 데이터의 출발 시각을 기준으로 잡으면

@@ -372,21 +372,54 @@ export function TodayScreen() {
           바는 한눈에 들어오고, 같은 자리에서 상태 색까지 같이 말한다 */}
       <Text style={[type.label, { color: color.muted }]}>진행 중인 계획</Text>
       <Card elevated style={{ padding: 18, gap: 14 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 14 }}>
-          <View style={{ flex: 1, gap: 5 }}>
-            <Text style={[type.labelPlain, { color: color.muted }]} numberOfLines={1}>
-              {originDisplay} → {destinationDisplay}
-            </Text>
-            <Text style={[type.statL, { color: color.ink }]}>{copy.approx}{state.totals.totalMin}분</Text>
+        {/* 여정 레일 — 출발·도착을 양 끝에 세우고 그 사이를 진행 바가 잇는다.
+            전에는 `내 위치 → 현대카드빌딩 2관` 이 12px 회색 한 줄로 얹혀 있고, 34분 오른쪽은
+            `+0분` 하나 말고는 통째로 비어 있었다. 양 끝에 장소와 시각을 같이 물리면 같은 높이에서
+            네 가지를 말한다 — 어디서 · 몇 시에 떠나 · 어디로 · 몇 시에 닿나.
+            그러면 진행 바는 장식이 아니라 그 둘을 잇는 선이 되고, '어디쯤 왔나'가 지도 없이 읽힌다.
+            도착 시각은 원래 바 아래 11px 회색에 묻혀 있었다 — 기다리는 사람이 묻는 건 그 숫자다. */}
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+            <View style={{ flexShrink: 1, gap: 4 }}>
+              <Text style={[type.micro, { color: color.muted }]} numberOfLines={1}>
+                {departAtLabel} 출발
+              </Text>
+              <Text
+                style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}
+                numberOfLines={1}
+              >
+                {originDisplay}
+              </Text>
+            </View>
+            <View style={{ flex: 1, gap: 4, alignItems: 'flex-end' }}>
+              {/* `경`이 이미 5분 어림임을 말한다 — 앞에 `약`까지 붙이면 '약 23:20경'이 된다.
+                  추정이라는 사실은 아래 배너와 소요시간의 `약`이 그대로 지고 있다 */}
+              <Text
+                style={[type.micro, { color: state.arrivedAtDest ? color.green : color.muted }]}
+                numberOfLines={1}
+              >
+                {state.arrivedAtDest ? '도착 완료' : `${formatEta(state.destArriveAt)} 도착`}
+              </Text>
+              <Text
+                style={{
+                  fontFamily: 'Pretendard-SemiBold',
+                  fontSize: 15,
+                  lineHeight: 19,
+                  color: color.ink,
+                  textAlign: 'right',
+                }}
+                numberOfLines={1}
+              >
+                {destinationDisplay}
+              </Text>
+            </View>
           </View>
-          <Text style={[type.statS, { color: color.amber }]}>{copy.approx}+{state.totals.deltaMin}분</Text>
-        </View>
 
-        {/* 진행 바 — 채운 만큼이 온 거리다. 색이 곧 상태라 점과 두 번 말하지 않는다.
-            routeLengthM 이 0이면(경로 길이를 아직 모름) 바를 비워 둔다 — 0으로 나누면 NaN 폭이 된다 */}
-        {badge && (
-          <View style={{ gap: 8 }}>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
+          {/* 채운 만큼이 온 거리다. 색이 곧 상태라 아래 점과 두 번 말하지 않는다.
+              routeLengthM 이 0이면(경로 길이를 아직 모름) 바를 비워 둔다 — 0으로 나누면 NaN 폭이 된다 */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: color.primary }} />
+            <View style={{ flex: 1, height: 7, borderRadius: 4, backgroundColor: color.track, overflow: 'hidden' }}>
               <View
                 style={{
                   position: 'absolute',
@@ -396,31 +429,56 @@ export function TodayScreen() {
                   width: `${tracker.routeLengthM > 0 ? Math.max(0, Math.min(100, (tracker.progressM / tracker.routeLengthM) * 100)) : 0}%`,
                   borderRadius: 4,
                   // 색은 상태가 아니라 신뢰도다 — 이유는 TrackerBadge.progressTrusted 주석에 있다
-                  backgroundColor: badge.progressTrusted ? color.primary : color.stroke,
+                  backgroundColor: badge && !badge.progressTrusted ? color.stroke : color.primary,
                 }}
               />
             </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: badge.tone === 'warn' ? color.amber : badge.tone === 'ok' ? color.green : color.muted,
-                }}
-              />
-              <Text style={[type.micro, { flex: 1, color: badge.tone === 'warn' ? color.amberDeep : color.body }]} numberOfLines={1}>
-                {badge.label}
-              </Text>
-              <Text style={[type.micro, { color: color.muted }]}>
-                {copy.approx}{formatEta(state.destArriveAt)} 도착
-              </Text>
+            <View
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: 5,
+                backgroundColor: state.arrivedAtDest ? color.green : color.surface,
+                borderWidth: state.arrivedAtDest ? 0 : 2,
+                borderColor: color.stroke,
+              }}
+            />
+          </View>
+        </View>
+
+        {/* 소요와 상태 — 34분 오른쪽에 남던 빈 칸에 '지금 어떤가'를 앉힌다.
+            `+N분`은 경유지 때문에 늘어난 몫이라 0이면 할 말이 없다. 그때도 호박색으로 적으면
+            경고가 아닌 것을 경고처럼 말하게 된다 — 0이면 지운다 */}
+        <View style={{ gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+            <View style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'baseline', gap: 7 }}>
+              <Text style={[type.statL, { color: color.ink }]}>{copy.approx}{state.totals.totalMin}분</Text>
+              {state.totals.deltaMin > 0 && (
+                <Text style={[type.captionM, { color: color.amber }]}>경유 +{state.totals.deltaMin}분</Text>
+              )}
             </View>
-            {badge.note && (
-              <Text style={[type.micro, { color: color.muted, lineHeight: 15 }]}>{badge.note}</Text>
+            {badge && (
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                <View
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor:
+                      badge.tone === 'warn' ? color.amber : badge.tone === 'ok' ? color.green : color.muted,
+                  }}
+                />
+                <Text
+                  style={[type.captionM, { flexShrink: 1, color: badge.tone === 'warn' ? color.amberDeep : color.body }]}
+                  numberOfLines={1}
+                >
+                  {badge.label}
+                </Text>
+              </View>
             )}
           </View>
-        )}
+          {badge?.note && <Text style={[type.micro, { color: color.muted, lineHeight: 15 }]}>{badge.note}</Text>}
+        </View>
 
         <Hairline />
 

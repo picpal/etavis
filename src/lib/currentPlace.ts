@@ -3,7 +3,9 @@
  *
  * 출발지에는 검색 UI가 필요 없다. 좌표는 GPS로 이미 알고 있고, 경로 계산도 좌표로 한다.
  * 주소는 오직 사람이 읽으라고 만드는 것이라 실패해도 좌표는 그대로 살린다.
- * (상호명은 일부러 만들지 않는다 — 반경 안 POI가 수십 개라 좌표만으로는 특정이 불가능하다.)
+ * (상호명은 일부러 만들지 않는다 — 반경 안 POI가 수십 개라 좌표만으로는 특정이 불가능하다.
+ *  좌표→주변 POI 검색을 붙이면 '어느 것이 내가 있는 곳인가'를 앱이 찍어야 하고, 틀리면
+ *  엉뚱한 가게에서 출발한 것처럼 보인다. 그래서 여기서는 주소까지만 만든다.)
  *
  * expo-location의 reverseGeocodeAsync는 iOS 내장 지오코더를 쓰므로 API 키가 필요 없다.
  * 화면 여러 곳에서 같은 값을 보므로 모듈 단위 스토어로 한 번만 받아 공유한다.
@@ -20,6 +22,13 @@ export type CurrentPlace = {
   coord: LatLng | null;
   /** 역지오코딩한 전체 주소 — 출발지 행의 부제 */
   address: string | null;
+  /**
+   * 시/도를 뗀 짧은 주소 — 계획·진행중에서 출발지 '이름' 자리에 쓴다.
+   * `내 위치`는 라벨이지 장소가 아니다. 일정 순서에 그 말이 서 있으면 다른 행(가맹점명)과
+   * 종류가 달라 눈이 한 번 멈춘다. 전체 주소는 15px 한 줄에서 잘리므로 시/도를 뗀다 —
+   * 지금 있는 시/도는 헤더의 `area`가 이미 말하고 있다.
+   */
+  shortAddress: string | null;
   /** 헤더용 짧은 지역명 (시/군/구) */
   area: string | null;
 };
@@ -39,10 +48,27 @@ export function formatAddress(a: Location.LocationGeocodedAddress): string {
   return out.join(' ');
 }
 
+/**
+ * 시/도를 뗀 주소. `서울특별시 문래동5가 271-87` → `문래동5가 271-87`.
+ * 동·번지가 하나도 없으면(바다 한가운데 등) null 을 주고, 부르는 쪽이 전체 주소로 되돌아간다.
+ */
+export function formatShortAddress(a: Location.LocationGeocodedAddress): string | null {
+  const parts =
+    a.isoCountryCode === 'KR'
+      ? [a.district, a.street, a.streetNumber]
+      : [a.streetNumber, a.street, a.district];
+  const out: string[] = [];
+  for (const part of parts) {
+    const v = part?.trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out.length ? out.join(' ') : null;
+}
+
 const shortArea = (a: Location.LocationGeocodedAddress) =>
   a.city?.trim() || a.subregion?.trim() || a.region?.trim() || null;
 
-let snapshot: CurrentPlace = { status: 'idle', coord: null, address: null, area: null };
+let snapshot: CurrentPlace = { status: 'idle', coord: null, address: null, shortAddress: null, area: null };
 const listeners = new Set<() => void>();
 
 function set(next: Partial<CurrentPlace>) {
@@ -68,7 +94,10 @@ export function refreshCurrentPlace(): Promise<void> {
       set({ status: 'ready', coord });
       try {
         const [first] = await Location.reverseGeocodeAsync(coord);
-        if (first) set({ address: formatAddress(first) || null, area: shortArea(first) });
+        if (first) {
+          const full = formatAddress(first) || null;
+          set({ address: full, shortAddress: formatShortAddress(first) ?? full, area: shortArea(first) });
+        }
       } catch {
         // 주소는 표시용일 뿐이라 실패해도 좌표 기반 동작은 유지한다
       }

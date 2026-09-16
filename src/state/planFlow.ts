@@ -3,7 +3,7 @@
  * 입력(출발·목적지·모드·마감·칩)은 기존 스토어(plan.tsx)가 갖고, 여기엔 계산 시점의 스냅샷만 있다.
  * 스펙: docs/superpowers/specs/2026-09-11-plan-flow-redesign-design.md
  */
-import type { LatLng, Mode, PlanResult, Slot } from '../lib/routePlan/types';
+import type { LatLng, Mode, NearSide, PlanResult, Slot } from '../lib/routePlan/types';
 
 export type Phase = 'idle' | 'direct' | 'searching' | 'measuring' | 'ready' | 'failed';
 export type ProgressKey = 'direct' | 'search' | 'measure' | 'select';
@@ -17,7 +17,7 @@ export type PlanRequest = {
   arriveByMin: number | null;
   departAtMin: number;
   /** 칩에서. id는 칩 id 그대로 — 슬롯 status를 칩에 되돌릴 때 쓴다 */
-  stops: { id: string; queries: string[]; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string }[];
+  stops: { id: string; queries: string[]; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string; near?: NearSide }[];
   order: 'auto' | 'locked';
 };
 

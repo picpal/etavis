@@ -21,3 +21,8 @@ test('프롬프트가 now 를 실제로 언급한다 — 서버가 넣는데 규
   assert.ok(SYSTEM_PROMPT.includes('now'), 'now 규칙이 빠졌다');
   assert.ok(SYSTEM_PROMPT.includes('transit'), 'mode 규칙이 빠졌다');
 });
+
+test('near 규칙이 프롬프트에 실려 있다 — 스키마만 고치면 LLM 은 영영 안 뱉는다', () => {
+  assert.ok(SYSTEM_PROMPT.includes('near'), 'near 규칙이 빠졌다');
+  assert.ok(SYSTEM_PROMPT.includes('"near":"any"'), '출력 예시에 near 가 빠졌다');
+});

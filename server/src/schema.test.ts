@@ -109,3 +109,31 @@ test('prefers — 배열 자체가 아니거나(단일 문자열·null) 배열 �
   });
   assert.deepEqual(nested!.stops[0].prefers, ['조용한'], '문자열 아닌 항목은 버리고 남은 것만 쓴다');
 });
+
+test('near — 세 값만 통과한다. 그 밖은 전부 any 로 떨어진다', () => {
+  const ok = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false, near: 'end' }],
+  });
+  assert.equal(ok!.stops[0].near, 'end');
+
+  // LLM 이 '목적지 근처'·거리(m)·객체를 뱉어도 앱에 닿지 않는다 — 방어선은 여기다
+  for (const junk of ['목적지 근처', 'END', 500, null, { side: 'end' }, ['end']]) {
+    const i = parseIntent({
+      endpoints: {}, ambiguous: [],
+      stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+                flexible: true, openNow: false, near: junk }],
+    });
+    assert.equal(i!.stops[0].near, 'any', `near=${JSON.stringify(junk)} 는 any 여야 한다`);
+  }
+});
+
+test('near — 없으면 any. 말하지 않은 제약을 지어내지 않는다', () => {
+  const i = parseIntent({
+    endpoints: {}, ambiguous: [],
+    stops: [{ op: 'add', queries: ['카페'], kind: 'category', why: '커피 사기', count: 1,
+              flexible: true, openNow: false }],
+  });
+  assert.equal(i!.stops[0].near, 'any');
+});

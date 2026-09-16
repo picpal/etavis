@@ -68,3 +68,21 @@ test('목 — 브랜드로 이미 좁혀졌으면 되묻지 않는다', () => {
   assert.equal(i.stops[0].kind, 'brand');
   assert.equal(i.ambiguous.filter(a => a.field.startsWith('stop:')).length, 0);
 });
+
+test('near — 목도 가장 분명한 말은 잡는다. 서버가 죽어도 "회사 근처"는 살아야 한다', () => {
+  assert.equal(extractIntent('회사 근처 카페에서 커피 사서 갈게', { currentStops: [] }).stops[0].near, 'end');
+  assert.equal(extractIntent('집 앞 편의점 들렀다가 출발할게', { currentStops: [] }).stops[0].near, 'start');
+  assert.equal(extractIntent('지하철 내려서 빵집 들렀다 갈게', { currentStops: [] }).stops[0].near, 'end');
+});
+
+test('near — 위치를 말하지 않으면 any. 목이 제약을 지어내면 안 된다', () => {
+  assert.equal(extractIntent('커피 사서 회사 가려고', { currentStops: [] }).stops[0].near, 'any');
+  assert.equal(extractIntent('올리브영 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
+});
+
+test("near — '빵집 앞'의 '집'에 걸리면 안 된다. 틀리게 잡는 건 못 잡는 것보다 나쁘다", () => {
+  assert.equal(extractIntent('빵집 앞 편의점 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
+  assert.equal(extractIntent('고깃집 앞 편의점 들렀다 갈게', { currentStops: [] }).stops[0].near, 'any');
+  // 진짜 '집 앞'은 계속 잡혀야 한다
+  assert.equal(extractIntent('집 앞 편의점 들렀다가 출발할게', { currentStops: [] }).stops[0].near, 'start');
+});

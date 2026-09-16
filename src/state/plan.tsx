@@ -9,6 +9,7 @@ import { useCurrentPlace } from '../lib/currentPlace';
 import { CongestionKey } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import type { ExtractSource } from '../lib/intentClient';
+import type { NearSide } from '../lib/routePlan/types';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
 import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
@@ -47,6 +48,8 @@ export type IntentChip =
       why?: string;
       /** false면 특정 지점 고정. 최적화 대상에서 뺀다 */
       flexible: boolean;
+      /** 사용자가 말한 위치 — '회사 근처 카페'의 '회사 근처'. 말 안 했으면 'any' */
+      near: NearSide;
     }
   | { id: string; kind: 'arriveBy'; label: string; value: number };
 /* 이동수단은 칩이 아니다 — A2 헤더의 셀렉트가 유일한 조작점이다. 칩으로도 두던 시절엔
@@ -222,6 +225,7 @@ function initState(ds: Dataset, seed = false): PlanState {
     openNow: st.openNow,
     flexible: st.flexible,
     why: st.why,
+    near: st.near,
   }));
   return {
     departMin,
@@ -627,7 +631,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         for (let k = 0; k < Math.max(1, st.count); k++) {
           chips.push({
             id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries,
-            stopKind: st.kind, openNow: st.openNow, flexible: st.flexible, why: st.why,
+            stopKind: st.kind, openNow: st.openNow, flexible: st.flexible, why: st.why, near: st.near,
           });
         }
       }

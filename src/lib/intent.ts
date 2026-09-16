@@ -25,6 +25,10 @@ export type IntentStop = {
   openNow: boolean;
   /** 조건. 검색어가 아니다 — '샌드위치 파는', '조용한' 같은 수식은 여기로 온다 */
   prefers: string[];
+  /** 경로의 어느 쪽 끝. 목은 가장 분명한 말만 본다 — 미묘한 건 LLM 몫이다.
+      타입을 import 하지 않고 인라인으로 둔다: 이 파일은 서버 스키마의 목 사본이라
+      `kind` 도 같은 방식이고, 로컬 import 가 없어야 run-cases.mjs 의 flat 컴파일이 선다 */
+  near: 'start' | 'end' | 'any';
 };
 
 export type Intent = {
@@ -51,6 +55,18 @@ export type IntentContext = {
   /** 좌표를 아는 장소 이름들 — 목적지 변경은 여기 있을 때만 적용한다 */
   knownPlaces?: string[];
 };
+
+/* 위치 — 목은 오해 없는 말만 본다. 여기서 못 잡는 표현은 서버(LLM)가 잡는다.
+   AGENTS.md 대로 목의 한계를 제품 사양으로 굳히지 않는다 — cases.jsonl 의 기대값은
+   제품이 해야 할 일로 쓰고, 목이 더 실패하는 건 정직한 신호다 */
+const NEAR_END = /(회사|목적지|식장|학교|사무실)\s*(근처|앞)|도착해서|내려서/;
+const NEAR_START = /(?:^|[^가-힣])(집|여기)\s*(근처|앞)|나가는\s*길|출발\s*전/;
+
+function nearFromText(text: string): 'start' | 'end' | 'any' {
+  if (NEAR_END.test(text)) return 'end';
+  if (NEAR_START.test(text)) return 'start';
+  return 'any';
+}
 
 /* 목 사전 — 실제 서버에서는 LLM이 뽑고 카카오 로컬이 후보를 찾는다.
    여기서는 데이터셋 풀에 있는 이름까지 후보에 넣어야 매칭이 된다 */
@@ -217,12 +233,12 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   const swap = text.match(/([가-힣A-Za-z0-9]{1,12})\s*(?:대신|말고)\s*([가-힣A-Za-z0-9]{1,12})/);
   if (swap) {
     const gone = findInPlan(swap[1], ctx.currentStops) ?? swap[1];
-    const add = extractStops(swap[2], false, 1);
+    const add = extractStops(swap[2], false, 1, nearFromText(text));
     if (add.length) {
       return {
         ...base,
         stops: [
-          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [] },
+          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any' },
           ...add,
         ],
       };
@@ -235,7 +251,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     if (target) {
       return {
         ...base,
-        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [] }],
+        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any' }],
       };
     }
   }
@@ -263,7 +279,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     }
   }
 
-  const stops = extractStops(scope, openNow, count);
+  const stops = extractStops(scope, openNow, count, nearFromText(text));
 
   // 넓은 업종이면 좁힐 선택지를 낸다. 좁은 질의(브랜드·특정 지점)는 묻지 않는다
   for (const st of stops) {
@@ -297,7 +313,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
 }
 
 /** 문장에서 브랜드·카테고리를 뽑아 add 경유지로 만든다 */
-function extractStops(text: string, openNow: boolean, count: number): IntentStop[] {
+function extractStops(text: string, openNow: boolean, count: number, near: 'start' | 'end' | 'any'): IntentStop[] {
   const found: IntentStop[] = [];
   const seen = new Set<string>();
 
@@ -315,6 +331,7 @@ function extractStops(text: string, openNow: boolean, count: number): IntentStop
       flexible: !specific,
       openNow,
       prefers: [],
+      near,
     });
   }
 
@@ -322,7 +339,7 @@ function extractStops(text: string, openNow: boolean, count: number): IntentStop
     if (!cat.keys.some(k => text.includes(k))) continue;
     if (cat.queries.some(q => seen.has(q))) continue;
     cat.queries.forEach(q => seen.add(q));
-    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [] });
+    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [], near });
   }
   return found;
 }

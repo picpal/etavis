@@ -778,3 +778,98 @@ test('검색어 폴백 — dwellMin은 구가 아니라 실제로 쓴 검색어 
   assert.equal(slots[0].query, '마트');
   assert.equal(slots[0].dwellMin, 15, 'dwellFor는 구가 아니라 실제로 쓴 검색어(마트)를 봐야 한다');
 });
+
+/* near — 경로의 어느 쪽 끝. 채점은 총 소요시간만 보므로 여기서 거르지 않으면
+   "회사 근처 카페"라고 말해도 출발지 쪽 후보가 이긴다 */
+
+const nearCatalog: PlaceCandidate[] = [
+  { id: 'cf-near', name: '카페 집앞', coord: at(37.5, 127.005) },  // s ≈ 0.04
+  { id: 'cf-far', name: '카페 회사앞', coord: at(37.5, 127.108) },  // s ≈ 0.95
+];
+const nearSearch: SearchFn = async (q, from, r) =>
+  nearCatalog.filter(c => c.name.startsWith(q) && haversineM(from, c.coord) <= r);
+
+const slotsOf = (actions: PlanFlowAction[]) =>
+  (actions.find(a => a.type === 'SLOTS') as {
+    type: 'SLOTS';
+    slots: { candidates: { id: string }[]; near?: string; nearRelaxed?: boolean }[];
+  }).slots;
+
+test("near='end' — 목적지 쪽 후보만 슬롯에 남는다", async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' }]),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  const [s] = slotsOf(actions);
+  assert.deepEqual(s.candidates.map(c => c.id), ['cf-far']);
+  assert.equal(s.near, 'end');
+  assert.equal(s.nearRelaxed, false);
+});
+
+test("near='start' — 출발지 쪽 후보만 남는다", async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'start' }]),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  assert.deepEqual(slotsOf(actions)[0].candidates.map(c => c.id), ['cf-near']);
+});
+
+test('그쪽에 한 곳도 없으면 제약을 풀고 계획은 그대로 간다 — 경유지가 증발하면 안 된다', async () => {
+  const onlyNear: SearchFn = async (q, from, r) =>
+    nearCatalog.filter(c => c.id === 'cf-near' && c.name.startsWith(q) && haversineM(from, c.coord) <= r);
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' }]),
+    { provider: mockRouteProvider(), search: onlyNear, dispatch },
+  );
+  const [s] = slotsOf(actions);
+  assert.deepEqual(s.candidates.map(c => c.id), ['cf-near'], '되돌려서 후보를 살린다');
+  assert.equal(s.nearRelaxed, true);
+  assert.equal(actions[actions.length - 1].type, 'RESULT');
+});
+
+test('물성 신호 — 대중교통에서 커피를 사면 near 를 말 안 해도 목적지 쪽이 된다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req(
+      [{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기' }],
+      { mode: 'transit' },
+    ),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  const [s] = slotsOf(actions);
+  assert.equal(s.near, 'end');
+  assert.deepEqual(s.candidates.map(c => c.id), ['cf-far']);
+});
+
+test('물성 신호 — 차로 가면 표를 읽지 않는다. 커피는 들고 탈 수 있다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기' }]),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  const [s] = slotsOf(actions);
+  assert.equal(s.near, 'any');
+  assert.equal(s.candidates.length, 2);
+});
+
+test('같은 검색어 슬롯이 둘인데 그쪽에 한 곳뿐이면 제약을 푼다 — 계획 전체가 사라지면 안 된다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', near: 'end' },
+    ]),
+    { provider: mockRouteProvider(), search: nearSearch, dispatch },
+  );
+  const slots = slotsOf(actions);
+  // 목적지 쪽 후보는 cf-far 하나뿐이다. 그대로 좁히면 슬롯 둘이 같은 한 곳을 두고 다퉈
+  // enumerate 가 빈 배열을 내고 계획이 통째로 없어진다 — 제약을 풀어야 한다
+  assert.equal(slots[0].nearRelaxed, true);
+  assert.equal(slots[0].candidates.length, 2);
+  const last = actions[actions.length - 1];
+  assert.equal(last.type, 'RESULT', '계획이 나와야 한다');
+  assert.ok((last as { type: 'RESULT'; result: { options: unknown[] } }).result.options.length > 0, '안이 하나는 있어야 한다');
+});

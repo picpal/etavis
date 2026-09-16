@@ -11,6 +11,7 @@ const stop = (over: Partial<Extract<IntentChip, { kind: 'stop' }>> = {}): Intent
   stopKind: 'category',
   openNow: false,
   flexible: true,
+  near: 'any' as const,
   ...over,
 });
 
@@ -56,6 +57,16 @@ test('필드가 없는 옛 칩은 기본값으로 떨어진다 — 없다고 계
 
 test('빈 칩 목록이면 빈 슬롯', () => {
   assert.deepEqual(requestStopsFromChips([]), []);
+});
+
+test('near 가 슬롯까지 내려간다 — "회사 근처"가 여기서 죽으면 집 앞 카페가 이긴다', () => {
+  const [s] = requestStopsFromChips([stop({ near: 'end' })]);
+  assert.equal(s.near, 'end');
+});
+
+test('옛 칩에 near 가 없으면 any — 없다고 계산이 멈추면 안 된다', () => {
+  const legacy = { id: 's-9', kind: 'stop', label: '약국', queries: ['약국'] } as unknown as IntentChip;
+  assert.equal(requestStopsFromChips([legacy])[0].near, 'any');
 });
 
 /* 이 테스트는 NARROW_STOP 을 검증하지 않는다 — 그 좁히기 규칙(queries/narrowed 변경)은

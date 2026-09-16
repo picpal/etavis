@@ -22,9 +22,9 @@ export function requestStopsFromChips(chips: IntentChip[]): PlanRequest['stops']
     .filter(c => c.kind === 'stop')
     .map(c => ({
       id: c.id,
-      // 칩의 queries[1:]는 여기서도 예전처럼 버린다 — LLM이 채우는 건 [0]뿐이다.
-      // expandQueries는 그 [0] 하나를 업종어 후보로 넓히는 몫이지, 칩의 다른 후보를 살리는 몫이 아니다.
-      queries: expandQueries(c.kind === 'stop' ? [c.queries[0]] : []),
+      // 칩의 queries 는 폴백 목록이다 — 앞이 0건이면 runPlan 이 뒤로 넘어간다.
+      // 사용자가 되묻기에서 하나를 고르면 chips.ts 가 이 배열을 그 값 하나로 줄인다.
+      queries: expandQueries(c.kind === 'stop' ? c.queries : []),
       // count 는 칩을 개수만큼 복제하는 방식이라(APPLY_INTENT) 슬롯당 항상 1이다
       count: 1,
       // 옛 상태의 칩에는 필드가 없을 수 있다 — stopKind 와 같은 방식으로 기본값을 둔다

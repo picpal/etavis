@@ -25,9 +25,9 @@ test('flexible=false 가 슬롯까지 내려간다 — 특정 지점 고정은 �
   assert.equal(s.stopKind, 'specific');
 });
 
-test('검색어는 첫 후보를 쓴다', () => {
+test('검색어 후보를 전부 나른다 — 뒤 후보는 앞이 0건일 때 쓰는 폴백이다', () => {
   const [s] = requestStopsFromChips([stop({ queries: ['우체국', '편의점'] })]);
-  assert.deepEqual(s.queries, ['우체국']);
+  assert.deepEqual(s.queries, ['우체국', '편의점']);
 });
 
 test('count 는 항상 1 — 개수는 APPLY_INTENT 가 칩을 복제해 표현한다', () => {

@@ -33,6 +33,33 @@ test('목 — NARROW 표에 없는 카테고리는 되묻지 않는다', () => {
   assert.equal(pharmacy, undefined, '약국은 NARROW 표에 없으니 되묻지 않는다');
 });
 
+test('목 — 생활 서비스와 다른 업종이 한 문장에 있으면 둘 다 잡는다', () => {
+  // 2026-09-16 실기기: 이 문장이 '이마트' 하나로 떨어져 옷수선집이 통째로 사라졌다.
+  // '수선'이 사전에 아예 없었다 — 못 잡은 게 아니라 볼 줄 몰랐던 것이다
+  const i = extractIntent('옷수선 맡기고 마트에서 장보고 가려고', { currentStops: [] });
+  assert.equal(i.stops.length, 2);
+  assert.ok(
+    i.stops.some(s => s.queries.includes('옷수선')),
+    `수선이 빠졌다: ${i.stops.map(s => s.queries.join('|')).join(', ')}`,
+  );
+  assert.ok(i.stops.some(s => s.queries.includes('이마트')));
+});
+
+test('목 — 세탁"기"를 세탁소로 끌고 가지 않는다', () => {
+  // 키를 '세탁'으로 짧게 자르면 여기서 경유지를 지어낸다.
+  // placeCategory.ts 의 이마트24/이마트와 같은 함정이라 키를 길게 잡았다
+  const i = extractIntent('세탁기 고장났는데 수리비 얼마야', { currentStops: [] });
+  assert.equal(i.stops.length, 0, `환각: ${i.stops.map(s => s.queries.join('|')).join(', ')}`);
+});
+
+test('목 — 생활 서비스는 되묻지 않는다', () => {
+  // 수선·열쇠·도장은 전국 브랜드가 없어 어떤 답을 들어도 검색어가 안 바뀐다.
+  // 되묻기는 답이 검색어를 바꿀 때만 값어치가 있다(NARROW 주석)
+  const i = extractIntent('옷수선 맡기고 갈게', { currentStops: [] });
+  assert.equal(i.stops.length, 1);
+  assert.equal(i.ambiguous.filter(a => a.field.startsWith('stop:')).length, 0);
+});
+
 test('목 — 브랜드로 이미 좁혀졌으면 되묻지 않는다', () => {
   // '이마트'는 브랜드명 자체에 '마트'가 들어 있어 NARROW 키워드와 겹친다.
   // kind:'brand' 가드가 없으면 이미 정해진 브랜드에도 "어떤 마트로 할까요?"를 묻게 된다.

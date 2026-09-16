@@ -207,7 +207,7 @@ export function OptionsScreen({ navigation }: Props) {
           .filter(s => s.nearRelaxed && result.slotStatus[s.id] !== 'none')
           .map(s => (
             <Text key={`near-${s.id}`} style={[type.caption, { color: color.muted }]}>
-              {s.near === 'end' ? '목적지' : '출발지'} 쪽엔 {s.query}{josa(s.query, '이/가')} 없어서 경로 중간으로 잡았어요
+              {s.near === 'end' ? '목적지' : '출발지'} 쪽엔 {s.query}{josa(s.query, '이/가')} 없어서 경로 위 다른 곳으로 잡았어요
             </Text>
           ))}
 

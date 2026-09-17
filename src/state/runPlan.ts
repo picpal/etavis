@@ -9,7 +9,7 @@ import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
-import { applyNear, resolveNear } from '../lib/nearSide';
+import { applyNear, decideNear } from '../lib/nearSide';
 import type { EnrichFn } from '../lib/enrich/enrichClient';
 import { scoreTrend } from '../lib/trendScore';
 
@@ -111,16 +111,31 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         const k = s.queries.join('|');
         siblings.set(k, (siblings.get(k) ?? 0) + Math.max(1, s.count));
       }
-      slots = await race(Promise.all(request.stops.map(async st => {
-        // 사용자가 말한 위치가 먼저다. 말 안 했으면 물성 표(들고 대중교통을 못 타는 것)를 읽는다
-        const near = resolveNear(st.near, request.mode, st.queries, st.why);
+      // 방향을 먼저 전부 정한다. 검색이 side 를 받아야 하고(§5), 같은 near 를 가진
+      // 형제 수를 세려면(§10) 슬롯 하나만 보고는 알 수 없다
+      const decided = request.stops.map(st => ({
+        st,
+        near: decideNear(st.near, request.mode, {
+          loadBefore: st.loadBefore ?? 'none',
+          loadAfter: st.loadAfter ?? 'none',
+          needWhen: st.needWhen ?? 'unknown',
+        }),
+      }));
+      slots = await race(Promise.all(decided.map(async ({ st, near }) => {
+        const nearSource: 'stated' | 'inferred' | 'none' =
+          near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred';
         const need = Math.max(1, st.count);
         const target = Math.max(st.count, KC);
 
         const runSearch = async (query: string) => {
           const corridor = () => searchAlong(
             poly, query,
-            { need, target, initialRadiusM: initialRadiusM(request.mode), maxRadiusM: maxRadiusM(request.mode, slack, rho) },
+            {
+              need, target,
+              initialRadiusM: initialRadiusM(request.mode),
+              maxRadiusM: maxRadiusM(request.mode, slack, rho),
+              side: near, origin: request.origin, destination: request.destination,
+            },
             search,
           );
           // 앵커가 있으면 역 주변부터. 한 곳도 없으면 오늘 나오던 후보까지 잃지 않게 회랑으로 떨어진다
@@ -128,6 +143,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
             ? await searchAtAnchors(anchors, query, {
                 need, target,
                 maxRadiusM: Math.min(ANCHOR_MAX_M, maxRadiusM(request.mode, slack, rho)),
+                side: near, origin: request.origin, destination: request.destination,
               }, search)
             : await corridor();
           if (anchors.length > 0 && r.status === 'none') {
@@ -152,6 +168,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
             candidates: [], dwellMin: dwellFor(''),
             count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
             near, nearRelaxed: false,
+            nearSource, nearBefore: 0, nearAfter: 0, nearRadiusM: null, nearRelaxedRaw: false,
             searchStatus: 'none',
             searchRadiusM: 0, searchCalls: 0,
           } satisfies Slot;
@@ -186,15 +203,23 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다).
         // 그다음 near 로 한쪽 끝만 남긴다. 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이다
         const parked = applyParkingPolicy(found.candidates, request.mode);
-        const sided = applyNear(parked, near, poly, siblings.get(st.queries.join('|')) ?? 1);
+        // nearNeed 는 임시로 형제 수를 그대로 쓴다 — Task 11 에서 다른 계산으로 바뀐다
+        const nearNeed = siblings.get(st.queries.join('|')) ?? 1;
+        const sided = applyNear(parked, near, request.origin, request.destination, nearNeed);
 
         return {
           id: st.id, query: used, stopKind: st.stopKind, why: st.why,
           candidates: sided.candidates.slice(0, MAX_CANDIDATES), dwellMin: dwellFor(used),
           count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          near, nearSource,
           // 사용자가 말한 제약이 안 먹었을 때만 사과한다 — 코드가 물성으로 추론한 제약까지
           // 사과하면, 목적지 얘기를 꺼낸 적 없는 사용자에게 "목적지 쪽엔 없어서"라고 말하게 된다
-          near, nearRelaxed: sided.relaxed && (st.near === 'start' || st.near === 'end'),
+          nearRelaxed: sided.relaxed && (st.near === 'start' || st.near === 'end'),
+          nearRelaxedRaw: sided.relaxed,
+          nearBefore: parked.length,
+          nearAfter: sided.candidates.length,
+          nearRadiusM: sided.radiusM,
+          loadBefore: st.loadBefore, loadAfter: st.loadAfter, needWhen: st.needWhen,
           searchStatus: found.status,
           searchRadiusM: found.radiusM, searchCalls: found.calls,
         } satisfies Slot;

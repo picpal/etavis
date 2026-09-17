@@ -26,7 +26,20 @@ export type FallbackOptions = {
   /** 웹에서만 true. 네이티브는 기존 동작(던지기)을 유지한다 */
   enabled?: boolean;
   onFallback?: (err: unknown) => void;
+  /** 테스트가 시계를 제어할 수 있게. 프로덕션은 기본값(Date.now)을 그대로 쓴다 */
+  now?: () => number;
 };
+
+/**
+ * 차단기 쿨다운. 계획 계산 한 번이 12초 예산 안에서 끝나므로(runPlan.ts DEFAULT_TIMEOUT_MS)
+ * 실패 한 번이 그 계산 전체를 덮는다. corridorSearch.ts 의 반경 루프는 라운드마다 다시
+ * primary 를 때리는데, 공급자가 죽어 있으면 그게 라운드 수만큼 곱해져 50건짜리 난타가 된다.
+ *
+ * 영구 래치로 두면 일시적 장애 한 번이 재배포 전까지 모든 방문자의 실검색을 죽인다 —
+ * 4주짜리 공개 데모에선 그게 더 나쁘다. 60초면 그 계산 한 번은 확실히 덮으면서도,
+ * 다음 방문자(혹은 같은 방문자의 다음 계산)에선 자연히 다시 시도한다.
+ */
+export const BREAKER_COOLDOWN_MS = 60_000;
 
 export function withMockFallback<P extends SearchProviderLike>(
   primary: P,
@@ -35,12 +48,19 @@ export function withMockFallback<P extends SearchProviderLike>(
 ): P | SearchProviderLike {
   if (!opts.enabled) return primary;
   if (primary.key === fallback.key) return primary;
+  const now = opts.now ?? Date.now;
+  let downUntil = 0;
   return {
     key: primary.key,
     async search(query, near, radiusM) {
+      if (now() < downUntil) {
+        opts.onFallback?.(new Error(`${primary.key} 차단기 열림 — 쿨다운 중`));
+        return fallback.search(query, near, radiusM);
+      }
       try {
         return await primary.search(query, near, radiusM);
       } catch (e) {
+        downUntil = now() + BREAKER_COOLDOWN_MS;
         opts.onFallback?.(e);
         return fallback.search(query, near, radiusM);
       }

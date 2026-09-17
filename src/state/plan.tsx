@@ -14,12 +14,12 @@ import { nowMin, toHHMM, toMin } from '../lib/clock';
 import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
+import { knownPlacesSnapshot } from '../lib/placesStore';
 import {
   Candidate,
   Dataset,
   datasets,
   LatLng,
-  RECENT_DESTINATIONS,
   RouteOption,
   Stop,
 } from '../data/mockData';
@@ -668,10 +668,26 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       }
       const stops = stopsForChips(state.dataset, keep);
       /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
-         이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다) */
-      const known = RECENT_DESTINATIONS;
-      const pick = (name?: string) =>
-        name ? known.find(r => r.name.includes(name) || name.includes(r.name)) : undefined;
+         이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다).
+         아는 곳 = 내가 등록한 장소(별칭·상호)와 최근에 다녀온 곳. LLM 이 좌표를 짓지 않는다 */
+      const known = knownPlacesSnapshot();
+      /* 예전엔 부분문자열을 **양방향**으로 봤다. 목 3건일 땐 안전했지만 등록한 장소가 늘면
+         라벨 '집'이 '포장마차집'에 걸려 엉뚱하게 집으로 튄다 — 짧은 라벨이 긴 말을 삼킨다.
+         그래서 방향을 하나로 줄인다: 완전 일치 → 아는 이름이 말로 **시작**하는 경우.
+         아는 쪽이 늘 더 긴 문자열이라 짧은 라벨이 남의 말을 삼킬 수 없다.
+         못 잡으면 목적지를 안 바꾼다 — 조용히 틀린 곳으로 보내느니 그대로 두는 게 낫다.
+         저장한 장소는 별칭과 상호가 각각 한 항목이라 '집'으로도 '여의도 자이'로도 걸린다 */
+      const norm = (s: string) => s.replace(/\s+/g, '');
+      const pick = (name?: string) => {
+        if (!name) return undefined;
+        const said = norm(name);
+        if (!said) return undefined;
+        const exact = known.find(r => norm(r.name) === said);
+        if (exact) return exact;
+        // 앞자리 매칭은 두 글자부터 — '집' 한 글자가 '집들이 장소'의 앞을 물면 안 된다.
+        // 완전 일치는 길이를 안 따진다: '집'은 그 자체로 등록해 둔 이름이다
+        return said.length >= 2 ? known.find(r => norm(r.name).startsWith(said)) : undefined;
+      };
       const nextDest = pick(it.endpoints.destination);
       const nextOrigin = pick(it.endpoints.origin);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -682,14 +698,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         mode,
         stopCount: stops.length,
         optionOverrides: {},
-        // 주소도 같이 갈아야 한다 — 안 그러면 새 목적지에 이전 목적지의 주소가 그대로
-        // 붙어서 최근 목록에 적힌다. known 은 지금 RECENT_DESTINATIONS(장소마다 주소 있음)
-        // 이지만 나중에 저장소 기반으로 바뀌어도 정직하게 비어 있도록 `?? null`
         ...(nextDest
-          ? { destinationName: nextDest.name, destinationCoord: nextDest.coord, destinationAddress: nextDest.address ?? null }
+          ? { destinationName: nextDest.name, destinationCoord: nextDest.coord, destinationAddress: nextDest.address }
           : null),
         ...(nextOrigin
-          ? { originName: nextOrigin.name, originCoord: nextOrigin.coord, originAddress: nextOrigin.address ?? null }
+          ? { originName: nextOrigin.name, originCoord: nextOrigin.coord, originAddress: nextOrigin.address }
           : null),
         ...computeChain(stops, state.dataset, state.departMin),
       };

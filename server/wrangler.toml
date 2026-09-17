@@ -2,7 +2,8 @@
 # 2026-09-17 사고 — `wrangler pages deploy` 가 레포 루트에 wrangler.jsonc 를 만들었고
 # 그 name 이 이 워커와 같은 "etavia" 여서, 뒤이은 wrangler deploy 가 이 파일 대신
 # 루트 설정을 집어 API 워커를 정적 웹 데모로 덮어썼다(/route 404). 복구는 --config 재배포.
-# cd 와 배포를 한 셸 호출 안에서 함께 실행할 것 — 호출이 쪼개지면 cwd 가 루트로 돌아간다.
+# 왜 루트 설정이 집혔는지는 못 밝혔다 — `cd server && npx wrangler deploy` 처럼 한 셸 호출로
+# 묶어 돌렸는데도 그랬다(wrangler 4.133). cwd 만 맞추는 걸로는 못 막으니 --config 를 쓴다.
 name = "etavia"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"

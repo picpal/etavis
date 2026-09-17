@@ -6,7 +6,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef } from 'react';
 import { LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useCurrentPlace } from '../lib/currentPlace';
-import { CongestionKey } from '../lib/congestion';
+import { CongestionKey, hasVisitedStop } from '../lib/congestion';
 import { extractIntent, Intent } from '../lib/intent';
 import type { ExtractSource } from '../lib/intentClient';
 import type { NearSide } from '../lib/routePlan/types';
@@ -598,11 +598,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case 'SET_CONGESTION':
       return { ...state, congestionReport: action.value };
     case 'REPORT_STOP_CONGESTION': {
-      /* 실제로 그 경유지에 도착해 체류 중일 때만 받는다.
-         화면에서도 막지만, 여기서 한 번 더 막아야 다른 경로로 들어와도 오제보가 안 생긴다 */
-      const target = state.stops[state.passedCount];
-      const arrived = state.atStop && target && target.id === action.stopId;
-      if (!arrived && !state.devAnyCongestion) return state;
+      /* 가 본 곳에서만 받는다 — 체류 중이거나 이미 지나온 곳.
+         화면에서도 막지만, 여기서 한 번 더 막아야 다른 경로로 들어와도 오제보가 안 생긴다.
+         판단은 hasVisitedStop 한 곳에서 한다 — 화면과 조건이 어긋나면 제보가 조용히 버려진다 */
+      const idx = state.stops.findIndex(s => s.id === action.stopId);
+      if (!hasVisitedStop(idx, state.passedCount, state.atStop) && !state.devAnyCongestion) return state;
       const stops = state.stops.map(s =>
         s.id === action.stopId ? { ...s, congestion: action.level } : s,
       );

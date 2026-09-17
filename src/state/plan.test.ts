@@ -138,3 +138,27 @@ test('두 번째 RESET_CHAT 은 아무것도 바꾸지 않는다 — 진입할 �
   assert.equal(twice.mode, once.mode);
   assert.equal(twice.destinationName, once.destinationName, '목적지는 A1에서 고른 것이라 대화와 무관하다');
 });
+
+test('체류 중인 경유지의 혼잡도 제보는 그대로 남는다', () => {
+  const s = dwelling();
+  const target = s.stops[s.passedCount];
+  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' });
+  assert.equal(after.stops[s.passedCount].congestion, 'high');
+});
+
+test('이미 떠나온 경유지의 제보도 받는다 — 안 받으면 시트가 계속 다시 묻는다', () => {
+  /* 화면은 '가 본 곳'이면 물어보는데 리듀서가 체류 중만 받던 시절, 떠나온 경유지에
+     제보하면 고맙다는 인사만 뜨고 상태는 그대로였다. 시트를 다시 열면 또 물었다 */
+  const s = arrived();
+  const first = s.stops[0];
+  assert.ok(s.passedCount > 0, '전제: 이미 지나온 경유지가 있어야 한다');
+  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: first.id, level: 'low' });
+  assert.equal(after.stops[0].congestion, 'low');
+});
+
+test('아직 가보지 않은 경유지의 제보는 버린다', () => {
+  const s = fresh();
+  const ahead = s.stops[s.stops.length - 1];
+  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: ahead.id, level: 'veryhigh' });
+  assert.equal(after, s, '아무것도 안 바뀌면 상태는 같은 참조여야 한다');
+});

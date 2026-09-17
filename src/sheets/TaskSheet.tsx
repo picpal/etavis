@@ -7,7 +7,7 @@ import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeabl
 import { color, type } from '../theme/tokens';
 import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic } from '../components/common';
-import { CongestionKey, CONGESTION, congestionLabel } from '../lib/congestion';
+import { CongestionKey, CONGESTION, congestionLabel, hasVisitedStop } from '../lib/congestion';
 import { CheckCircle, CheckMark, Hairline } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
 import { cancelScheduled, scheduleDepartureReminder } from '../notifications';
@@ -80,7 +80,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     사용자에겐 없다. 가보지 않은 곳을 막는 규칙은 그대로다(그건 제보가 아니라 소음이다).
     devAnyCongestion은 개발 메뉴의 테스트 스위치 — 도착 전에도 열어 본다
   */
-  const visited = dwelling || departed;
+  const visited = hasVisitedStop(stopIdx, state.passedCount, state.atStop);
   const askCongestion = (visited || state.devAnyCongestion) && !stop?.congestion;
 
   /* 제보하면 그 자리에서 고맙다고 하고 시트가 닫힌다.

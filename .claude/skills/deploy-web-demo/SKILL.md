@@ -181,7 +181,7 @@ curl -s -o /dev/null -D - -X OPTIONS "$W/route" -H 'Origin: https://evil.test' -
 |---|---|
 | 데모가 흰 화면 | 배포 직후 전파 지연일 수 있다. 캐시 무시하고 새로고침. 그래도면 `index.html` 이 참조하는 JS 해시가 실제로 서빙되는지 확인 |
 | 모든 기능이 목 | 번들의 `serverUrl` 이 비었다 → 3번을 `--clear` 로 다시 |
-| `/places` 404 | 예전 코드가 배포됐다. **Cloudflare 대시보드가 이 워커를 두 번 되돌렸다**(2026-09-17). 한 번은 "Add variable and deploy" 직후, 한 번은 대시보드 설정 탭을 열어 둔 채 작업하던 중에. 고치는 법은 같다 → `cd server && npx wrangler deploy --config wrangler.toml`. **예방: 시크릿은 `wrangler secret put` 으로 넣고, 넣은 뒤 대시보드 탭을 닫는다.** 넣은 직후에는 반드시 7번으로 라우트 생사를 확인한다 |
+| `/places` 404 | **`/places` 가 없는 브랜치에서 서버가 배포된 것이다.** 이 라우트는 웹 데모 브랜치에서만 만들어졌고 `main` 에는 없다 — 메인 체크아웃에서 `wrangler deploy` 를 하면 그때마다 사라진다(2026-09-17 에 두 번). 고치는 법: **웹 데모 코드가 있는 체크아웃에서** `cd server && npx wrangler deploy --config wrangler.toml`. 근본 해결은 브랜치를 main 에 병합하는 것이다. Cloudflare 대시보드의 "Add variable and deploy" 도 같은 증상을 낼 수 있으니 시크릿은 `wrangler secret put` 으로 넣고 넣은 뒤 7번으로 확인한다 |
 | `/route` 는 되는데 `/places` 500 | 서버 로그를 본다: `cd server && npx wrangler tail --config wrangler.toml` |
 | API 루트가 정적 HTML | API 워커가 웹 데모로 덮어써졌다 → 6번의 루트 오염을 지우고 `--config` 로 서버 재배포 |
 

@@ -58,13 +58,42 @@ done
 빌드는 통과하는데 런타임에 `expo-file-system is not supported on web` 이 뜨고
 저장이 매번 빈 상태로 시작했다.
 
+기준선은 **마지막으로 배포한 커밋**이다. 5번이 성공할 때마다 `web-demo-deployed`
+태그를 그 자리로 옮기므로, 그 뒤로 바뀐 파일만 보면 된다. 태그가 아직 없으면
+기준선이 없으니 `src/` 전체를 훑는다 — 시끄럽지만 놓치지 않는다.
+
 ```bash
-for f in $(git diff --name-only $(git merge-base main HEAD)..HEAD -- 'src/*' 'src/**/*'); do
-  [ -f "$f" ] && grep -l "from 'expo-" "$f" 2>/dev/null
-done | sort -u | while read f; do
+{ BASE=$(git rev-parse -q --verify web-demo-deployed)
+  if [ -n "$BASE" ]; then
+    echo "기준선: $BASE ($(git log -1 --format=%cd --date=short "$BASE") 배포분)" >&2
+    git diff --name-only "$BASE"..HEAD -- 'src/**'
+  else
+    echo '기준선 없음 — src/ 전체를 훑는다' >&2
+    git ls-files 'src/**'
+  fi
+} | while IFS= read -r f; do
+  case "$f" in *.web.ts|*.web.tsx) continue;; esac
+  [ -f "$f" ] || continue
+  grep -q "from 'expo-" "$f" || continue
   [ -f "${f%.ts}.web.ts" ] || [ -f "${f%.tsx}.web.tsx" ] || echo "shim 없음: $f"
 done
 ```
+
+**이미 알고 있는 5개는 무시한다** — 전부 웹에서 도는 게 확인된 것들이다.
+그 밖의 이름이 나오면 그게 새로 들어온 모듈이다.
+
+| 파일 | 무는 것 | 왜 괜찮나 |
+|---|---|---|
+| `src/components/common.tsx`·`src/screens/TimelineScreen.tsx` | `expo-haptics` | 웹에서 무동작, 안 죽는다 |
+| `src/lib/places.ts`·`src/state/planFlowProvider.tsx` | `expo-constants` | 웹 지원. `serverUrl` 을 읽는 통로다 |
+| `src/state/tracker.tsx` | `expo-location` | 파일 안에 `Platform.OS === 'web'` 분기가 있다 |
+
+> 두 가지를 고친 자리다. (1) 기준선이 `git merge-base main HEAD` 였다 — **main 을 이
+> 브랜치에 병합할 때마다 merge-base 가 main 끝으로 올라가서, 정작 main 에서 들어온
+> 모듈이 범위 밖으로 빠진다.** 이 스캔이 잡으라고 만든 바로 그 경우다(`placesStore.ts`).
+> (2) 루프가 `for f in $(...)` 였다 — **zsh 는 `$(...)` 를 단어로 쪼개지 않으므로**
+> 이 머신의 기본 셸에서는 파일 하나짜리 통짜 문자열이 되어 늘 0건이었다. 둘 다
+> 증상이 같다: 조용히 통과한 것처럼 보인다.
 
 `shim 없음` 이 나오면 그 모듈이 웹에서 어떻게 되는지 확인한다. 죽지 않고 빈 값으로
 degrade 하더라도, 저장·위치처럼 사용자가 결과를 보는 기능이면 `.web.ts` 를 만든다 —
@@ -118,6 +147,14 @@ npx wrangler deploy --name etavia-demo --assets=./dist --latest
 
 ```bash
 cd server && npx wrangler deploy --config wrangler.toml && cd ..
+```
+
+**7번 검증까지 통과하면 기준선을 옮긴다.** 1번의 shim 스캔이 이 태그를 기준으로
+"지난 배포 이후 바뀐 파일"을 고른다 — 안 옮기면 다음 배포가 같은 구간을 다시 훑는다.
+로컬 태그이므로 push 하지 않는다.
+
+```bash
+git tag -f web-demo-deployed HEAD && git log -1 --format='기준선 → %h %s' web-demo-deployed
 ```
 
 ## 6. 배포 직후 — 루트 오염 확인
@@ -181,7 +218,7 @@ curl -s -o /dev/null -D - -X OPTIONS "$W/route" -H 'Origin: https://evil.test' -
 |---|---|
 | 데모가 흰 화면 | 배포 직후 전파 지연일 수 있다. 캐시 무시하고 새로고침. 그래도면 `index.html` 이 참조하는 JS 해시가 실제로 서빙되는지 확인 |
 | 모든 기능이 목 | 번들의 `serverUrl` 이 비었다 → 3번을 `--clear` 로 다시 |
-| `/places` 404 | **`/places` 가 없는 브랜치에서 서버가 배포된 것이다.** 이 라우트는 웹 데모 브랜치에서만 만들어졌고 `main` 에는 없다 — 메인 체크아웃에서 `wrangler deploy` 를 하면 그때마다 사라진다(2026-09-17 에 두 번). 고치는 법: **웹 데모 코드가 있는 체크아웃에서** `cd server && npx wrangler deploy --config wrangler.toml`. 근본 해결은 브랜치를 main 에 병합하는 것이다. Cloudflare 대시보드의 "Add variable and deploy" 도 같은 증상을 낼 수 있으니 시크릿은 `wrangler secret put` 으로 넣고 넣은 뒤 7번으로 확인한다 |
+| `/places` 404 | **그 라우트가 없는 코드로 서버가 배포된 것이다.** 서버 워커(`etavia`)는 앱과 데모가 공유하므로 어느 체크아웃에서든 배포되고, 배포한 쪽에 없는 라우트는 그때마다 사라진다. `/places` 자체는 2026-09-17 에 `main` 에 병합돼 지금은 양쪽에 다 있다 — 그래서 이 증상이 또 나오면 원인은 그때와 다르다. **`server/` 를 `picpal/web-demo` 에서만 고친 경우**다. 고치는 법: 라우트가 있는 체크아웃에서 `cd server && npx wrangler deploy --config wrangler.toml`, 그리고 그 서버 변경을 main 에도 올린다. Cloudflare 대시보드의 "Add variable and deploy" 도 같은 증상을 낼 수 있으니 시크릿은 `wrangler secret put` 으로 넣고 넣은 뒤 7번으로 확인한다 |
 | `/route` 는 되는데 `/places` 500 | 서버 로그를 본다: `cd server && npx wrangler tail --config wrangler.toml` |
 | API 루트가 정적 HTML | API 워커가 웹 데모로 덮어써졌다 → 6번의 루트 오염을 지우고 `--config` 로 서버 재배포 |
 
@@ -189,6 +226,9 @@ curl -s -o /dev/null -D - -X OPTIONS "$W/route" -H 'Origin: https://evil.test' -
 
 - **비밀값을 파일에 쓰지 않는다.** `wrangler secret put` 으로만 넣고, 그 명령은
   사용자가 직접 실행한다. 대시보드로 넣었다면 **그 뒤에 소스에서 재배포**한다.
+- **`server/` 변경을 이 브랜치에만 두지 않는다.** 데모 전용으로 남길 것은 `webFrame.css`·
+  `.web.ts` shim 처럼 **웹 빌드에만 닿는 것**이다. 서버 워커는 앱과 공유라 메인
+  체크아웃에서도 배포되고, 그때 여기에만 있는 라우트·가드는 사라진다.
 - **CORS 를 와일드카드로 열지 않는다.** `server/wrangler.toml` 의 `ALLOWED_ORIGINS` 에
   production 오리진만 둔다.
 - **`dist/` · `.env` · `node_modules` 를 커밋하지 않는다.** `git add -A` 를 쓰지 말고

@@ -108,6 +108,22 @@ test('집은 하나뿐 — 새로 지정하면 기존 집이 일반 장소로 �
   assert.equal(f.saved.find(s => s.id === 'old')?.slot, null);
 });
 
+test('강등된 집의 라벨이 슬롯 기본값이면 상호로 되돌아간다 — 안 그러면 집이 두 개로 보인다', () => {
+  let f = upsertSaved(file(), aSaved({ id: 'old', slot: 'home', label: '집', name: '킨코스코리아 국회의사당역센터' }));
+  f = upsertSaved(f, aSaved({ id: 'new', slot: 'home', label: '집', coord: M51, createdAt: 200 }));
+  const old = f.saved.find(s => s.id === 'old');
+  assert.equal(old?.slot, null);
+  assert.equal(old?.label, '킨코스코리아 국회의사당역센터');
+});
+
+test('사용자가 직접 붙인 라벨(슬롯 기본값과 다름)은 슬롯을 잃어도 그대로 남는다', () => {
+  let f = upsertSaved(file(), aSaved({ id: 'old', slot: 'home', label: '우리집' }));
+  f = upsertSaved(f, aSaved({ id: 'new', slot: 'home', label: '집', coord: M51, createdAt: 200 }));
+  const old = f.saved.find(s => s.id === 'old');
+  assert.equal(old?.slot, null);
+  assert.equal(old?.label, '우리집');
+});
+
 test('정렬은 집 → 회사 → 등록 순이다', () => {
   let f = file();
   f = upsertSaved(f, aSaved({ id: 'c', slot: null, createdAt: 10 }));

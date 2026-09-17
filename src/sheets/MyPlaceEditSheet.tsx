@@ -13,6 +13,7 @@ import type { SavedPlace } from '../lib/placesFormat';
 import { newPlaceId, removePlace, savePlace } from '../lib/placesStore';
 import { usePlaces } from '../lib/usePlaces';
 import { useCurrentPlace } from '../lib/currentPlace';
+import { josa } from '../state/planFlowBridge';
 import { Card, haptic } from '../components/common';
 import { PlaceSearch } from '../components/PlaceSearch';
 import { Sheet } from '../components/Sheet';
@@ -195,10 +196,15 @@ export function MyPlaceEditSheet({
                   );
                 })}
               </View>
-              {/* 슬롯은 하나뿐이라, 뺏어오는 거라면 미리 말해 준다 */}
+              {/*
+                슬롯은 하나뿐이라, 뺏어오는 거라면 미리 말해 준다.
+                label이 아니라 name을 쓴다 — 슬롯 기본 라벨이 '집'/'회사'라, label을 쓰면
+                "지금 집인 '집'은..."처럼 겹쳐 읽힌다. 그리고 이게 예외가 아니라 기본값이라
+                거의 매번 겹친다. name(상호)은 항상 있고, 뭐가 바뀌는지 특정해 준다.
+              */}
               {slot && taken(slot) && (
                 <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.amber }}>
-                  지금 {slot === 'home' ? '집' : '회사'}인 '{taken(slot)?.label}'은 일반 장소로 바뀌어요
+                  지금 {slot === 'home' ? '집' : '회사'}인 '{taken(slot)?.name}'{josa(taken(slot)!.name, '이/가')} 일반 장소로 바뀌어요
                 </Text>
               )}
             </View>

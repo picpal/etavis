@@ -121,8 +121,17 @@ export function upsertRecent(file: PlacesFile, entry: Omit<RecentPlace, 'usedAt'
 export function upsertSaved(file: PlacesFile, place: SavedPlace): PlacesFile {
   const others = file.saved
     .filter(s => s.id !== place.id)
-    // 집·회사는 하나뿐이다. 새로 지정하면 기존 것은 일반 장소로 내려온다 — 지우지는 않는다
-    .map(s => (place.slot && s.slot === place.slot ? { ...s, slot: null } : s));
+    .map(s => {
+      // 집·회사는 하나뿐이다. 새로 지정하면 기존 것은 일반 장소로 내려온다 — 지우지는 않는다
+      if (!place.slot || s.slot !== place.slot) return s;
+      // 라벨이 슬롯 기본값('집'/'회사')이면 그건 슬롯이 붙여준 이름일 뿐이라, 슬롯을 잃으면
+      // 같이 되돌린다 — 안 그러면 강등된 장소가 여전히 '집'이라는 이름표를 달고 있어
+      // 화면에 집이 두 개로 보인다. 사용자가 직접 붙인 이름('우리집' 등)은 슬롯과
+      // 무관한 사용자의 말이니 그대로 둔다.
+      const defaultLabel = s.slot === 'home' ? '집' : '회사';
+      const label = s.label === defaultLabel ? s.name : s.label;
+      return { ...s, slot: null, label };
+    });
   return { ...file, saved: sortSaved([...others, place]) };
 }
 

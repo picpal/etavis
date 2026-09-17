@@ -682,8 +682,15 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         mode,
         stopCount: stops.length,
         optionOverrides: {},
-        ...(nextDest ? { destinationName: nextDest.name, destinationCoord: nextDest.coord } : null),
-        ...(nextOrigin ? { originName: nextOrigin.name, originCoord: nextOrigin.coord } : null),
+        // 주소도 같이 갈아야 한다 — 안 그러면 새 목적지에 이전 목적지의 주소가 그대로
+        // 붙어서 최근 목록에 적힌다. known 은 지금 RECENT_DESTINATIONS(장소마다 주소 있음)
+        // 이지만 나중에 저장소 기반으로 바뀌어도 정직하게 비어 있도록 `?? null`
+        ...(nextDest
+          ? { destinationName: nextDest.name, destinationCoord: nextDest.coord, destinationAddress: nextDest.address ?? null }
+          : null),
+        ...(nextOrigin
+          ? { originName: nextOrigin.name, originCoord: nextOrigin.coord, originAddress: nextOrigin.address ?? null }
+          : null),
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }

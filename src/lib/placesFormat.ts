@@ -31,7 +31,16 @@ export type PlacesFile = { saved: SavedPlace[]; recents: RecentPlace[] };
 
 const empty = (): PlacesFile => ({ saved: [], recents: [] });
 
-export const EMPTY_PLACES: PlacesFile = empty();
+// 공유 상수라 얼려 둔다 — 어디선가 EMPTY_PLACES.recents.push(...) 를 한 번이라도
+// 하면 이후 모든 '빈 값'이 그 오염을 물려받는다
+function frozenEmpty(): PlacesFile {
+  const f = empty();
+  Object.freeze(f.saved);
+  Object.freeze(f.recents);
+  return Object.freeze(f);
+}
+
+export const EMPTY_PLACES: PlacesFile = frozenEmpty();
 export const RECENT_MAX = 10;
 /** 이 거리 안이면 같은 곳으로 본다 — 같은 건물을 다른 이름으로 검색해도 한 줄이어야 한다 */
 export const SAME_PLACE_M = 50;

@@ -6,7 +6,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  EMPTY_PLACES,
   RECENT_MAX,
   knownPlaces,
   parsePlaces,
@@ -39,7 +38,9 @@ const aSaved = (over: Partial<SavedPlace> = {}): SavedPlace => ({
 
 test('못 읽는 입력은 전부 빈 목록 — 앱은 그래도 선다', () => {
   for (const bad of [null, undefined, '', '{', 'null', '[]', '"글자"']) {
-    assert.deepEqual(parsePlaces(bad as string | null | undefined), EMPTY_PLACES);
+    // 공유 상수(EMPTY_PLACES)와 비교하지 않는다 — 이 테스트가 그 객체에 기대면
+    // 안 되고, parsePlaces 가 매번 새로 낸 빈 값의 모양만 확인하면 된다
+    assert.deepEqual(parsePlaces(bad as string | null | undefined), { saved: [], recents: [] });
   }
 });
 

@@ -275,3 +275,27 @@ test("'내 위치'에서 맞바꾸면 목적지 주소는 없다 — 지금 있�
   assert.equal(s.originAddress, '서울 양천구 신정동');
   assert.equal(s.destinationAddress, null);
 });
+
+test('채팅이 목적지를 바꾸면 주소도 새 목적지 것으로 바뀐다 — 이전 목적지 주소가 새 장소에 눌러앉으면 안 된다', () => {
+  const had = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '올리브영 신정점',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  const s = planReducer(had, {
+    type: 'APPLY_INTENT',
+    intent: {
+      resetStops: false,
+      stops: [],
+      endpoints: { destination: '집' }, // RECENT_DESTINATIONS 의 '집' — 주소가 다른 곳
+      order: 'auto',
+      arriveBy: null,
+      mode: null,
+      reject: null,
+      ambiguous: [],
+    },
+  });
+  assert.equal(s.destinationName, '집');
+  assert.equal(s.destinationAddress, '서울 영등포구 여의도동', '이전 목적지(올리브영)의 주소가 남아 있으면 안 된다');
+});

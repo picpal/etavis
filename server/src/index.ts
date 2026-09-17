@@ -61,8 +61,22 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
-/** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
-const DEFAULT_MODEL = 'gpt-5.6-sol';
+/**
+ * 2026-09-17 실측으로 gpt-5.6-sol 에서 옮겼다. 대표 34케이스(그룹당 1개,
+ * run-server-cases.mjs 와 같은 표본) 기준:
+ *
+ *   sol    중앙 8.4s · p90 21.7s · 최대 29.4s · 30/34 · $17.82/1000콜
+ *   terra  중앙 2.5s · p90  6.3s · 최대 13.7s · 29/34 · $10.39/1000콜
+ *
+ * **정확도 1점을 내주고 옮긴 게 아니다.** 앱 타임아웃 안에 답이 오느냐가 갈렸다 —
+ * sol 은 절반 가까이가 상한을 넘겨 로컬 목으로 떨어졌고, 목이 답하면 정확도는
+ * 30/34 근처가 아니라 훨씬 아래다. 사용자에게 **닿는** 정확도로는 terra 가 이긴다.
+ *
+ * 코드에 박는 이유: secret(OPENAI_MODEL)으로만 두면 워커가 초기화될 때 조용히
+ * sol 로 돌아간다. secret 이 전부 날아가 있던 걸 2026-09-17 에 겪었다.
+ * OPENAI_MODEL 은 급할 때 코드 배포 없이 바꾸는 탈출구로 남긴다.
+ */
+const DEFAULT_MODEL = 'gpt-5.6-terra';
 
 /** 엔드포인트들이 공유하는 문지기. 토큰 → 분당 상한(기기·IP) → JSON 파싱.
     전역 일일 상한은 여기서 보지 않는다 — /route 는 요청을 파싱해야 버킷이 정해진다 */

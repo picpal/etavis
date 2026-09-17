@@ -11,9 +11,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Keyboard, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, shadow, type } from '../theme/tokens';
-import { LatLng, RECENT_DESTINATIONS } from '../data/mockData';
+import { LatLng } from '../data/mockData';
 import { usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
+import { usePlaces } from '../lib/usePlaces';
 import { getProvider, Place } from '../lib/places';
 import { formatDistanceM, haversineM } from '../lib/geo';
 import { Card, haptic } from '../components/common';
@@ -40,6 +41,8 @@ export function DestinationSheet({
   const { height: H } = useWindowDimensions();
   const { state, setDestination, setOrigin } = usePlan();
   const here = useCurrentPlace();
+  const places = usePlaces();
+  const recents = places.recents;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Place[]>([]);
   const [searching, setSearching] = useState(false);
@@ -101,17 +104,15 @@ export function DestinationSheet({
     return () => clearTimeout(timer);
   }, [trimmed, myCoord]);
 
-  const finish = (name: string, coord: LatLng | null) => {
+  const finish = (name: string, coord: LatLng | null, address: string | null) => {
     haptic();
     Keyboard.dismiss();
-    if (isOrigin) setOrigin(name, coord);
-    else setDestination(name, coord);
+    if (isOrigin) setOrigin(name, coord, address);
+    else setDestination(name, coord, address);
     setQuery('');
     onClose();
     onPicked?.(name);
   };
-
-  const recents = RECENT_DESTINATIONS;
 
   return (
     <Sheet visible={visible} onClose={onClose}>
@@ -176,7 +177,7 @@ export function DestinationSheet({
                 <React.Fragment key={place.id}>
                   {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
                   <Pressable
-                    onPress={() => finish(place.name, place.coord)}
+                    onPress={() => finish(place.name, place.coord, place.address)}
                     style={({ pressed }) => ({
                       flexDirection: 'row',
                       alignItems: 'center',
@@ -245,7 +246,7 @@ export function DestinationSheet({
               onPress={() => {
                 haptic();
                 Keyboard.dismiss();
-                setOrigin(null, null);
+                setOrigin(null, null, null);
                 onClose();
               }}
               style={({ pressed }) => ({
@@ -293,15 +294,16 @@ export function DestinationSheet({
 
         {trimmed.length === 0 && recents.length > 0 && (
           <>
-            <Text style={[type.label, { color: color.muted }]}>{isOrigin ? '자주 쓰는 곳' : '최근 목적지'}</Text>
+            <Text style={[type.label, { color: color.muted }]}>최근에 쓴 곳</Text>
             <Card style={{ padding: 8 }}>
               {recents.map((recent, i) => {
                 const active = recent.name === (isOrigin ? state.originName : state.destinationName);
+                const key = `${recent.name}-${recent.coord.latitude}-${recent.coord.longitude}`;
                 return (
-                  <React.Fragment key={recent.name}>
+                  <React.Fragment key={key}>
                     {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
                     <Pressable
-                      onPress={() => finish(recent.name, recent.coord)}
+                      onPress={() => finish(recent.name, recent.coord, recent.address)}
                       style={({ pressed }) => ({
                         flexDirection: 'row',
                         alignItems: 'center',
@@ -356,6 +358,39 @@ export function DestinationSheet({
               })}
             </Card>
           </>
+        )}
+
+        {/*
+          최근이 비면 그 자리가 통째로 빈다. 첫 실행에서 검색창만 덩그러니 남지 않게,
+          다음 행동(자주 가는 곳 등록)으로 잇는다. 등록이 끝난 사용자에게는 안 보인다.
+        */}
+        {trimmed.length === 0 && recents.length === 0 && (
+          <Card style={{ paddingVertical: 24, paddingHorizontal: 20, gap: 14, alignItems: 'center' }}>
+            <View
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 22,
+                backgroundColor: color.primaryTint,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <PinIcon />
+            </View>
+            <View style={{ gap: 5 }}>
+              <Text
+                style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink, textAlign: 'center' }}
+              >
+                아직 다녀온 곳이 없어요
+              </Text>
+              <Text
+                style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted, textAlign: 'center' }}
+              >
+                자주 가는 곳을 등록해 두면{'\n'}여기서 바로 고를 수 있어요
+              </Text>
+            </View>
+          </Card>
         )}
         </ScrollView>
 

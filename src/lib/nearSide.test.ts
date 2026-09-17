@@ -86,6 +86,7 @@ const TABLE: [string, NearSide | undefined, Mode, Load, Load, NeedWhen, NearSide
   ['세탁물 찾아 집',        undefined, 'transit', 'none', 'hard', 'afterArrival',  'end'],
   ['은행',                 undefined, 'transit', 'none', 'none', 'unknown',       'any'],
   ['장보고 집 (자동차)',     undefined, 'car',     'none', 'hard', 'afterArrival',  'any'],
+  ['택배 부치고 도착해서 쓸 것도 사기', undefined, 'transit', 'hard', 'hard', 'afterArrival', 'start'],
 ];
 
 for (const [name, stated, mode, lb, la, nw, want] of TABLE) {

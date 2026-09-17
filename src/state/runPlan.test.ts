@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { haversineM } from '../lib/geo.ts';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider.ts';
-import type { PlaceCandidate } from '../lib/routePlan/types.ts';
+import type { LatLng, PlaceCandidate } from '../lib/routePlan/types.ts';
 import type { SearchFn } from '../lib/corridorSearch.ts';
 import { dwellFor, runPlan } from './runPlan.ts';
 import { initialPlanFlow, planFlowReducer } from './planFlow.ts';
@@ -910,7 +910,26 @@ test('추론한 방향은 end 이고 nearSource=inferred 로 기록된다', asyn
   assert.equal(s.nearAfter, 3);
   assert.equal(s.nearRelaxed, false);     // 화면은 추론을 사과하지 않는다
   assert.equal(s.nearRelaxedRaw, false);
-  assert.ok((s.nearBefore ?? 0) >= 3);
+  assert.equal(s.nearBefore, 5);          // martCatalog 의 마트 5곳 전부 — 완화 전 원본 개수
+});
+
+test('추론한 side 가 검색까지 닿는다 — 샘플이 목적지 쪽 절반에서만 찍힌다', async () => {
+  // side 를 searchAlong 에 안 넘기면 회랑 전체(0~1)에서 표본을 찍어 O 근처(127.0)
+  // 중심도 섞인다. side='end' 가 실제로 검색까지 닿으면 표본은 s∈[0.5,1] 에서만
+  // 찍히므로 중심 경도가 전부 127.056(=O+0.5*(D-O)) 이상이어야 한다.
+  const centers: LatLng[] = [];
+  const spy: SearchFn = async (q, center, r) => { centers.push(center); return martSearch(q, center, r); };
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: spy, dispatch },
+  );
+  assert.equal(slotsOf(actions)[0].near, 'end');
+  assert.ok(centers.length > 0);
+  assert.ok(centers.every(c => c.longitude >= 127.056),
+    `목적지 쪽 절반에서만 찍혀야 한다: ${centers.map(c => c.longitude.toFixed(4))}`);
 });
 
 test('사용자가 말한 방향은 stated 다', async () => {

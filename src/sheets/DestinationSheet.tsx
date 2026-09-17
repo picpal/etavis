@@ -106,7 +106,10 @@ export function DestinationSheet({
                 haptic();
                 setView('search');
               }}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              // 화살표가 작아서(size 9) 왼쪽을 겨냥하다 살짝 빗나가면 Pressable을 벗어나
+              // 바로 아래 시트 딤(scrim)에 떨어진다 — 되돌아가려다 시트가 통째로 닫히는
+              // 건 되돌릴 수 없는 나쁜 실패 모드라, 왼쪽만 넉넉히 hitSlop을 준다.
+              hitSlop={{ top: 12, bottom: 12, left: 24, right: 12 }}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.6 : 1 })}
             >
               <Chevron size={9} thickness={2} color={color.body} dir="left" />

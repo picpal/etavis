@@ -82,9 +82,12 @@ export type PlanState = {
   destinationName: string | null;
   /** 검색 결과에서 고른 목적지 좌표 */
   destinationCoord: LatLng | null;
+  /** 고를 때 같이 받아 둔 주소. 최근 목록의 둘째 줄이 이걸 쓴다 — 역지오코딩을 새로 부르지 않으려고 */
+  destinationAddress: string | null;
   /** 사용자가 직접 고른 출발지. null이면 현재 위치(GPS) */
   originName: string | null;
   originCoord: LatLng | null;
+  originAddress: string | null;
   stops: StopState[];
   options: RouteOption[];
   selectedOptionId: string;
@@ -235,8 +238,10 @@ function initState(ds: Dataset, seed = false): PlanState {
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
     destinationName: null,
     destinationCoord: null,
+    destinationAddress: null,
     originName: null,
     originCoord: null,
+    originAddress: null,
     ...deriveFromDataset(ds, departMin),
     options: ds.options,
     selectedOptionId: (ds.options.find(o => o.recommended) ?? ds.options[0]).id,
@@ -393,8 +398,8 @@ export type PlanAction =
   | { type: 'SET_DATASET'; key: string }
   | { type: 'SET_MODE'; mode: PlanState['mode'] }
   | { type: 'SET_ARRIVE_BY'; min: number | null }
-  | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null }
-  | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null }
+  | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null; address: string | null }
+  | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null; address: string | null }
   | { type: 'SWAP_ENDPOINTS'; myLocation: LatLng | null }
   | { type: 'APPLY_OPTION'; id: string }
   | { type: 'APPLY_LIVE'; payload: ApplyLivePayload }
@@ -464,9 +469,9 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         chips: syncConditionChips(state.chips, { mode: state.mode, arriveByMin: action.min }, k => `${k}-${chipSeq++}`),
       };
     case 'SET_DESTINATION':
-      return { ...state, destinationName: action.name, destinationCoord: action.coord };
+      return { ...state, destinationName: action.name, destinationCoord: action.coord, destinationAddress: action.address };
     case 'SET_ORIGIN':
-      return { ...state, originName: action.name, originCoord: action.coord };
+      return { ...state, originName: action.name, originCoord: action.coord, originAddress: action.address };
     case 'SWAP_ENDPOINTS': {
       /*
         출발지가 '내 위치'면 넘길 이름이 없어 목적지가 비어버린다.
@@ -477,8 +482,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         ...state,
         originName: state.destinationName,
         originCoord: state.destinationCoord,
+        originAddress: state.destinationAddress,
         destinationName: fromMyLocation ? '내 위치' : state.originName,
         destinationCoord: fromMyLocation ? action.myLocation : state.originCoord,
+        // '내 위치'로 굳힐 때 리듀서는 지금 있는 곳의 주소를 모른다. 틀린 주소를 들고 다니느니 비운다
+        destinationAddress: fromMyLocation ? null : state.originAddress,
       };
     }
     case 'SELECT_OPTION':
@@ -764,9 +772,9 @@ type PlanApi = {
   setArriveBy: (min: number | null) => void;
   /** 마감까지 남은 여유(분). 음수면 초과. 마감이 없으면 null */
   slackMin: number | null;
-  setDestination: (name: string, coord?: LatLng | null) => void;
+  setDestination: (name: string, coord?: LatLng | null, address?: string | null) => void;
   /** 출발지 지정. null을 주면 다시 '내 위치'(GPS)로 돌아간다 */
-  setOrigin: (name: string | null, coord?: LatLng | null) => void;
+  setOrigin: (name: string | null, coord?: LatLng | null, address?: string | null) => void;
   /** 출발지 ↔ 목적지 맞바꾸기 */
   swapEndpoints: () => void;
   /** 표시용 목적지 이름 (미지정이면 데이터셋 값) */
@@ -849,8 +857,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setDataset: key => dispatch({ type: 'SET_DATASET', key }),
       setMode: mode => dispatch({ type: 'SET_MODE', mode }),
       setArriveBy: min => dispatch({ type: 'SET_ARRIVE_BY', min }),
-      setDestination: (name, coord) => dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null }),
-      setOrigin: (name, coord) => dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null }),
+      setDestination: (name, coord, address) =>
+        dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null, address: address ?? null }),
+      setOrigin: (name, coord, address) =>
+        dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null, address: address ?? null }),
       swapEndpoints: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'SWAP_ENDPOINTS', myLocation: here.coord });

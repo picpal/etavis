@@ -224,3 +224,54 @@ test('다른 곳은 그대로 더한다 — 중복만 막지, 새 경유지를 �
   ]);
   assert.deepEqual(stopQueries(s), ['카페', '약국']);
 });
+
+test('목적지를 고르면 주소도 같이 실린다 — 최근 목록의 둘째 줄이 여기서 온다', () => {
+  const s = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '올리브영 신정점',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  assert.equal(s.destinationAddress, '서울 양천구 신정동');
+});
+
+test('주소 없이 목적지만 바꾸면 주소는 비워진다 — 이전 목적지의 주소가 따라다니면 안 된다', () => {
+  const had = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '올리브영 신정점',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  const s = planReducer(had, { type: 'SET_DESTINATION', name: '다른 곳', coord: null, address: null });
+  assert.equal(s.destinationAddress, null);
+});
+
+test('출발지와 목적지를 맞바꾸면 주소도 같이 바뀐다', () => {
+  let s = planReducer(fresh(), {
+    type: 'SET_ORIGIN',
+    name: '집',
+    coord: { latitude: 37.5219, longitude: 126.9245 },
+    address: '서울 영등포구 여의도동',
+  });
+  s = planReducer(s, {
+    type: 'SET_DESTINATION',
+    name: '회사',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  s = planReducer(s, { type: 'SWAP_ENDPOINTS', myLocation: null });
+  assert.equal(s.originAddress, '서울 양천구 신정동');
+  assert.equal(s.destinationAddress, '서울 영등포구 여의도동');
+});
+
+test("'내 위치'에서 맞바꾸면 목적지 주소는 없다 — 지금 있는 곳의 주소를 리듀서는 모른다", () => {
+  const had = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '회사',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  const s = planReducer(had, { type: 'SWAP_ENDPOINTS', myLocation: { latitude: 37.5, longitude: 127.0 } });
+  assert.equal(s.originAddress, '서울 양천구 신정동');
+  assert.equal(s.destinationAddress, null);
+});

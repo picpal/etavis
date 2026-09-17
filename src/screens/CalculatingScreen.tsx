@@ -5,6 +5,8 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSeq
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { usePlanFlow } from '../state/planFlowProvider';
+import { usePlan } from '../state/plan';
+import { recordRecent } from '../lib/placesStore';
 import { usePlanRequest } from '../state/usePlanRequest';
 import { Card } from '../components/common';
 import { CheckMark } from '../components/primitives';
@@ -29,6 +31,7 @@ function PulseRing() {
 
 export function CalculatingScreen({ navigation }: Props) {
   const { state, start } = usePlanFlow();
+  const { state: plan } = usePlan();
   const request = usePlanRequest();
   const enteredAt = useRef(Date.now());
   const startedRef = useRef(false);
@@ -39,8 +42,19 @@ export function CalculatingScreen({ navigation }: Props) {
     // 칩이 바뀌면 A2가 RESET하고 여기로 다시 온다
     if (request && !startedRef.current) {
       startedRef.current = true;
+      /* 최근 목적지는 여기서만 쌓인다 — 시트에서 눌렀다 취소한 곳은 남지 않아야 한다.
+         이름이 없으면 사용자가 고른 게 아니라 데이터셋 기본 목적지다 */
+      if (plan.destinationName && plan.destinationCoord) {
+        recordRecent({
+          name: plan.destinationName,
+          address: plan.destinationAddress ?? '',
+          coord: plan.destinationCoord,
+        });
+      }
       start(request);
     }
+    // 적재는 시작과 같은 생애에 한 번이면 된다 — plan 을 의존성에 넣으면 매 렌더 재평가된다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, start]);
 
   useEffect(() => {

@@ -3,6 +3,7 @@
  * 설계: docs/최적경로-설계.md
  */
 import type { LatLng } from '../../data/mockData';
+import type { Load, NeedWhen } from '../nearSide';
 
 export type { LatLng };
 export type Mode = 'car' | 'walk' | 'transit';
@@ -44,6 +45,11 @@ export type Slot = {
   near?: NearSide;
   /** near 로 걸렀더니 한 곳도 안 남아 제약을 푼 것. 화면이 "그쪽엔 없어서…"라고 말한다 */
   nearRelaxed?: boolean;
+  /** 추출이 낸 물성·시점. 방향은 여기서 파생된다 — 진단과 재계산을 위해 슬롯까지 들고 온다.
+      추출 시점에 방향을 확정하면 사용자가 모드를 바꿨을 때 다시 계산할 근거가 사라진다 */
+  loadBefore?: Load;
+  loadAfter?: Load;
+  needWhen?: NeedWhen;
   /** 여기서 할 일. 추출의 `why`. 계획이 확정될 때 그 경유지의 할 일 한 줄이 된다 —
       계산에는 쓰이지 않는다(순서·시간에 영향을 주면 안 된다) */
   why?: string;

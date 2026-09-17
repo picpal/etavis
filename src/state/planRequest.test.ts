@@ -99,6 +99,24 @@ test('빈 why 는 내려가지 않는다 — 글자 없는 할 일 한 줄을 �
   assert.equal(requestStopsFromChips([stop({ why: '   ' })])[0].why, undefined);
 });
 
+/* loadBefore·loadAfter·needWhen — Task 1 이 추출에서 낸 물성·시점 태그.
+   방향(near)은 여기서 정해지지 않는다(Task 10 몫) — 태그가 슬롯까지 죽지 않고
+   가는지만 본다. near 와 같은 종류의 누수라 같은 자리에 묶어 둔다 */
+
+test('칩의 태그가 슬롯으로 그대로 간다', () => {
+  const [s] = requestStopsFromChips([stop({ loadBefore: 'none', loadAfter: 'hard', needWhen: 'afterArrival' })]);
+  assert.equal(s.loadAfter, 'hard');
+  assert.equal(s.needWhen, 'afterArrival');
+});
+
+test('옛 칩에 태그가 없으면 보수적 기본값', () => {
+  const legacy = { id: 's-9', kind: 'stop', label: '카페', queries: ['카페'] } as unknown as IntentChip;
+  const [s] = requestStopsFromChips([legacy]);
+  assert.equal(s.loadBefore, 'none');
+  assert.equal(s.loadAfter, 'none');
+  assert.equal(s.needWhen, 'unknown');
+});
+
 test('requestStopsFromChips — 칩의 검색어 후보를 전부 나르고 업종어로 넓힌다', () => {
   const chips = [
     { id: 'c1', kind: 'stop' as const, label: '샌드위치 파는 카페', queries: ['샌드위치 파는 카페'],

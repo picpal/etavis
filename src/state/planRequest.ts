@@ -35,5 +35,9 @@ export function requestStopsFromChips(chips: IntentChip[]): PlanRequest['stops']
       why: (c.kind === 'stop' ? c.why?.trim() : undefined) || undefined,
       // 옛 상태의 칩에는 없을 수 있다 — 없으면 제약 없음
       near: (c.kind === 'stop' ? c.near : undefined) ?? 'any',
+      // 옛 상태의 칩에는 없다 — stopKind·near 와 같은 방식으로 보수적 기본값을 둔다
+      loadBefore: (c.kind === 'stop' ? c.loadBefore : undefined) ?? 'none',
+      loadAfter: (c.kind === 'stop' ? c.loadAfter : undefined) ?? 'none',
+      needWhen: (c.kind === 'stop' ? c.needWhen : undefined) ?? 'unknown',
     }));
 }

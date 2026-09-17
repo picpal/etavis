@@ -308,36 +308,38 @@ export function DestinationSheet({
                         flexDirection: 'row',
                         alignItems: 'center',
                         gap: 12,
-                        paddingVertical: 14,
+                        paddingVertical: 12,
                         paddingHorizontal: 12,
                         opacity: pressed ? 0.7 : 1,
                       })}
                     >
-                      <Text
-                        style={{
-                          fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
-                          fontSize: 16,
-                          lineHeight: 20,
-                          color: color.ink,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {recent.name}
-                      </Text>
-                      {/* 주소는 우측 여백에 작게 — 이름이 주인공이고 주소는 확인용 */}
-                      <Text
-                        style={{
-                          flex: 1,
-                          textAlign: 'right',
-                          fontFamily: 'Pretendard-Regular',
-                          fontSize: 12,
-                          lineHeight: 16,
-                          color: color.muted,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {recent.address}
-                      </Text>
+                      {/*
+                        검색 결과 행과 같은 2줄 구성 — 이름 옆 한 줄에 우측 정렬로 욱여넣으면
+                        이름이 길 때(실제 검색 결과 대부분) 주소가 잘려 구 이름조차 안 보인다.
+                        확인용이라는 주소의 역할을 하려면 자기 줄이 있어야 한다.
+                        좌측 아이콘 자리는 비워 둔다 — 저장한 장소일 때 북마크 배지가 그 자리에 들어온다.
+                      */}
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text
+                          style={{
+                            fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
+                            fontSize: 16,
+                            lineHeight: 20,
+                            color: color.ink,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {recent.name}
+                        </Text>
+                        {recent.address.length > 0 && (
+                          <Text
+                            style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}
+                            numberOfLines={1}
+                          >
+                            {recent.address}
+                          </Text>
+                        )}
+                      </View>
                       {active && (
                         <View
                           style={{

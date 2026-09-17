@@ -35,7 +35,7 @@ export function placesCacheKey(req: PlacesRequest): string {
   return `places:${req.kind}:${req.query}:${g(req.x)},${g(req.y)}:${req.radius ?? '-'}:${req.size}:${req.categoryCode ?? '-'}`;
 }
 
-type PlacesEnv = {
+export type PlacesEnv = {
   KAKAO_LOCAL_KEY: string;
   CACHE: { get(k: string): Promise<string | null>; put(k: string, v: string, o?: { expirationTtl: number }): Promise<void> };
 };
@@ -43,17 +43,31 @@ type PlacesEnv = {
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
+/**
+ * 캐시 적중이면 그 응답, 아니면 null.
+ *
+ * 밖으로 뺀 이유: index.ts 가 **일일 상한보다 먼저** 이걸 부른다. 적중은 카카오에
+ * 한 푼도 안 나가는데 예산을 먹으면 안 되기 때문이다. 그러고 나서 handlePlaces 에
+ * `cacheChecked` 로 알려 주면 같은 키를 두 번 읽지 않는다.
+ */
+export async function cachedPlaces(req: PlacesRequest, env: PlacesEnv): Promise<Response | null> {
+  const hit = await env.CACHE.get(placesCacheKey(req));
+  return hit ? new Response(hit, { headers: JSON_HEADERS }) : null;
+}
+
 export async function handlePlaces(
   req: PlacesRequest,
   env: PlacesEnv,
-  deps: { fetch: typeof fetch },
+  deps: { fetch: typeof fetch; cacheChecked?: boolean },
 ): Promise<Response> {
   // 키 없음과 상류 장애를 섞지 않는다 — 섞으면 배포 사고를 장애로 오진한다
   if (!env.KAKAO_LOCAL_KEY) return json({ error: 'places unavailable' }, 501);
 
   const key = placesCacheKey(req);
-  const hit = await env.CACHE.get(key);
-  if (hit) return new Response(hit, { headers: JSON_HEADERS });
+  if (!deps.cacheChecked) {
+    const hit = await cachedPlaces(req, env);
+    if (hit) return hit;
+  }
 
   const res = await deps.fetch(kakaoLocalUrl(req), {
     headers: { Authorization: `KakaoAK ${env.KAKAO_LOCAL_KEY}` },

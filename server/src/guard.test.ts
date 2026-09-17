@@ -8,6 +8,7 @@ import {
   routeCacheKey,
   corsHeaders,
   PER_DAY,
+  PER_MIN_IP,
   type KVLike,
 } from './guard';
 import type { RouteRequest } from './routeSchema';
@@ -67,12 +68,108 @@ test('상한이 없는 버킷은 막지 않는다 — 모르는 경로에 임의
   assert.equal(kv.puts, 0, '카운터도 만들지 않는다');
 });
 
-test('막힌 요청도 카운터는 올린다 — 시도는 시도다', async () => {
+test('상한을 넘은 뒤에는 카운터를 더 올리지 않는다 — 막느라 쓰는 KV 쓰기가 예산을 태운다', async () => {
+  /* 예전엔 "시도는 시도다"로 막힌 요청도 셌다. 무료 플랜의 KV 쓰기가 일 1,000회라
+     그렇게 두면 상한에 닿은 뒤의 요청이 계정의 쓰기를 태우고, 그 순간 모든
+     엔드포인트의 카운터가 같이 죽는다(= 상한이 사라진다) */
   const now = new Date('2026-09-14T03:00:00Z');
   const key = dayKey('/enrich', now);
   const kv = fakeKV({ [key]: String(PER_DAY['/enrich'] + 5) });
-  await overDailyCap(kv, '/enrich', now);
-  assert.equal(kv.store.get(key), String(PER_DAY['/enrich'] + 6));
+  assert.equal(await overDailyCap(kv, '/enrich', now), true);
+  assert.equal(kv.store.get(key), String(PER_DAY['/enrich'] + 5), '값이 그대로다');
+  assert.equal(kv.puts, 0, '쓰기도 없다');
+});
+
+test('카운터는 cap 에서 멈춘다 — 하루 쓰기 총량이 cap 을 넘지 않는다', async () => {
+  const now = new Date('2026-09-14T03:00:00Z');
+  const cap = PER_DAY['/transit'];
+  const kv = fakeKV({ [dayKey('/transit', now)]: String(cap - 2) });
+  for (let i = 0; i < 5; i += 1) await overDailyCap(kv, '/transit', now);
+  assert.equal(kv.store.get(dayKey('/transit', now)), String(cap), 'cap 에서 멈춘다');
+  assert.equal(kv.puts, 2, '통과한 2건만 쓴다');
+});
+
+test('분당 카운터도 상한에서 멈춘다 — 폭주하는 쪽이 KV 를 태우면 문지기가 먼저 죽는다', async () => {
+  const now = new Date('2026-09-14T03:00:00Z');
+  const kv = fakeKV();
+  for (let i = 0; i < 20; i += 1) await rateLimited(kv, '/extract', 'dev-1', null, now);
+  const minute = Math.floor(now.getTime() / 60000);
+  assert.equal(kv.store.get(`rl:/extract:dev-1:${minute}`), '10', 'PER_MIN 에서 멈춘다');
+  assert.equal(kv.puts, 10, '20회를 받아도 쓰기는 10회');
+});
+
+/* F3 — /places 는 계획 한 건에 최대 300 요청이 나간다. 분당 카운터의 KV 쓰기가
+   그대로 예산이라 막아 주는 게 없는 쪽을 뺀다 */
+
+test('/places 는 기기 카운터를 만들지 않는다 — device id 는 클라이언트가 정하는 값이라 막는 게 없다', async () => {
+  const now = new Date('2026-09-17T03:00:00Z');
+  const kv = fakeKV();
+  await rateLimited(kv, '/places', 'dev-1', '1.2.3.4', now);
+  const minute = Math.floor(now.getTime() / 60000);
+  assert.equal(kv.store.get(`rl:/places:dev-1:${minute}`), undefined, '기기 카운터 없음');
+  assert.equal(kv.store.get(`rlip:/places:1.2.3.4:${minute}`), '1', 'IP 카운터만 센다');
+  assert.equal(kv.puts, 1, '요청당 쓰기 1회 — 예전엔 2회였다');
+});
+
+test('/places 도 IP 상한은 그대로 건다', async () => {
+  const now = new Date('2026-09-17T03:00:00Z');
+  const kv = fakeKV();
+  let blocked = 0;
+  for (let i = 0; i < PER_MIN_IP['/places'] + 5; i += 1) {
+    if (await rateLimited(kv, '/places', `dev-${i}`, '1.2.3.4', now)) blocked += 1;
+  }
+  assert.equal(blocked, 5, 'IP당 900회를 넘는 5건이 막힌다');
+});
+
+test('IP 헤더가 없으면 /places 도 기기 카운터로 돌아간다 — 분당 상한이 통째로 사라지면 안 된다', async () => {
+  const now = new Date('2026-09-17T03:00:00Z');
+  const kv = fakeKV();
+  await rateLimited(kv, '/places', 'dev-1', null, now);
+  const minute = Math.floor(now.getTime() / 60000);
+  assert.equal(kv.store.get(`rl:/places:dev-1:${minute}`), '1');
+});
+
+/* I2 — 네이티브 앱은 kakaoRestKey 를 잃고 이 프록시 하나에 매달려 있다.
+   공개 데모를 두들기는 누군가가 출시된 앱의 장소 검색을 같이 끄면 안 된다 */
+
+test('/places 는 Origin 유무로 웹·네이티브 버킷이 갈린다 — 브라우저만 Origin 을 붙인다', () => {
+  assert.equal(dailyBucket('/places', undefined, 'https://etavia-demo.pages.dev'), '/places:web');
+  assert.equal(dailyBucket('/places', undefined, null), '/places:native');
+  assert.equal(dailyBucket('/places', undefined, undefined), '/places:native');
+  assert.equal(dailyBucket('/places', undefined, ''), '/places:native', '빈 문자열은 Origin 이 아니다');
+});
+
+test('새 /places 버킷에 상한이 실제로 걸린다 — 버킷만 나누고 PER_DAY 를 빠뜨리면 무제한이 된다', async () => {
+  const now = new Date('2026-09-17T03:00:00Z');
+  for (const bucket of ['/places:web', '/places:native']) {
+    const cap = PER_DAY[bucket];
+    assert.ok(typeof cap === 'number' && cap > 0, `${bucket} 에 상한이 없다`);
+    const kv = fakeKV({ [dayKey(bucket, now)]: String(cap - 1) });
+    assert.equal(await overDailyCap(kv, bucket, now), false, `${bucket}: cap 번째는 통과`);
+    assert.equal(await overDailyCap(kv, bucket, now), true, `${bucket}: cap+1 부터 막힌다`);
+  }
+});
+
+test('웹을 다 써도 네이티브 몫은 남는다 — 이 분리가 I2 의 전부다', async () => {
+  const now = new Date('2026-09-17T03:00:00Z');
+  const kv = fakeKV({ [dayKey('/places:web', now)]: String(PER_DAY['/places:web'] + 100) });
+  assert.equal(await overDailyCap(kv, '/places:web', now), true, '웹은 막혔다');
+  assert.equal(await overDailyCap(kv, '/places:native', now), false, '앱은 그대로 돈다');
+});
+
+test('dailyBucket 이 만드는 버킷은 전부 PER_DAY 에 있다 — overDailyCap 은 cap 이 없으면 무조건 통과시킨다', () => {
+  const made = [
+    dailyBucket('/route', undefined),
+    dailyBucket('/route', '202609141830'),
+    dailyBucket('/places', undefined, 'https://demo.test'),
+    dailyBucket('/places', undefined, null),
+    dailyBucket('/extract'),
+    dailyBucket('/enrich'),
+    dailyBucket('/transit'),
+  ];
+  for (const b of made) {
+    assert.ok(PER_DAY[b] !== undefined, `${b} 에 상한이 없다 — 이 엔드포인트가 상한 없이 열린다`);
+  }
 });
 
 test('기기당 상한을 넘으면 막는다', async () => {

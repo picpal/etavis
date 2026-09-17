@@ -44,8 +44,29 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  * | `/enrich`       | 구글 Places — `enrich.ts`에 월 900 카운터가 따로 있다 | | 600 |
  * | `/extract`      | OpenAI, 무료분 없음 | 문장당 | 1,200 |
  * | `/transit`      | Google Routes — Compute Routes Essentials 월 10,000 무료·$5/1,000 (2026-09-15 공식 요금·SKU 문서 확인: TRANSIT·transitDetails·대안 경로는 Pro/Enterprise 트리거가 아님) | | 300 |
- * | `/places`       | developers.kakao.com 로컬 검색 — 2026-09-17 콘솔 확인 못 함(에이전트는 로그인 불가). Task 8 규칙대로 확인 불가 시 10,000 폴백. 계획 한 건 최악 150콜(`runPlan.ts:159`, 후보 3개×25콜×경유지 2) 기준 일 60건 이상을 받는다. 확정값은 Task 10에서 콘솔 확인 후 채운다 | | 10000 |
-
+ * | `/places:web`    | 아래 참고 | | 7000 |
+ * | `/places:native` | 아래 참고 | | 3000 |
+ *
+ * **`/places` 는 웹 데모와 네이티브 앱이 버킷을 나눠 쓴다.** 나누지 않으면 공개 데모를
+ * 두들기는 누군가가 출시된 iOS 앱의 장소 검색을 같이 끈다 — 앱은 `kakaoRestKey` 를
+ * 잃고 이 프록시 하나에만 매달려 있어서(`src/lib/places.ts`) 대체 경로가 없다.
+ * 가르는 기준은 `Origin` 헤더다: 브라우저는 반드시 붙이고 네이티브는 안 붙인다.
+ * 위조하면 웹 버킷에서 네이티브 버킷으로 넘어올 수 있지만, 그러려면 `ALLOWED_ORIGINS`
+ * 허용목록에 없는 오리진을 써야 해서 CORS 로 응답을 못 읽는다. 완벽한 분리가 아니라
+ * **네이티브 몫의 예약**이 목적이다.
+ *
+ * 합은 10,000 그대로다 — developers.kakao.com 로컬 검색은 2026-09-17 콘솔 확인을
+ * 못 했고(에이전트는 로그인 불가) Task 8 규칙대로 확인 불가 시 10,000 폴백이다.
+ * 확정값은 콘솔 확인 후 채운다.
+ *
+ * **이 숫자가 받아 내는 계획 건수는 `search()` 수가 아니라 HTTP 요청 수로 센다.**
+ * 계획 한 건 최악 150 `search()`(`runPlan.ts:159`, 후보 3개×25×경유지 2)인데,
+ * 업종 코드가 없는 질의(올리브영 같은 상호·브랜드)는 `src/lib/places.ts:245-251` 이
+ * keyword 와 address 를 함께 부르므로 `search()` 하나가 요청 **2건**이다 —
+ * 최악 300 요청이고, 7,000 이 받아 내는 건 23건(웹)·10건(네이티브)이다.
+ * 정상 트래픽은 계획 1회당 12~26 요청이다. 그리고 이 카운터는 캐시 적중을
+ * 세지 않는다(`index.ts` 의 /places 분기) — 세는 건 실제로 카카오에 나간 요청뿐이다.
+ *
  * `/transit` 300/일은 월 10,000 무료분을 30일로 나눈 선이다. **이 숫자는 그대로 두되 뜻이 바뀌었다** —
  * 7단계(2026-09-16)부터 대중교통 계획 하나가 1회가 아니라 최대 10회를 쓴다(구간마다 한 번).
  * 즉 무료분 안에서 도는 대중교통 계획이 월 ~10,000건에서 **월 ~1,000건**이 됐다.
@@ -60,7 +81,11 @@ export const PER_DAY: Record<string, number> = {
   '/route:future': 4000,
   '/enrich': 600,
   '/transit': 300,
-  '/places': 10000,
+  /* dailyBucket 이 만드는 버킷은 **반드시** 여기 있어야 한다 — overDailyCap 은
+     cap 이 undefined 면 무조건 통과시키므로, 버킷만 나누고 상한을 빠뜨리면
+     그 엔드포인트가 상한 없이 열린다. guard.test.ts 가 이 짝을 검사한다. */
+  '/places:web': 7000,
+  '/places:native': 3000,
 };
 
 const DAY_TTL_S = 2 * 24 * 60 * 60;
@@ -72,26 +97,44 @@ export function dayKey(bucket: string, now: Date): string {
   return `day:${bucket}:${kst.toISOString().slice(0, 10)}`;
 }
 
-/** /route는 지금 출발과 미래운행이 무료분이 달라 버킷을 나눈다 */
-export function dailyBucket(path: string, departAt?: string): string {
+/**
+ * 일일 상한을 어느 통에서 셀지.
+ *   /route  — 지금 출발과 미래운행이 무료분이 달라(10,000 / 5,000) 나눈다
+ *   /places — 웹 데모와 네이티브 앱이 예산을 나눠 쓴다(PER_DAY 주석 참고).
+ *             `origin` 은 요청의 Origin 헤더 — 브라우저만 붙인다
+ * 여기서 만든 버킷은 전부 PER_DAY 에 항목이 있어야 한다.
+ */
+export function dailyBucket(path: string, departAt?: string, origin?: string | null): string {
   if (path === '/route') return departAt ? '/route:future' : '/route:now';
+  if (path === '/places') return origin ? '/places:web' : '/places:native';
   return path;
 }
 
-/** 상한을 넘었는지. 넘었든 아니든 카운터는 올린다 — 막힌 요청도 시도는 시도다 */
+/**
+ * 상한을 넘었는지.
+ *
+ * **이미 넘었으면 카운터를 더 올리지 않는다.** 예전엔 막힌 요청도 세었다("시도는
+ * 시도다"). 그 편이 부하를 정직하게 보여 주지만, KV 쓰기는 무료 플랜이 일 1,000회다 —
+ * 상한에 닿은 뒤로도 요청마다 쓰면, 막느라 쓰는 쓰기가 계정의 KV 를 통째로 태우고
+ * 그 순간부터 **모든 엔드포인트의 카운터가 같이 죽는다**(상한이 사라진다는 뜻이다).
+ * 그래서 카운터의 뜻이 "시도 수"가 아니라 **"허용된 시도 수"**다. 값은 cap 에서
+ * 멈추고, 쓰기 총량도 하루 cap 회를 넘지 않는다. 초과분을 알아야 하면 로그로 센다.
+ */
 export async function overDailyCap(kv: KVLike, bucket: string, now: Date): Promise<boolean> {
   const cap = PER_DAY[bucket];
   if (cap === undefined) return false;
   const key = dayKey(bucket, now);
   const used = Number((await kv.get(key)) ?? 0) + 1;
+  if (used > cap) return true;
   await kv.put(key, String(used), { expirationTtl: DAY_TTL_S });
-  return used > cap;
+  return false;
 }
 
 /**
  * 기기당·IP당 분당 상한을 함께 본다.
- * 둘 중 하나라도 넘으면 막되, **카운터는 둘 다 올린다** — 기기 상한에 걸린
+ * 둘 중 하나라도 넘으면 막되, **카운터는 둘 다 본다** — 기기 상한에 걸린
  * 요청이 IP 카운터를 비껴가면 id만 갈아끼워 IP 상한을 영원히 피할 수 있다.
+ * (각 카운터는 자기 상한 안에서만 올라간다 — overDailyCap 과 같은 이유다.)
  */
 export async function rateLimited(
   kv: KVLike,
@@ -101,14 +144,25 @@ export async function rateLimited(
   now: Date,
 ): Promise<boolean> {
   const minute = Math.floor(now.getTime() / 60000);
-  const checks: [string, number][] = [[`rl:${path}:${deviceId}:${minute}`, PER_MIN[path] ?? 10]];
+  /* /places 는 기기 카운터를 생략한다. 계획 한 건에 최대 300 요청이 나가는
+     엔드포인트라 분당 카운터의 KV 쓰기가 그대로 예산이 되는데, 기기 카운터가
+     막아 주는 게 없다 — `x-device-id` 는 클라이언트가 정하는 값이라(위 3번)
+     요청마다 새로 만들면 그만이다. 진짜 문지기는 IP 쪽이고, 그 하나만 세면
+     이 엔드포인트의 분당 KV 쓰기가 절반이 된다.
+     IP 헤더가 없을 때(로컬·테스트)만 기기 카운터로 돌아간다 — 분당 상한이
+     통째로 사라지는 자리를 만들지 않는다. */
+  const checks: [string, number][] = [];
+  if (path !== '/places' || !ip) checks.push([`rl:${path}:${deviceId}:${minute}`, PER_MIN[path] ?? 10]);
   if (ip) checks.push([`rlip:${path}:${ip}:${minute}`, PER_MIN_IP[path] ?? 30]);
 
   let over = false;
   for (const [key, cap] of checks) {
     const hit = Number((await kv.get(key)) ?? 0) + 1;
+    if (hit > cap) {
+      over = true;
+      continue; // 상한에 닿은 카운터에는 더 쓰지 않는다 — 막느라 쓰는 쓰기가 예산을 태운다
+    }
     await kv.put(key, String(hit), { expirationTtl: MIN_TTL_S });
-    if (hit > cap) over = true;
   }
   return over;
 }

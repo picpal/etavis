@@ -13,7 +13,7 @@ import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
 import { handleTransit } from './transit';
-import { handlePlaces } from './places';
+import { cachedPlaces, handlePlaces } from './places';
 import { parsePlacesRequest } from './placesSchema';
 import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 import { upstreamDetail } from './upstream';
@@ -116,7 +116,19 @@ export default {
     const cors = corsHeaders(req.headers.get('origin'), env.ALLOWED_ORIGINS);
     // preflight 는 문지기를 타지 않는다 — 브라우저가 토큰 없이 보내는 요청이다
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    const res = await handle(req, env);
+
+    /* handle() 이 던지면 Workers 가 대신 1101 을 내는데, **그 응답에는 cors 가 없다.**
+       브라우저에는 그냥 "네트워크 오류"로 보이고, 4주 동안 원인을 응답만으로는 알 수
+       없다(CORS 설정 문제인지 서버가 터진 건지 구분이 안 된다). 여기서 받아 503 으로
+       바꾸고 — 성공이든 실패든 아래 한 곳에서 cors 를 붙인다.
+       스택은 `npx wrangler tail` 로 본다. 응답에는 싣지 않는다. */
+    let res: Response;
+    try {
+      res = await handle(req, env);
+    } catch (err) {
+      console.error('[fetch] unhandled', err);
+      res = json({ error: 'internal' }, 503);
+    }
     for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
     return res;
   },
@@ -135,10 +147,23 @@ async function handle(req: Request, env: Env): Promise<Response> {
     if (url.pathname === '/route') return handleRoute(gated.body, env);
     if (url.pathname === '/transit') return handleTransit(gated.body, env, { fetch, now: new Date() });
     if (url.pathname === '/places') {
-      if (await overDailyCap(env.RATE, '/places', new Date())) return json({ error: 'daily cap' }, 429);
       const parsed = parsePlacesRequest(gated.body);
       if (!parsed) return json({ error: 'bad request' }, 400);
-      return handlePlaces(parsed, env, { fetch });
+      /* 여기만 캐시를 상한보다 **먼저** 본다 — /route(:84)와 순서가 반대다.
+         거기선 TTL 이 300초라 적중률이 낮아 카운터≈지출이 성립하지만, /places 는
+         TTL 24시간에 캐시 키가 좌표를 11m 로 깎는다(`places.ts:18,33`). 회랑 검색은
+         폴리라인 위 같은 진행률 지점을 뽑으므로 같은 심사자가 같은 시나리오를 두 번
+         돌리면 격자가 거의 그대로 맞는다. 적중을 세면 4주 가동의 주 방어선인 캐시가
+         일일 상한에 대해 방어력이 0 이 되고, 카카오에 한 푼도 안 나가는 요청이
+         예산을 똑같이 먹는다. 이 순서에서만 카운터의 뜻이 '실제 카카오 지출'이다.
+         덤으로 적중마다 KV 쓰기 1회가 준다. */
+      const cached = await cachedPlaces(parsed, env);
+      if (cached) return cached;
+      /* 웹 데모와 네이티브 앱은 예산을 나눠 쓴다 — 브라우저만 Origin 을 붙인다.
+         근거는 guard.ts 의 PER_DAY 주석. */
+      const bucket = dailyBucket('/places', undefined, req.headers.get('origin'));
+      if (await overDailyCap(env.RATE, bucket, new Date())) return json({ error: 'daily cap', bucket }, 429);
+      return handlePlaces(parsed, env, { fetch, cacheChecked: true });
     }
     if (url.pathname === '/enrich') {
       if (await overDailyCap(env.RATE, '/enrich', new Date())) return json({ error: 'daily cap' }, 429);

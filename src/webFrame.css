@@ -26,5 +26,43 @@ html, body, #root {
     border-radius: 28px;
     box-shadow: 0 12px 48px rgba(0, 0, 0, 0.18);
     background: #fff;
+    /* 아래 ::before 를 프레임 기준으로 앉히기 위해 */
+    position: relative;
+  }
+
+  /* 다이나믹 아일랜드. 위 세이프에어리어 47px 를 빈 흰 띠로 두면 렌더링이
+     덜 된 것처럼 보인다 — 아이폰에선 상태표시줄이 차지하는 자리다.
+     시계·배터리를 흉내 내지는 않는다. 가짜 숫자를 띄우느니 여백의 이유만
+     보이면 된다. z-index 를 낮게 둬서 시트·모달이 올라오면 그 아래로 간다. */
+  #root::before {
+    content: '';
+    position: absolute;
+    top: 11px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 104px;
+    height: 30px;
+    border-radius: 999px;
+    background: #0b0b0c;
+    z-index: 1;
+    pointer-events: none;
+  }
+}
+
+/* 세이프에어리어 — 데스크톱 프레임 안에서만.
+
+   react-native-safe-area-context 의 웹 구현(NativeSafeAreaProvider.web.js)은
+   body 에 숨은 div 를 붙이고 그 **computed padding** 을 읽어 인셋으로 쓴다.
+   그 div 의 padding 은 인라인으로 env(safe-area-inset-*) 이라 데스크톱
+   브라우저에서는 전부 0 이고, 그래서 헤더가 프레임 천장에 붙는다.
+   !important 로 덮으면 useSafeAreaInsets() 를 쓰는 15개 파일이 전부
+   아이폰과 같은 여백을 받는다 — 화면마다 따로 손댈 필요가 없다.
+
+   실제 폰에서는 덮지 않는다. 거기선 env() 가 진짜 값이고, 브라우저 주소창
+   아래가 이미 뷰포트 천장이라 0 이 정답이다. */
+@media (min-width: 768px) {
+  body > div[style*="safe-area-inset"] {
+    padding-top: 47px !important;   /* 아이폰 상태표시줄 */
+    padding-bottom: 34px !important; /* 홈 인디케이터 */
   }
 }

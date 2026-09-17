@@ -6,6 +6,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef } from 'react';
 import Constants from 'expo-constants';
 import { planSearchFn } from '../lib/places';
+import { fallbackRouteProvider } from '../lib/routePlan/fallbackProvider';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider';
 import { serverRouteProvider } from '../lib/routePlan/serverProvider';
 import { transitRouteProvider } from '../lib/routePlan/transitProvider';
@@ -109,7 +110,17 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
       onFallback: e => logTrack({ k: 'net', ep: '/transit', ms: 0, ok: false, d: { points: 2, mode: 'transit', err: String(e).slice(0, 120) } }),
     });
     return {
-      provider: hybridProvider(serverRouteProvider({ baseUrl, appToken, deviceId }), transit, mock),
+      provider: hybridProvider(
+        fallbackRouteProvider({
+          primary: serverRouteProvider({ baseUrl, appToken, deviceId }),
+          estimate: mock,
+          // 화면엔 A5 판정 카드의 '추정' 문구로만 보인다 — 왜 내려갔는지는 로그에만
+          onFallback: e =>
+            logTrack({ k: 'net', ep: '/route', ms: 0, ok: false, d: { mode: 'car', fallback: true, err: String(e).slice(0, 120) } }),
+        }),
+        transit,
+        mock,
+      ),
       usingServer: true,
       enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
       extract: serverExtractFn({ baseUrl, appToken, deviceId }),

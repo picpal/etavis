@@ -382,3 +382,34 @@ test('좁힌 앵커 집합에서도 후보가 맞는 앵커에 붙는다', async
   assert.equal(r.candidates[0].anchorId, 'a3');
   assert.equal(r.candidates[0].anchorWalkM, 0);
 });
+
+test('컷이 near 쪽을 먼저 채운다 — 반대쪽이 경로에 더 가까워도', async () => {
+  // 목적지 쪽 1곳은 경로에서 멀고, 출발지 쪽 3곳은 경로 위에 있다
+  const list: PlaceCandidate[] = [
+    { id: 'n1', name: 'n1', coord: { latitude: 37.51, longitude: 127.5 } }, // end 쪽, D2 에서 약 1.1km
+    { id: 'f1', name: 'f1', coord: at2(127.0) },
+    { id: 'f2', name: 'f2', coord: at2(127.01) },
+    { id: 'f3', name: 'f3', coord: at2(127.02) },
+  ];
+  let done = false;
+  const fn = async () => { if (done) return []; done = true; return list; };
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 1, initialRadiusM: 3000, maxRadiusM: 3000,
+    max: 2, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates[0].id, 'n1', `end 쪽이 먼저여야 한다: ${r.candidates.map(c => c.id)}`);
+  assert.equal(r.candidates.length, 2); // 반대쪽도 버리지 않는다 — 완화가 되돌릴 게 있어야 한다
+});
+
+test('앵커 컷도 near 쪽을 먼저 채운다 — 폴백 경로', async () => {
+  // 하차역·목적지 앵커가 없어 폴백으로 전체를 본다. 그때도 목적지 쪽이 먼저다.
+  // near 는 앵커에서 21km 라 도보순으로는 꼴찌지만 D 에서 442m 다
+  const only = [anchor('t', 'transfer', 127.25)];
+  const near: PlaceCandidate = { id: 'n', name: 'n', coord: at2(127.495) };
+  const far: PlaceCandidate = { id: 'f', name: 'f', coord: at2(127.26) };
+  const fn = async (): Promise<PlaceCandidate[]> => [near, far];
+  const r = await searchAtAnchors(only, '마트', {
+    need: 1, target: 1, max: 1, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates[0].id, 'n', `목적지 쪽이 먼저여야 한다: ${r.candidates.map(c => c.id)}`);
+});

@@ -66,10 +66,22 @@ export async function searchAlong(
   }
 
   const max = opts.max ?? 30;
-  const byCorridor = (list: PlaceCandidate[]) =>
-    [...list]
-      .sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM)
-      .slice(0, max);
+  /**
+   * 경로 근접순으로 자르되, near 쪽을 노리는 중이면 **그쪽을 먼저 채운다.**
+   * 반대쪽을 버리지는 않는다 — applyNear 의 완화가 되돌릴 후보가 없으면 완화가 무의미해진다.
+   */
+  const byCorridor = (list: PlaceCandidate[]) => {
+    const sorted = [...list]
+      .sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM);
+    if (!sided || !opts.origin || !opts.destination) return sorted.slice(0, max);
+    const on: PlaceCandidate[] = [];
+    const off: PlaceCandidate[] = [];
+    for (const c of sorted) {
+      const hit = matchesNear(opts.side!, c.coord, opts.origin, opts.destination, NEAR_RADII_M[0]);
+      (hit ? on : off).push(c);
+    }
+    return [...on, ...off].slice(0, max);
+  };
 
   const merge = (lists: PlaceCandidate[][]) => {
     const seen = new Map<string, PlaceCandidate>();
@@ -164,7 +176,11 @@ export async function searchAtAnchors(
   const max = opts.max ?? 30;
   let calls = 0;
 
-  /** 후보를 가장 가까운 앵커에 붙인다. 같은 id 가 여러 앵커에서 나오면 가까운 쪽이 이긴다 */
+  /**
+   * 후보를 가장 가까운 앵커에 붙인다. 같은 id 가 여러 앵커에서 나오면 가까운 쪽이 이긴다.
+   * 도보순으로 자르되, near 쪽을 노리는 중이면 그쪽을 먼저 채운다(byCorridor 와 같은 이유).
+   * 앵커를 이미 좁혔어도 폴백 경로(picked.length === 0)에서는 이 컷이 필요하다.
+   */
   const attach = (lists: PlaceCandidate[][]) => {
     const best = new Map<string, PlaceCandidate>();
     for (let i = 0; i < lists.length; i++) {
@@ -176,7 +192,15 @@ export async function searchAtAnchors(
         best.set(c.id, { ...c, anchorId: a.id, anchorWalkM: walkM });
       }
     }
-    return [...best.values()].sort((x, y) => (x.anchorWalkM ?? 0) - (y.anchorWalkM ?? 0)).slice(0, max);
+    const sorted = [...best.values()].sort((x, y) => (x.anchorWalkM ?? 0) - (y.anchorWalkM ?? 0));
+    if (!kinds || !opts.origin || !opts.destination) return sorted.slice(0, max);
+    const on: PlaceCandidate[] = [];
+    const off: PlaceCandidate[] = [];
+    for (const c of sorted) {
+      const hit = matchesNear(opts.side!, c.coord, opts.origin, opts.destination, NEAR_RADII_M[0]);
+      (hit ? on : off).push(c);
+    }
+    return [...on, ...off].slice(0, max);
   };
 
   let radiusM = initial;

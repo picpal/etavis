@@ -4,7 +4,7 @@ import { LayoutAnimation, Pressable, ScrollView, Text, TextInput, useWindowDimen
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { color, type } from '../theme/tokens';
+import { color, HIT_SLOP, type } from '../theme/tokens';
 import { toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic } from '../components/common';
 import { CongestionKey, CONGESTION, congestionLabel, hasVisitedStop } from '../lib/congestion';
@@ -17,15 +17,26 @@ const GREEN_DEEP = '#0F5C3E';
 /** 시트 높이 어림 — 내용만큼만 띄우고, 넘치면 목록이 스크롤되게 한다 */
 const TASK_ROW_H = 49; // paddingVertical 14×2 + lineHeight 20 + 구분선
 const TASK_WRAP_H = 20; // 긴 할 일이 두 줄로 넘어갈 때
+/** 목록 밖 고정 '할 일 추가' 줄 — paddingTop 14 + 버튼 34 */
 const ADD_ROW_H = 48;
 const LIST_CARD_PAD = 16;
 const CONGESTION_CARD_H = 109;
 const CONGESTION_H = CONGESTION_CARD_H + 14;
-/** 실측 전 첫 프레임용 어림값 — 그랩바 + 헤더 + 도착 카드 + 하단 안내 */
-const SHEET_CHROME_H = 211;
+/** 실측 전 첫 프레임용 어림값 — 그랩바 + 헤더 + 도착 카드 + 추가 줄 + 하단 안내 */
+const SHEET_CHROME_H = 211 + ADD_ROW_H;
 /** 그랩바 영역(Sheet가 그린다) + 콘텐츠 paddingTop */
 const GRABBAR_H = 29;
 const SCROLL_PAD_TOP = 14;
+
+/** 더하기 글리프 — 선 두 개. 폰트 '+' 는 크기·정렬이 기기마다 흔들린다 */
+function PlusGlyph({ size = 12, thickness = 2, tint = color.primary }: { size?: number; thickness?: number; tint?: string }) {
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', width: size, height: thickness, borderRadius: 1, backgroundColor: tint }} />
+      <View style={{ position: 'absolute', width: thickness, height: size, borderRadius: 1, backgroundColor: tint }} />
+    </View>
+  );
+}
 
 function Checkbox({ done }: { done: boolean }) {
   if (done) {
@@ -134,9 +145,9 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   const [topH, setTopH] = useState(0);
   const [bottomH, setBottomH] = useState(0);
   const estimatedListH = stop
-    ? stop.tasks.reduce((sum, t) => sum + TASK_ROW_H + (t.text.length > 18 ? TASK_WRAP_H : 0), 0) +
-      ADD_ROW_H +
-      LIST_CARD_PAD
+    ? (stop.tasks.length
+        ? stop.tasks.reduce((sum, t) => sum + TASK_ROW_H + (t.text.length > 18 ? TASK_WRAP_H : 0), 0)
+        : TASK_ROW_H) + LIST_CARD_PAD
     : 0;
   const listH = measuredListH || estimatedListH;
   const measured = topH > 0 && bottomH > 0;
@@ -161,14 +172,28 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopId, stopName]);
 
+  const doneCount = stop ? stop.tasks.filter(t => t.done).length : 0;
+
   const commitEdit = () => {
     const id = editingTaskId;
     if (!stop || !id) return;
+    followNewTask.current = false;
     const text = draftTextRef.current.trim();
     // 빈 내용으로 확정하면 그 항목은 삭제 (새로 추가하다 만 경우 포함)
     if (text) updateTask(stop.id, id, text);
     else removeTask(stop.id, id);
     setEditingTaskId(null);
+  };
+
+  /* 새 항목은 목록 끝에 붙는다 — 추가 버튼은 위에 있어서, 목록이 길면
+     방금 만든 빈 줄이 화면 밖에 생긴다. 무엇을 입력하는지 안 보이면 안 된다.
+     한 번만 밀면 모자란다: 항목이 늘어난 직후에도 키보드가 올라오며 목록 높이가
+     한 번 더 줄어서, 그때 다시 밀지 않으면 새 줄이 아래로 잘린 채 남는다.
+     그래서 편집이 끝날 때까지 따라간다 */
+  const scrollRef = React.useRef<ScrollView>(null);
+  const followNewTask = React.useRef(false);
+  const keepNewTaskVisible = () => {
+    if (followNewTask.current) scrollRef.current?.scrollToEnd({ animated: true });
   };
 
   const startAddTask = () => {
@@ -177,6 +202,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     taskSeq.current += 1;
     const id = `new-${stop.id}-${taskSeq.current}`;
     draftTextRef.current = '';
+    followNewTask.current = true;
     addTask(stop.id, id);
     setEditingTaskId(id);
   };
@@ -243,9 +269,50 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
           </Card>
         </View>
 
+          {/* 추가 버튼은 목록 밖 고정 자리에 둔다. 목록 끝에 있던 시절엔 할 일이
+              몇 개만 쌓여도 스크롤 아래로 밀렸고, 키보드가 올라오면 아예 사라졌다 —
+              새 항목을 넣으려고 키보드를 내렸다 다시 올려야 했다.
+              왼쪽 개수는 제목이 아니라 진행 상황이다. 목록을 내려도 몇 개 남았는지 보인다 */}
+          <View
+            style={{
+              paddingTop: 14,
+              paddingHorizontal: 20,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 16, color: color.muted }}>
+              {stop.tasks.length ? `할 일 ${doneCount}/${stop.tasks.length}` : '할 일'}
+            </Text>
+            <Pressable
+              onPress={startAddTask}
+              accessibilityRole="button"
+              accessibilityLabel="할 일 추가"
+              hitSlop={HIT_SLOP}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 7,
+                height: 34,
+                paddingLeft: 12,
+                paddingRight: 14,
+                borderRadius: 11,
+                backgroundColor: color.primaryTint,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <PlusGlyph />
+              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 14, color: color.primary }}>
+                추가
+              </Text>
+            </Pressable>
+          </View>
+
           {/* 스크롤 경계 — 없으면 카드가 도착 카드 밑으로 파고들어 겹쳐 보인다.
               '여기서 할 일' 제목은 뺐다 — 시트 헤더가 이미 경유지 할 일이라고 말한다 */}
-          <View style={{ paddingTop: 14 }}>
+          <View style={{ paddingTop: 10 }}>
             <Hairline />
           </View>
         </View>
@@ -256,7 +323,12 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 14 }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            onContentSizeChange={(_w, h) => setMeasuredListH(h)}
+            ref={scrollRef}
+            onLayout={keepNewTaskVisible}
+            onContentSizeChange={(_w, h) => {
+              setMeasuredListH(h);
+              keepNewTaskVisible();
+            }}
           >
           <Card style={{ padding: 8 }}>
             {stop.tasks.map((task, i) => {
@@ -374,35 +446,14 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
                 </React.Fragment>
               );
             })}
-            <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />
-            <Pressable
-              onPress={startAddTask}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 14,
-                paddingVertical: 14,
-                paddingHorizontal: 12,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <View
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 8,
-                  backgroundColor: color.bg,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <View style={{ position: 'absolute', width: 12, height: 2, backgroundColor: color.primary }} />
-                <View style={{ position: 'absolute', width: 2, height: 12, backgroundColor: color.primary }} />
+            {/* 하나도 없을 때 빈 카드만 남으면 고장으로 보인다 */}
+            {stop.tasks.length === 0 && (
+              <View style={{ paddingVertical: 14, paddingHorizontal: 12 }}>
+                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 20, color: color.muted }}>
+                  아직 할 일이 없어요
+                </Text>
               </View>
-              <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 16, lineHeight: 20, color: color.primary }}>
-                할 일 추가
-              </Text>
-            </Pressable>
+            )}
           </Card>
           </ScrollView>
 

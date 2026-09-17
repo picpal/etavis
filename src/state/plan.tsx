@@ -15,6 +15,7 @@ import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import { knownPlacesSnapshot } from '../lib/placesStore';
+import { findKnownMatch } from '../lib/knownPlaceMatch';
 import {
   Candidate,
   Dataset,
@@ -671,23 +672,13 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
          이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다).
          아는 곳 = 내가 등록한 장소(별칭·상호)와 최근에 다녀온 곳. LLM 이 좌표를 짓지 않는다 */
       const known = knownPlacesSnapshot();
-      /* 예전엔 부분문자열을 **양방향**으로 봤다. 목 3건일 땐 안전했지만 등록한 장소가 늘면
-         라벨 '집'이 '포장마차집'에 걸려 엉뚱하게 집으로 튄다 — 짧은 라벨이 긴 말을 삼킨다.
-         그래서 방향을 하나로 줄인다: 완전 일치 → 아는 이름이 말로 **시작**하는 경우.
-         아는 쪽이 늘 더 긴 문자열이라 짧은 라벨이 남의 말을 삼킬 수 없다.
-         못 잡으면 목적지를 안 바꾼다 — 조용히 틀린 곳으로 보내느니 그대로 두는 게 낫다.
-         저장한 장소는 별칭과 상호가 각각 한 항목이라 '집'으로도 '여의도 자이'로도 걸린다 */
-      const norm = (s: string) => s.replace(/\s+/g, '');
-      const pick = (name?: string) => {
-        if (!name) return undefined;
-        const said = norm(name);
-        if (!said) return undefined;
-        const exact = known.find(r => norm(r.name) === said);
-        if (exact) return exact;
-        // 앞자리 매칭은 두 글자부터 — '집' 한 글자가 '집들이 장소'의 앞을 물면 안 된다.
-        // 완전 일치는 길이를 안 따진다: '집'은 그 자체로 등록해 둔 이름이다
-        return said.length >= 2 ? known.find(r => norm(r.name).startsWith(said)) : undefined;
-      };
+      /* 못 잡으면 목적지를 안 바꾼다 — 조용히 틀린 곳으로 보내느니 그대로 두는 게 낫다.
+         저장한 장소는 별칭과 상호가 각각 한 항목이라 '집'으로도 '여의도 자이'로도 걸린다.
+         매칭 규칙 자체(정규화 완전 일치 → 아는 이름이 말로 시작)는 knownPlaceMatch.ts 의
+         findKnownMatch 가 갖는다 — intent.ts 가 되묻기 여부를 미리 판정할 때도 같은 규칙을
+         쓴다. 두 곳이 갈라지면 목은 "아는 곳"이라 답했는데 여기서 못 잡아 화면이 아무
+         반응 없이 끝난다 */
+      const pick = (name?: string) => findKnownMatch(known, r => r.name, name);
       const nextDest = pick(it.endpoints.destination);
       const nextOrigin = pick(it.endpoints.origin);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

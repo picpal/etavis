@@ -22,7 +22,8 @@ import { Card, haptic } from '../components/common';
 import { BookmarkIcon, CheckMark, Chevron, PinIcon } from '../components/primitives';
 import { PlaceSearch } from '../components/PlaceSearch';
 import { Sheet } from '../components/Sheet';
-import { savedAt } from '../lib/placesFormat';
+import { SAME_PLACE_M, savedAt } from '../lib/placesFormat';
+import { haversineM } from '../lib/geo';
 
 export function DestinationSheet({
   visible,
@@ -239,7 +240,10 @@ export function DestinationSheet({
                   <Text style={[type.label, { color: color.muted }]}>최근에 쓴 곳</Text>
                   <Card style={{ padding: 8 }}>
                     {recents.map((recent, i) => {
-                      const active = recent.name === (isOrigin ? state.originName : state.destinationName);
+                      // 이름이 아니라 좌표로 비교한다 — savedAt 의 50m 규칙과 같은 기준.
+                      // 이름만 보면 같은 이름을 쓰는 두 장소 중 엉뚱한 행에 체크가 붙는다
+                      const activeCoord = isOrigin ? state.originCoord : state.destinationCoord;
+                      const active = !!activeCoord && haversineM(recent.coord, activeCoord) <= SAME_PLACE_M;
                       const key = `${recent.name}-${recent.coord.latitude}-${recent.coord.longitude}`;
                       return (
                         <React.Fragment key={key}>
@@ -363,18 +367,20 @@ export function DestinationSheet({
                             </Text>
                           </Pressable>
                         ))}
+                    {/* 집·회사가 다 있으면 관리 화면(MyPlaces)이 아니라 saved 뷰로 보낸다 —
+                        여긴 목적지를 고르는 시트다. MyPlaces 는 탭해도 고를 수 없고
+                        편집 시트만 연다 */}
                     {home && work && (
                       <Pressable
                         onPress={() => {
                           haptic();
                           Keyboard.dismiss();
-                          onClose();
-                          navigation.navigate('MyPlaces');
+                          setView('saved');
                         }}
                         style={({ pressed }) => ({ paddingHorizontal: 16, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
                       >
                         <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 18, color: color.primary }}>
-                          내 장소 관리
+                          내 장소에서 고르기
                         </Text>
                       </Pressable>
                     )}
@@ -401,7 +407,10 @@ export function DestinationSheet({
                 <React.Fragment key={s.id}>
                   {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
                   <Pressable
-                    onPress={() => finish(s.name, s.coord, s.address)}
+                    // 상호(s.name)가 아니라 별칭(s.label) — 채팅 경로가 기록하는 이름과
+                    // 맞춰야 같은 장소가 고르는 방법에 따라 최근 목록에서 '집'과 '여의도
+                    // 자이'로 갈라지지 않는다. 별칭을 안 붙였으면 label 은 name 과 같다
+                    onPress={() => finish(s.label, s.coord, s.address)}
                     style={({ pressed }) => ({
                       flexDirection: 'row',
                       alignItems: 'center',

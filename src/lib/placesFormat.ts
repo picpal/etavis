@@ -124,9 +124,13 @@ export function upsertRecent(file: PlacesFile, entry: Omit<RecentPlace, 'usedAt'
  * 이름표를 달고 있어 화면에 집이 두 개로 보인다. 사용자가 직접 붙인 이름('우리집' 등)은
  * 슬롯과 무관한 사용자의 말이니 건드리지 않는다.
  *
- * 슬롯을 잃는 경로가 둘이다 — 다른 항목이 강등될 때, 그리고 편집으로 자기 슬롯을 스스로
- * 놓을 때('직접 입력'으로 바꾸는 경우). 이 함수 하나로 두 경로를 다 닫는다 — 규칙이
- * 갈라져 있으면 다음에 세 번째 경로가 생겼을 때 또 샌다.
+ * 슬롯을 잃는 경로가 셋이다 — ① 다른 항목이 그 슬롯을 새로 차지해 강등될 때,
+ * ② 편집으로 자기 슬롯을 스스로 놓을 때('직접 입력'으로 바꾸는 경우),
+ * ③ 편집으로 자기 슬롯을 다른 슬롯으로 옮길 때(집 → 회사). ③은 place.slot 이
+ * 여전히 참이라 "슬롯이 없어졌다"는 조건만으론 못 잡는다 — existing.slot 이
+ * place.slot 과 다르기만 해도 이전 슬롯의 라벨은 되돌려야 한다(안 그러면 회사로
+ * 옮긴 뒤에도 '집'이라는 라벨을 달고 있어, 새로 집을 등록하면 화면에 집이 두 개 보인다).
+ * 이 함수 하나로 세 경로를 다 닫는다 — 규칙이 갈라져 있으면 다음 경로가 생겼을 때 또 샌다.
  */
 function revertSlotLabel(lostSlot: 'home' | 'work' | null, label: string, name: string): string {
   if (!lostSlot) return label;
@@ -136,8 +140,9 @@ function revertSlotLabel(lostSlot: 'home' | 'work' | null, label: string, name: 
 
 export function upsertSaved(file: PlacesFile, place: SavedPlace): PlacesFile {
   const existing = file.saved.find(s => s.id === place.id);
-  // 편집 자신이 슬롯을 놓은 경우 — 예전엔 슬롯이 있었는데(existing.slot) 이번엔 없다(place.slot)
-  const selfLostSlot = existing && existing.slot && !place.slot ? existing.slot : null;
+  // 편집 자신이 이전 슬롯을 잃은 경우 — 슬롯을 아예 없앴거나(place.slot 없음)
+  // 다른 슬롯으로 옮겼다(집 → 회사). existing.slot 과 다르기만 하면 셋 다 해당한다
+  const selfLostSlot = existing && existing.slot && existing.slot !== place.slot ? existing.slot : null;
   const self = selfLostSlot ? { ...place, label: revertSlotLabel(selfLostSlot, place.label, place.name) } : place;
 
   const others = file.saved

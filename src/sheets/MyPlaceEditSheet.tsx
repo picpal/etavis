@@ -231,7 +231,7 @@ export function MyPlaceEditSheet({
               (confirmDelete ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 2 }}>
                   <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 14, lineHeight: 18, color: color.body }}>
-                    '{place.label}'을 지울까요?
+                    '{place.label}'{josa(place.label, '을/를')} 지울까요?
                   </Text>
                   <Pressable onPress={() => setConfirmDelete(false)} style={({ pressed }) => ({ padding: 8, opacity: pressed ? 0.6 : 1 })}>
                     <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 14, lineHeight: 18, color: color.muted }}>취소</Text>

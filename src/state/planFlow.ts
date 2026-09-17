@@ -73,7 +73,12 @@ export const isBusy = (phase: Phase): boolean =>
  */
 export function requestKey(r: PlanRequest): string {
   const c = (p: LatLng) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
-  const stops = r.stops.map(s => `${s.queries.join('>')}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`).join('|');
+  // near 와 태그가 빠져 있었다 — 태그를 바꿔도 같은 요청으로 보고 재계산을 건너뛴다.
+  // mode 는 아래 배열에 이미 있으므로, 이것으로 decideNear 의 입력이 전부 키에 들어간다
+  const stops = r.stops.map(s =>
+    `${s.queries.join('>')}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`
+    + `@${s.near ?? 'any'}/${s.loadBefore ?? 'none'}/${s.loadAfter ?? 'none'}/${s.needWhen ?? 'unknown'}`,
+  ).join('|');
   return [c(r.origin), c(r.destination), r.mode, r.arriveByMin ?? '-', r.order, stops].join('#');
 }
 

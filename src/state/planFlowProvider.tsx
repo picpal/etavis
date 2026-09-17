@@ -5,6 +5,7 @@
  */
 import React, { createContext, useCallback, useContext, useMemo, useReducer, useRef } from 'react';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { planSearchFn } from '../lib/places';
 import { fallbackRouteProvider } from '../lib/routePlan/fallbackProvider';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider';
@@ -114,6 +115,8 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
         fallbackRouteProvider({
           primary: serverRouteProvider({ baseUrl, appToken, deviceId }),
           estimate: mock,
+          // 웹 데모에서만 추정으로 내려간다. 네이티브는 실패 화면이 정직하다 — fallbackProvider.ts 주석 참고
+          enabled: Platform.OS === 'web',
           // 화면엔 A5 판정 카드의 '추정' 문구로만 보인다 — 왜 내려갔는지는 로그에만
           onFallback: e =>
             logTrack({ k: 'net', ep: '/route', ms: 0, ok: false, d: { mode: 'car', fallback: true, err: String(e).slice(0, 120) } }),

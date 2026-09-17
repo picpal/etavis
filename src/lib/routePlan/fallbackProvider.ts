@@ -5,6 +5,10 @@
  * 공개 데모에서는 일일 상한·502·타임아웃 중 하나만 걸려도 심사자가 오류 화면을 본다.
  * 상한은 피해를 묶는 장치여야지 가용성 차단 스위치여선 안 된다.
  *
+ * **네이티브에서는 끈다.** 출시 앱에서 `/route` 가 죽으면 실패 화면이 정직하다 — 조용히
+ * 하버사인 추정("약 32분")으로 내려가면 사용자에게 다른 제품이 된다. placesFallback.ts 의
+ * withMockFallback 과 같은 이유·같은 모양이다. 웹 데모는 4주 가동이 근거라 여기만 켠다.
+ *
  * 429 만 잡지 않는다 — 4주 동안 더 자주 오는 건 502 와 타임아웃이다.
  * 강등 사유는 onFallback 으로만 나간다. 이 모듈은 순수해야 한다(node 테스트가 닿는다)
  * — trackLog 는 expo-file-system 을 물기 때문에 여기서 부르면 안 된다.
@@ -17,10 +21,13 @@ export type FallbackProviderOptions = {
   primary: RouteProvider;
   /** 강등 대상. source 를 'estimate' 로 내는 공급자여야 한다 */
   estimate: RouteProvider;
+  /** 웹에서만 true. 네이티브는 기존 동작(던지기)을 유지한다 */
+  enabled?: boolean;
   onFallback?: (err: unknown) => void;
 };
 
 export function fallbackRouteProvider(opts: FallbackProviderOptions): RouteProvider {
+  if (!opts.enabled) return opts.primary;
   return {
     async route(points: LatLng[], departAtMin: number, mode: Mode): Promise<RouteResult> {
       try {

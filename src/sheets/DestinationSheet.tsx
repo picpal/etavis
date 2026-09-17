@@ -48,7 +48,8 @@ export function DestinationSheet({
   // 늦게 끝난 이전 요청이 최신 결과를 덮어쓰지 않게 한다
   const reqId = useRef(0);
 
-  // 키보드 높이만큼 시트를 끌어올린다
+  /* 시트를 끌어올리는 건 Sheet가 한다. 여기서 키보드 높이를 재는 건
+     결과 목록이 차지할 수 있는 높이를 계산하기 위해서다 */
   useEffect(() => {
     const show = Keyboard.addListener('keyboardWillShow', e => setKbHeight(e.endCoordinates.height));
     const hide = Keyboard.addListener('keyboardWillHide', () => setKbHeight(0));
@@ -118,7 +119,7 @@ export function DestinationSheet({
         style={{
           paddingTop: 8,
           paddingHorizontal: 20,
-          paddingBottom: kbHeight > 0 ? kbHeight + 12 : Math.max(insets.bottom, 20),
+          paddingBottom: kbHeight > 0 ? 20 : Math.max(insets.bottom, 20),
           gap: 14,
         }}
       >

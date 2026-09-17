@@ -1,6 +1,6 @@
 /** 커스텀 bottom sheet — 그랩바·딤·드래그 닫기 재현 (A4/A7/A9) */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Keyboard, LayoutAnimation, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -16,6 +16,14 @@ import { color, radius, shadow } from '../theme/tokens';
 
 const OPEN_MS = 300;
 const CLOSE_MS = 220;
+
+/** 키보드와 같은 곡선·같은 시간으로 움직인다 — 시트만 먼저 튀면 뒤에 딤이 번쩍인다 */
+function keyboardAnim(duration: number) {
+  return {
+    duration: Math.max(duration, 1),
+    update: { type: LayoutAnimation.Types.keyboard },
+  };
+}
 
 export function Sheet({
   visible,
@@ -38,7 +46,27 @@ export function Sheet({
   const dragY = useSharedValue(0);
   const sheetH = useSharedValue(height ?? screenH * 0.7);
 
-  const maxH = screenH - insets.top - 40;
+  /* 시트는 화면 바닥에 붙어 있어서, 키보드가 올라오면 안에서 편집 중인 줄이
+     그대로 키보드 밑으로 들어간다(A9 할 일 편집에서 목록 전체가 가려졌다).
+     키보드 높이만큼 통째로 끌어올리고, 높이 한계도 같이 줄인다 —
+     올리기만 하면 긴 시트는 반대로 머리가 화면 위로 잘린다 */
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', e => {
+      LayoutAnimation.configureNext(keyboardAnim(e.duration));
+      setKbHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', e => {
+      LayoutAnimation.configureNext(keyboardAnim(e.duration));
+      setKbHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  const maxH = screenH - insets.top - 40 - kbHeight;
   const fixedH = height ? Math.min(height, maxH) : undefined;
 
   useEffect(() => {
@@ -93,7 +121,7 @@ export function Sheet({
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: kbHeight,
             height: fixedH,
             maxHeight: maxH,
             backgroundColor: color.bg,

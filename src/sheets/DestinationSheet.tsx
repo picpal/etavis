@@ -14,7 +14,7 @@ import { color, shadow, type } from '../theme/tokens';
 import { LatLng, RECENT_DESTINATIONS } from '../data/mockData';
 import { usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
-import { getProvider, Place } from '../lib/places';
+import { getProvider, isSearchDegraded, Place } from '../lib/places';
 import { formatDistanceM, haversineM } from '../lib/geo';
 import { Card, haptic } from '../components/common';
 import { CheckMark, PinIcon } from '../components/primitives';
@@ -44,6 +44,7 @@ export function DestinationSheet({
   const [results, setResults] = useState<Place[]>([]);
   const [searching, setSearching] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [degraded, setDegraded] = useState(false);
   const [kbHeight, setKbHeight] = useState(0);
   // 늦게 끝난 이전 요청이 최신 결과를 덮어쓰지 않게 한다
   const reqId = useRef(0);
@@ -88,6 +89,7 @@ export function DestinationSheet({
         .then(list => {
           if (id !== reqId.current) return;
           setResults(list);
+          setDegraded(isSearchDegraded());
           setSearching(false);
         })
         .catch(() => {
@@ -362,9 +364,11 @@ export function DestinationSheet({
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
           {failed
             ? '검색에 실패했어요 · 연결 상태나 API 키를 확인해 주세요'
-            : here.status === 'denied'
-              ? '위치 권한이 없어 거리는 표시되지 않아요'
-              : '경로를 계산하려면 목록에서 골라야 해요 · 가까운 순으로 보여드려요'}
+            : degraded
+              ? '지금은 예시 장소 데이터로 보여드리고 있어요'
+              : here.status === 'denied'
+                ? '위치 권한이 없어 거리는 표시되지 않아요'
+                : '경로를 계산하려면 목록에서 골라야 해요 · 가까운 순으로 보여드려요'}
         </Text>
       </View>
     </Sheet>

@@ -9,9 +9,11 @@
  * 실제 연동 시 getProvider()의 반환만 갈아끼우면 화면은 손대지 않아도 된다.
  */
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { LatLng } from '../data/mockData';
 import { haversineM } from './geo';
 import { keepPlace, planSearch } from './placeQuery';
+import { withMockFallback } from './placesFallback';
 import type { PlaceCandidate } from './routePlan/types';
 
 export type Place = {
@@ -284,14 +286,33 @@ const googleProvider: PlaceSearchProvider = {
  * 해외에 있으면서 한국 장소를 찾는 경우도 구글이 한국을 커버하므로 막히지 않는다.
  * 쓸 키가 없으면 조용히 목으로 떨어진다 — 키 없이도 화면은 그대로 동작해야 한다.
  */
+/**
+ * 이번 세션에서 장소 검색이 한 번이라도 목으로 내려갔나.
+ *
+ * 한 번 서면 안 내린다 — 깜빡이는 배너는 읽히지 않는다. 뜻은 '이 화면의 결과 중
+ * 일부는 예시 데이터일 수 있다'이고, 그게 사용자가 알아야 할 전부다.
+ */
+let searchDegraded = false;
+export const isSearchDegraded = () => searchDegraded;
+
 export function getProvider(near: LatLng | null): PlaceSearchProvider {
   const wanted = regionProviderKey(near);
-  if (wanted === 'kakao' && kakaoRestKey) return kakaoProvider;
-  if (wanted === 'google' && googlePlacesKey) return googleProvider;
-  // 원하는 쪽 키가 없으면 있는 쪽이라도 쓴다 (해외에서 구글 키가 없을 때 등)
-  if (kakaoRestKey) return kakaoProvider;
-  if (googlePlacesKey) return googleProvider;
-  return mockProvider;
+  const pick = (): PlaceSearchProvider => {
+    if (wanted === 'kakao' && kakaoRestKey) return kakaoProvider;
+    if (wanted === 'google' && googlePlacesKey) return googleProvider;
+    // 원하는 쪽 키가 없으면 있는 쪽이라도 쓴다 (해외에서 구글 키가 없을 때 등)
+    if (kakaoRestKey) return kakaoProvider;
+    if (googlePlacesKey) return googleProvider;
+    return mockProvider;
+  };
+  /* 웹 데모에서만 목으로 받아낸다. 네이티브는 실패 배너가 정직하다 — placesFallback.ts 주석 참고.
+     DestinationSheet 도 planSearchFn 도 이 함수를 지나므로 배선은 여기 한 곳이면 된다. */
+  return withMockFallback(pick(), mockProvider, {
+    enabled: Platform.OS === 'web',
+    onFallback: () => {
+      searchDegraded = true;
+    },
+  }) as PlaceSearchProvider;
 }
 
 /** 플래너용 검색 함수 — Place를 PlaceCandidate로. hours는 아직 없다(다음 계획) */

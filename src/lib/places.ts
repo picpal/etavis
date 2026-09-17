@@ -46,10 +46,9 @@ export function isInKorea(p: LatLng): boolean {
 
 /**
  * 이 좌표를 검색하려면 어느 제공자를 써야 하는지.
- * 실제 붙일 때의 후보:
- *   kakao  — 카카오 로컬 keyword.json. REST 키로 클라이언트 직접 호출 가능, 좌표가 WGS84 그대로.
- *   google — Places Text Search. 결제수단 등록이 필요하다.
- * (네이버는 시크릿 헤더가 필요해 서버를 하나 두지 않으면 앱에서 직접 못 부른다.)
+ *   kakao  — 카카오 로컬 keyword.json. 키는 서버에만 있고 /places 프록시를 지난다.
+ *   google — Places Text Search. **클라이언트 경로는 없앴다**(키가 공개 번들에 박힌다).
+ * 지금 getProvider 는 이 판정을 쓰지 않는다 — 해외 공급자를 다시 둘 때의 갈림길로 남겨둔다.
  */
 export function regionProviderKey(near: LatLng | null): Exclude<ProviderKey, 'mock'> {
   return near && isInKorea(near) ? 'kakao' : 'google';
@@ -276,59 +275,19 @@ const kakaoProvider: PlaceSearchProvider = {
   },
 };
 
-/* ── Google Places (New) Text Search ─────────────────────────
-   POST places:searchText. 키는 헤더(X-Goog-Api-Key), 필요한 필드만 FieldMask로 받는다.
-   카카오와 달리 결제수단 등록이 필요하다.                          */
-
-const GOOGLE_ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
-const GOOGLE_FIELDS = 'places.id,places.displayName,places.formattedAddress,places.location';
-
-export const googlePlacesKey: string =
-  (Constants.expoConfig?.extra?.googlePlacesKey as string | undefined)?.trim() ?? '';
-
-type GooglePlace = {
-  id: string;
-  displayName?: { text?: string };
-  formattedAddress?: string;
-  location?: { latitude: number; longitude: number };
-};
-
-const googleProvider: PlaceSearchProvider = {
-  key: 'google',
-  async search(query, near) {
-    const body: Record<string, unknown> = { textQuery: query, languageCode: 'ko', maxResultCount: 15 };
-    if (near) {
-      // 반경은 '이 근처를 우선' 정도의 힌트다. 결과를 그 안으로 가두지는 않는다
-      body.locationBias = { circle: { center: { latitude: near.latitude, longitude: near.longitude }, radius: 20000 } };
-    }
-    const res = await fetch(GOOGLE_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': googlePlacesKey,
-        'X-Goog-FieldMask': GOOGLE_FIELDS,
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`google ${res.status}`);
-    const json = (await res.json()) as { places?: GooglePlace[] };
-    return (json.places ?? [])
-      .filter(p => p.location)
-      .map(p => ({
-        id: `google-${p.id}`,
-        name: p.displayName?.text ?? p.formattedAddress ?? '',
-        address: p.formattedAddress ?? '',
-        coord: { latitude: p.location!.latitude, longitude: p.location!.longitude },
-      }));
-  },
-};
+/* ── 해외 장소 검색 ──────────────────────────────────────────
+   구글 Places 직접 호출 경로는 없앴다. 키를 extra 로 주입하면 카카오와
+   똑같이 공개 웹 번들에 박히는데(app.config.js 도 더 이상 GOOGLE_PLACES_KEY 를
+   주입하지 않는다), 해외 장소 검색은 이 데모의 범위 밖이라 프록시를 새로
+   뚫을 이유도 없다. 해외 좌표는 /places 프록시(카카오)를 그대로 지나고,
+   서버가 없으면 목으로 떨어진다.                                  */
 
 /**
- * 검색 제공자 — 현재 위치가 국내면 카카오, 해외면 구글.
+ * 검색 제공자 — 서버가 있으면 카카오 프록시, 없으면 목.
  *
- * 국내 POI는 카카오가 더 촘촘하고(지점명·상호), 해외는 카카오가 사실상 비어 있다.
- * 해외에 있으면서 한국 장소를 찾는 경우도 구글이 한국을 커버하므로 막히지 않는다.
- * 쓸 키가 없으면 조용히 목으로 떨어진다 — 키 없이도 화면은 그대로 동작해야 한다.
+ * 국내 POI는 카카오가 더 촘촘하고(지점명·상호), 해외는 사실상 비어 있다.
+ * 그 빈자리를 메우던 구글 경로는 클라이언트 키를 요구해서 없앴다(위 주석).
+ * 서버가 없으면 조용히 목으로 떨어진다 — 키 없이도 화면은 그대로 동작해야 한다.
  */
 /**
  * 이번 세션에서 장소 검색이 한 번이라도 목으로 내려갔나.
@@ -341,20 +300,14 @@ export const isSearchDegraded = () => searchDegraded;
 
 /* 래퍼를 호출마다 새로 만들면 placesFallback 의 회로차단기 상태(downUntil)가 매번
    리셋된다 — planSearchFn 이 반경 루프 라운드마다 getProvider 를 다시 부르므로
-   차단기가 프로덕션에서 무력해진다. primary 는 모듈 싱글턴 셋 중 하나라 그걸 키로
-   잡아 재사용한다. hasServer()·googlePlacesKey 는 런타임에 안 바뀐다. */
+   차단기가 프로덕션에서 무력해진다. primary 는 모듈 싱글턴 둘 중 하나라 그걸 키로
+   잡아 재사용한다. hasServer() 는 런타임에 안 바뀐다. */
 const wrapped = new Map<PlaceSearchProvider, PlaceSearchProvider>();
 
-export function getProvider(near: LatLng | null): PlaceSearchProvider {
-  const wanted = regionProviderKey(near);
-  const pick = (): PlaceSearchProvider => {
-    if (wanted === 'kakao' && hasServer()) return kakaoProvider;
-    if (wanted === 'google' && googlePlacesKey) return googleProvider;
-    if (hasServer()) return kakaoProvider;
-    if (googlePlacesKey) return googleProvider;
-    return mockProvider;
-  };
-  const primary = pick();
+export function getProvider(_near: LatLng | null): PlaceSearchProvider {
+  /* 국내·해외를 가리지 않고 /places 프록시 하나뿐이다. 해외 공급자를 다시 두면
+     regionProviderKey(near) 로 여기서 갈라진다. */
+  const primary = hasServer() ? kakaoProvider : mockProvider;
   const cached = wrapped.get(primary);
   if (cached) return cached;
   /* 웹 데모에서만 목으로 받아낸다. 네이티브는 실패 배너가 정직하다 — placesFallback.ts 주석 참고.

@@ -31,8 +31,6 @@
       "expo-font"
     ],
     "extra": {
-      "//": "실제 키는 .env에 둔다 (KAKAO_REST_KEY / GOOGLE_PLACES_KEY). app.config.js가 주입한다.",
-      "googlePlacesKey": "",
       "eas": {
         "projectId": "b138be35-f2e8-4186-ae54-cfb5f907f8eb"
       }

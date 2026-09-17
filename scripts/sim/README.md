@@ -22,6 +22,17 @@ python3 scripts/sim/tap.py drag 6 1200 900 1230   # 가장자리 스와이프
 
 ## 알아둘 것
 
+- **탭이 조용히 안 먹으면 창 배율부터 본다.** 시뮬레이터 창을 줄여 놨으면 포인트=픽셀/3 이
+  아니다. `tap.py` 는 이제 AXGroup 의 position 과 size 를 둘 다 읽어 비례시키지만, 직접
+  좌표를 계산할 땐 같은 함정에 빠진다. 확인:
+  ```
+  osascript -e 'tell application "System Events" to tell process "Simulator" to tell window 1 to get size of (first UI element whose role is "AXGroup")'
+  ```
+  기기 포인트 크기(iPhone 16e = 390×844)와 다르면 창이 줄어 있는 것이다.
+  **에러가 안 난다** — `tap.py` 는 좌표를 출력하고 exit 0 으로 끝나며 화면만 무반응이라,
+  손쉬운 사용 권한 문제로 오진하기 딱 좋다(2026-09-17 실제로 그랬다). AX **읽기**가 되는데
+  클릭만 안 먹으면 권한은 멀쩡한 것이다 — 배율을 의심한다.
+
 - **`click at` 을 쓰지 않는다.** System Events 의 `click at` 은 AX 요소를 히트테스트하는데,
   시뮬레이터 화면은 자식 없는 `AXGroup` 하나라 `-25204` 로 죽는다. CGEvent 를 직접 쏜다
   (ctypes — pyobjc 설치 불필요).

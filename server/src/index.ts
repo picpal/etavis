@@ -23,12 +23,27 @@ export interface Env {
   OPENAI_MODEL?: string;
   /** 앱이 보내는 공유 토큰. 없으면 누구나 이 엔드포인트로 남의 요금을 쓴다 */
   APP_TOKEN: string;
-  /** developers.kakaomobility.com REST 키. 카카오 로컬(developers.kakao.com) 키와 다르다 */
+  /**
+   * 카카오내비 길찾기(apis-navi.kakaomobility.com) 키.
+   *
+   * 2026-09-17 실측: developers.kakao.com 의 REST 키를 그대로 받는다("길찾기 성공").
+   * 전에 "카카오 로컬 키와 다르다"고 적어뒀는데 사실이 아니었다 — 제휴 계약이
+   * 필요한 건 카카오모빌리티 **대중교통** 통합 길찾기 쪽이고, 여기서 쓰는
+   * 자동차 길찾기는 아니다. 슬롯을 따로 둔 건 나중에 분리할 여지 때문이다.
+   */
   KAKAO_MOBILITY_KEY: string;
   /** NAVER API HUB 검색(블로그). 네이버 클라우드 콘솔의 Client ID·Secret */
   NCP_API_KEY_ID: string;
   NCP_API_KEY: string;
-  /** 구글 Places (New). Places API (New) 하나로만 제한된 키 */
+  /**
+   * 구글 Places (New).
+   *
+   * **Places API (New) 하나로만 제한한 키여야 한다.** 2026-09-17 현재는 그렇지
+   * 않고 GOOGLE_ROUTES_KEY 와 같은 키다(실측으로 둘 다 통과). 같은 이름이
+   * `app.json` 의 `extra.googlePlacesKey` 로 앱 번들에도 들어가므로
+   * (`src/lib/places.ts:240`) 번들에서 추출당하면 Routes 쿼터까지 같이 털린다.
+   * 분리는 남은 숙제다.
+   */
   GOOGLE_PLACES_KEY: string;
   /** Routes API 용 키. 없으면 GOOGLE_PLACES_KEY 를 쓴다(같은 키에 Routes 를 허용해 둔 경우) */
   GOOGLE_ROUTES_KEY?: string;

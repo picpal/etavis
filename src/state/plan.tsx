@@ -14,12 +14,13 @@ import { nowMin, toHHMM, toMin } from '../lib/clock';
 import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
+import { knownPlacesSnapshot } from '../lib/placesStore';
+import { findKnownMatch } from '../lib/knownPlaceMatch';
 import {
   Candidate,
   Dataset,
   datasets,
   LatLng,
-  RECENT_DESTINATIONS,
   RouteOption,
   Stop,
 } from '../data/mockData';
@@ -82,9 +83,12 @@ export type PlanState = {
   destinationName: string | null;
   /** 검색 결과에서 고른 목적지 좌표 */
   destinationCoord: LatLng | null;
+  /** 고를 때 같이 받아 둔 주소. 최근 목록의 둘째 줄이 이걸 쓴다 — 역지오코딩을 새로 부르지 않으려고 */
+  destinationAddress: string | null;
   /** 사용자가 직접 고른 출발지. null이면 현재 위치(GPS) */
   originName: string | null;
   originCoord: LatLng | null;
+  originAddress: string | null;
   stops: StopState[];
   options: RouteOption[];
   selectedOptionId: string;
@@ -235,8 +239,10 @@ function initState(ds: Dataset, seed = false): PlanState {
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
     destinationName: null,
     destinationCoord: null,
+    destinationAddress: null,
     originName: null,
     originCoord: null,
+    originAddress: null,
     ...deriveFromDataset(ds, departMin),
     options: ds.options,
     selectedOptionId: (ds.options.find(o => o.recommended) ?? ds.options[0]).id,
@@ -393,8 +399,8 @@ export type PlanAction =
   | { type: 'SET_DATASET'; key: string }
   | { type: 'SET_MODE'; mode: PlanState['mode'] }
   | { type: 'SET_ARRIVE_BY'; min: number | null }
-  | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null }
-  | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null }
+  | { type: 'SET_DESTINATION'; name: string; coord: LatLng | null; address: string | null }
+  | { type: 'SET_ORIGIN'; name: string | null; coord: LatLng | null; address: string | null }
   | { type: 'SWAP_ENDPOINTS'; myLocation: LatLng | null }
   | { type: 'APPLY_OPTION'; id: string }
   | { type: 'APPLY_LIVE'; payload: ApplyLivePayload }
@@ -464,9 +470,9 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         chips: syncConditionChips(state.chips, { mode: state.mode, arriveByMin: action.min }, k => `${k}-${chipSeq++}`),
       };
     case 'SET_DESTINATION':
-      return { ...state, destinationName: action.name, destinationCoord: action.coord };
+      return { ...state, destinationName: action.name, destinationCoord: action.coord, destinationAddress: action.address };
     case 'SET_ORIGIN':
-      return { ...state, originName: action.name, originCoord: action.coord };
+      return { ...state, originName: action.name, originCoord: action.coord, originAddress: action.address };
     case 'SWAP_ENDPOINTS': {
       /*
         출발지가 '내 위치'면 넘길 이름이 없어 목적지가 비어버린다.
@@ -477,8 +483,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         ...state,
         originName: state.destinationName,
         originCoord: state.destinationCoord,
+        originAddress: state.destinationAddress,
         destinationName: fromMyLocation ? '내 위치' : state.originName,
         destinationCoord: fromMyLocation ? action.myLocation : state.originCoord,
+        // '내 위치'로 굳힐 때 리듀서는 지금 있는 곳의 주소를 모른다. 틀린 주소를 들고 다니느니 비운다
+        destinationAddress: fromMyLocation ? null : state.originAddress,
       };
     }
     case 'SELECT_OPTION':
@@ -660,10 +669,16 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       }
       const stops = stopsForChips(state.dataset, keep);
       /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
-         이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다) */
-      const known = RECENT_DESTINATIONS;
-      const pick = (name?: string) =>
-        name ? known.find(r => r.name.includes(name) || name.includes(r.name)) : undefined;
+         이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다).
+         아는 곳 = 내가 등록한 장소(별칭·상호)와 최근에 다녀온 곳. LLM 이 좌표를 짓지 않는다 */
+      const known = knownPlacesSnapshot();
+      /* 못 잡으면 목적지를 안 바꾼다 — 조용히 틀린 곳으로 보내느니 그대로 두는 게 낫다.
+         저장한 장소는 별칭과 상호가 각각 한 항목이라 '집'으로도 '여의도 자이'로도 걸린다.
+         매칭 규칙 자체(정규화 완전 일치 → 아는 이름이 말로 시작)는 knownPlaceMatch.ts 의
+         findKnownMatch 가 갖는다 — intent.ts 가 되묻기 여부를 미리 판정할 때도 같은 규칙을
+         쓴다. 두 곳이 갈라지면 목은 "아는 곳"이라 답했는데 여기서 못 잡아 화면이 아무
+         반응 없이 끝난다 */
+      const pick = (name?: string) => findKnownMatch(known, r => r.name, name);
       const nextDest = pick(it.endpoints.destination);
       const nextOrigin = pick(it.endpoints.origin);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -674,8 +689,12 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         mode,
         stopCount: stops.length,
         optionOverrides: {},
-        ...(nextDest ? { destinationName: nextDest.name, destinationCoord: nextDest.coord } : null),
-        ...(nextOrigin ? { originName: nextOrigin.name, originCoord: nextOrigin.coord } : null),
+        ...(nextDest
+          ? { destinationName: nextDest.name, destinationCoord: nextDest.coord, destinationAddress: nextDest.address }
+          : null),
+        ...(nextOrigin
+          ? { originName: nextOrigin.name, originCoord: nextOrigin.coord, originAddress: nextOrigin.address }
+          : null),
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }
@@ -764,9 +783,9 @@ type PlanApi = {
   setArriveBy: (min: number | null) => void;
   /** 마감까지 남은 여유(분). 음수면 초과. 마감이 없으면 null */
   slackMin: number | null;
-  setDestination: (name: string, coord?: LatLng | null) => void;
+  setDestination: (name: string, coord?: LatLng | null, address?: string | null) => void;
   /** 출발지 지정. null을 주면 다시 '내 위치'(GPS)로 돌아간다 */
-  setOrigin: (name: string | null, coord?: LatLng | null) => void;
+  setOrigin: (name: string | null, coord?: LatLng | null, address?: string | null) => void;
   /** 출발지 ↔ 목적지 맞바꾸기 */
   swapEndpoints: () => void;
   /** 표시용 목적지 이름 (미지정이면 데이터셋 값) */
@@ -849,8 +868,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       setDataset: key => dispatch({ type: 'SET_DATASET', key }),
       setMode: mode => dispatch({ type: 'SET_MODE', mode }),
       setArriveBy: min => dispatch({ type: 'SET_ARRIVE_BY', min }),
-      setDestination: (name, coord) => dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null }),
-      setOrigin: (name, coord) => dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null }),
+      setDestination: (name, coord, address) =>
+        dispatch({ type: 'SET_DESTINATION', name, coord: coord ?? null, address: address ?? null }),
+      setOrigin: (name, coord, address) =>
+        dispatch({ type: 'SET_ORIGIN', name, coord: coord ?? null, address: address ?? null }),
       swapEndpoints: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'SWAP_ENDPOINTS', myLocation: here.coord });

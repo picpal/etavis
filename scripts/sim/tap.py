@@ -25,18 +25,31 @@ AS.CGEventPost.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
 AS.CFRelease.argtypes = [ctypes.c_void_p]
 
 MOVED, DOWN, UP = 5, 1, 2
+
+# simctl io screenshot 이 내놓는 픽셀 크기 (iPhone 16e)
+SHOT_W, SHOT_H = 1170, 2532
 HID_TAP = 0
 
 
-def screen_origin():
-    """디바이스 화면(AXGroup)의 좌상단 — 창을 옮겨도 따라간다"""
+def _ax(what):
     out = subprocess.check_output([
         'osascript', '-e',
-        'tell application "System Events" to tell process "Simulator" to tell window 1 to '
-        'get position of (first UI element whose role is "AXGroup")',
+        f'tell application "System Events" to tell process "Simulator" to tell window 1 to '
+        f'get {what} of (first UI element whose role is "AXGroup")',
     ], text=True)
-    x, y = (int(v.strip()) for v in out.strip().split(','))
-    return x, y
+    return [int(v.strip()) for v in out.strip().split(',')]
+
+
+def screen_geom():
+    """디바이스 화면(AXGroup)의 좌상단과 **크기** — 창을 옮기거나 줄여도 따라간다.
+
+    크기까지 읽는 이유: 시뮬레이터 창은 배율을 줄일 수 있다. 예전엔 창이 100%(포인트=픽셀/3)
+    라고 가정하고 `px / 3` 으로 찍었는데, 78% 로 줄여 둔 창에서 클릭이 300px 넘게 어긋나
+    아무 데도 안 눌렸다. 에러가 안 나서 권한 문제로 오진하기 딱 좋다(2026-09-17 실제로 겪음).
+    """
+    ox, oy = _ax('position')
+    w, h = _ax('size')
+    return ox, oy, w, h
 
 
 def post(kind, pt):
@@ -45,13 +58,18 @@ def post(kind, pt):
     AS.CFRelease(ev)
 
 
+def to_screen(px, py, geom):
+    """스크린샷 픽셀 → 화면 좌표. 창 크기에 비례시킨다(배율을 가정하지 않는다)"""
+    ox, oy, w, h = geom
+    return CGPoint(ox + px * w / SHOT_W, oy + py * h / SHOT_H)
+
+
 def tap(px, py, hold=0.06):
-    # 활성화가 창을 옮긴다 — 원점은 반드시 활성화 뒤에 읽는다.
+    # 활성화가 창을 옮긴다 — 좌표는 반드시 활성화 뒤에 읽는다.
     # 먼저 읽으면 클릭이 수십 px 씩 어긋나 엉뚱한 곳을 누른다
     subprocess.run(['open', '-a', 'Simulator'], check=False)
     time.sleep(0.5)
-    ox, oy = screen_origin()
-    pt = CGPoint(ox + px / 3.0, oy + py / 3.0)  # 스크린샷은 3배 픽셀
+    pt = to_screen(px, py, screen_geom())
     post(MOVED, pt)
     time.sleep(0.05)
     post(DOWN, pt)
@@ -67,9 +85,9 @@ def drag(px1, py1, px2, py2, steps=24):
     """가장자리 스와이프 등 — 중간 이동 이벤트를 넣어야 제스처로 인식된다"""
     subprocess.run(['open', '-a', 'Simulator'], check=False)
     time.sleep(0.5)
-    ox, oy = screen_origin()
-    sx1, sy1 = ox + px1 / 3.0, oy + py1 / 3.0
-    sx2, sy2 = ox + px2 / 3.0, oy + py2 / 3.0
+    geom = screen_geom()
+    p1, p2 = to_screen(px1, py1, geom), to_screen(px2, py2, geom)
+    sx1, sy1, sx2, sy2 = p1.x, p1.y, p2.x, p2.y
     post(MOVED, CGPoint(sx1, sy1))
     time.sleep(0.05)
     post(DOWN, CGPoint(sx1, sy1))

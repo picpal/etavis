@@ -5,6 +5,8 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSeq
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { usePlanFlow } from '../state/planFlowProvider';
+import { usePlan } from '../state/plan';
+import { recordRecent } from '../lib/placesStore';
 import { usePlanRequest } from '../state/usePlanRequest';
 import { Card } from '../components/common';
 import { CheckMark } from '../components/primitives';
@@ -29,6 +31,7 @@ function PulseRing() {
 
 export function CalculatingScreen({ navigation }: Props) {
   const { state, start } = usePlanFlow();
+  const { state: plan } = usePlan();
   const request = usePlanRequest();
   const enteredAt = useRef(Date.now());
   const startedRef = useRef(false);
@@ -39,8 +42,22 @@ export function CalculatingScreen({ navigation }: Props) {
     // 칩이 바뀌면 A2가 RESET하고 여기로 다시 온다
     if (request && !startedRef.current) {
       startedRef.current = true;
+      /* 최근 목적지는 여기서만 쌓인다 — 시트에서 눌렀다 취소한 곳은 남지 않아야 한다.
+         이름이 없으면 사용자가 고른 게 아니라 데이터셋 기본 목적지다.
+         '내 위치'는 라벨이지 장소가 아니다. 좌표를 굳혀 두면 내일 엉뚱한 곳이 된다 */
+      if (plan.destinationName && plan.destinationName !== '내 위치' && plan.destinationCoord) {
+        recordRecent({
+          name: plan.destinationName,
+          address: plan.destinationAddress ?? '',
+          coord: plan.destinationCoord,
+        });
+      }
       start(request);
     }
+    // 배열을 좁힌 이유는 재실행 방지가 아니다 — 그건 startedRef 가 이미 막는다.
+    // 여기서 쓰는 plan 은 반드시 request 를 만들어 낸 그 렌더의 plan 이어야 해서,
+    // plan 을 의존성에 넣지 않는다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request, start]);
 
   useEffect(() => {

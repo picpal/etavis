@@ -298,6 +298,26 @@ export function HeartIcon({ size = 15, filled = false, tint = '#B33B2B' }: { siz
   );
 }
 
+/**
+ * 북마크(저장한 장소) 아이콘 — 채움/외곽선.
+ * HeartIcon과 달리 unfilled에서도 stroke를 tint로 그린다 — 빈 하트는 "아직 안 눌렀다"는
+ * 상태 표시라 연해도 되지만, 이 아이콘은 더보기 메뉴 행의 식별 아이콘이라 옆줄 아이콘들과
+ * 같은 진하기여야 한다. 연하게 나오면 눌러도 되는 항목이 준비 중인 것처럼 보인다.
+ */
+export function BookmarkIcon({ size = 16, filled = false, tint = color.primary }: { size?: number; filled?: boolean; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16">
+      <Path
+        d="M4 2.4h8c.4 0 .7.3.7.7v10.2c0 .3-.3.5-.6.3L8 11.2l-4.1 2.4c-.3.2-.6 0-.6-.3V3.1c0-.4.3-.7.7-.7Z"
+        fill={filled ? tint : 'none'}
+        stroke={tint}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** 연필(수정) 아이콘 */
 export function PencilIcon({ size = 14, tint = color.muted }: { size?: number; tint?: string }) {
   return (

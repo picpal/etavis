@@ -467,12 +467,3 @@ const datasetDevice0914: Dataset = {
 export const datasets = [datasetDevice0914, datasetCommute, datasetBase, datasetReordered, datasetScarce];
 
 /* 외부 지도 앱(A7)은 목이 아니라 실제 URL scheme 스펙이라 src/lib/mapLinks.ts에 있다 */
-
-export type RecentDestination = { name: string; address: string; coord: LatLng };
-
-/** 최근 목적지 — 이름이 주인공, 주소는 확인용 */
-export const RECENT_DESTINATIONS: RecentDestination[] = [
-  { name: '회사', address: '서울 양천구 신정동', coord: OFFICE },
-  { name: '집', address: '서울 영등포구 여의도동', coord: HOME },
-  { name: '오크밸리 숙소', address: '강원 원주시 지정면', coord: OAKVALLEY },
-];

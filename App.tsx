@@ -20,6 +20,7 @@ import { OptionsScreen } from './src/screens/OptionsScreen';
 import { TimelineScreen } from './src/screens/TimelineScreen';
 import { ErrorScreen } from './src/screens/ErrorScreen';
 import { HistoryScreen, NearbyScreen, SettingsScreen, TodayScreen } from './src/screens/TabStubScreens';
+import { MyPlacesScreen } from './src/screens/MyPlacesScreen';
 
 export type RootStackParamList = {
   Home: undefined;
@@ -31,6 +32,8 @@ export type RootStackParamList = {
   Today: { sheet?: 'task' | 'mapapp'; stopId?: string } | undefined;
   History: undefined;
   Settings: undefined;
+  /** addSlot 이 있으면 그 슬롯의 추가 시트를 바로 연다 (시트의 '집 등록'에서 들어올 때) */
+  MyPlaces: { addSlot?: 'home' | 'work' } | undefined;
   Nearby: undefined;
 };
 
@@ -48,6 +51,7 @@ const linking = {
       Today: 'today',
       History: 'history',
       Settings: 'settings',
+      MyPlaces: 'myplaces',
       Nearby: 'nearby',
     },
   },
@@ -95,6 +99,7 @@ export default function App() {
               <Stack.Screen name="Today" component={TodayScreen} options={{ animation: 'none' }} />
               <Stack.Screen name="History" component={HistoryScreen} options={{ animation: 'none' }} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="MyPlaces" component={MyPlacesScreen} />
               <Stack.Screen name="Nearby" component={NearbyScreen} options={{ animation: 'none' }} />
             </Stack.Navigator>
           </NavigationContainer>

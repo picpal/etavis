@@ -224,3 +224,137 @@ test('다른 곳은 그대로 더한다 — 중복만 막지, 새 경유지를 �
   ]);
   assert.deepEqual(stopQueries(s), ['카페', '약국']);
 });
+
+test('목적지를 고르면 주소도 같이 실린다 — 최근 목록의 둘째 줄이 여기서 온다', () => {
+  const s = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '올리브영 신정점',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  assert.equal(s.destinationAddress, '서울 양천구 신정동');
+});
+
+test('주소 없이 목적지만 바꾸면 주소는 비워진다 — 이전 목적지의 주소가 따라다니면 안 된다', () => {
+  const had = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '올리브영 신정점',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  const s = planReducer(had, { type: 'SET_DESTINATION', name: '다른 곳', coord: null, address: null });
+  assert.equal(s.destinationAddress, null);
+});
+
+test('출발지와 목적지를 맞바꾸면 주소도 같이 바뀐다', () => {
+  let s = planReducer(fresh(), {
+    type: 'SET_ORIGIN',
+    name: '집',
+    coord: { latitude: 37.5219, longitude: 126.9245 },
+    address: '서울 영등포구 여의도동',
+  });
+  s = planReducer(s, {
+    type: 'SET_DESTINATION',
+    name: '회사',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  s = planReducer(s, { type: 'SWAP_ENDPOINTS', myLocation: null });
+  assert.equal(s.originAddress, '서울 양천구 신정동');
+  assert.equal(s.destinationAddress, '서울 영등포구 여의도동');
+});
+
+test("'내 위치'에서 맞바꾸면 목적지 주소는 없다 — 지금 있는 곳의 주소를 리듀서는 모른다", () => {
+  const had = planReducer(fresh(), {
+    type: 'SET_DESTINATION',
+    name: '회사',
+    coord: { latitude: 37.52, longitude: 126.86 },
+    address: '서울 양천구 신정동',
+  });
+  const s = planReducer(had, { type: 'SWAP_ENDPOINTS', myLocation: { latitude: 37.5, longitude: 127.0 } });
+  assert.equal(s.originAddress, '서울 양천구 신정동');
+  assert.equal(s.destinationAddress, null);
+});
+
+test('채팅이 목적지를 바꾸면 주소도 새 목적지 것으로 바뀐다 — 이전 목적지 주소가 새 장소에 눌러앉으면 안 된다', () => {
+  const { savePlace, removePlace } = require('../lib/placesStore') as typeof import('../lib/placesStore');
+  // '집'을 등록해 둔 상태를 만든다 — 예전엔 목 데이터의 '집' 항목이었지만 지금은
+  // placesStore가 출처다. placesStore는 이 테스트 파일 전체가 공유하는 모듈이라
+  // 끝나면 지운다 — 안 지우면 바로 다음 테스트('저장해 둔 곳이 없으면...')가 전제로 삼는
+  // 빈 목록이 깨진다.
+  savePlace({
+    id: 'home', slot: 'home', label: '집', name: '집',
+    address: '서울 영등포구 여의도동', coord: { latitude: 37.5219, longitude: 126.9245 }, createdAt: 1,
+  });
+  try {
+    const had = planReducer(fresh(), {
+      type: 'SET_DESTINATION',
+      name: '올리브영 신정점',
+      coord: { latitude: 37.52, longitude: 126.86 },
+      address: '서울 양천구 신정동',
+    });
+    const s = planReducer(had, {
+      type: 'APPLY_INTENT',
+      intent: {
+        resetStops: false,
+        stops: [],
+        endpoints: { destination: '집' }, // 저장해 둔 '집' — 주소가 다른 곳
+        order: 'auto',
+        arriveBy: null,
+        mode: null,
+        reject: null,
+        ambiguous: [],
+      },
+    });
+    assert.equal(s.destinationName, '집');
+    assert.equal(s.destinationAddress, '서울 영등포구 여의도동', '이전 목적지(올리브영)의 주소가 남아 있으면 안 된다');
+  } finally {
+    removePlace('home');
+  }
+});
+
+test('저장해 둔 곳이 없으면 채팅으로 목적지를 바꿀 수 없다 — 좌표를 모르면 경로를 못 그린다', () => {
+  const before = fresh();
+  const s = planReducer(before, {
+    type: 'APPLY_INTENT',
+    intent: {
+      resetStops: false,
+      stops: [],
+      endpoints: { destination: '집' },
+      order: 'auto',
+      arriveBy: null,
+      mode: null,
+      reject: null,
+      ambiguous: [],
+    },
+  });
+  assert.equal(s.destinationName, before.destinationName);
+  assert.equal(s.destinationCoord, before.destinationCoord);
+});
+
+test("짧은 라벨이 긴 말을 삼키지 않는다 — '포장마차집'은 집이 아니다", () => {
+  const { savePlace } = require('../lib/placesStore') as typeof import('../lib/placesStore');
+  // 이 파일의 마지막 테스트라 savePlace 뒤 정리(removePlace)를 생략했다 — 뒤에 아무도
+  // 이 상태를 물려받지 않는다. 아래에 테스트를 더 붙인다면 위의 '채팅이 목적지를
+  // 바꾸면...' 테스트처럼 finally에서 removePlace로 지워야 한다: placesStore는
+  // 모듈 싱글턴이라 캐시가 이 파일 전체에서 이어지고, 정리를 빼먹으면 다음 테스트가
+  // 왜 깨지는지 한참 헤매게 된다.
+  savePlace({
+    id: 'home', slot: 'home', label: '집', name: '여의도 자이',
+    address: '서울 영등포구 여의도동', coord: { latitude: 37.5219, longitude: 126.9245 }, createdAt: 1,
+  });
+  const intent = (destination: string) => ({
+    resetStops: false, stops: [], endpoints: { destination },
+    order: 'auto' as const, arriveBy: null, mode: null, reject: null, ambiguous: [],
+  });
+
+  const wrong = planReducer(fresh(), { type: 'APPLY_INTENT', intent: intent('포장마차집') });
+  assert.equal(wrong.destinationName, null, "'집'으로 끝난다고 집으로 보내면 안 된다");
+
+  const right = planReducer(fresh(), { type: 'APPLY_INTENT', intent: intent('집') });
+  assert.equal(right.destinationName, '집', '완전 일치는 한 글자라도 잡는다');
+  assert.equal(right.destinationAddress, '서울 영등포구 여의도동', '주소도 같이 갈아 끼운다');
+
+  const byName = planReducer(fresh(), { type: 'APPLY_INTENT', intent: intent('여의도자이') });
+  assert.equal(byName.destinationName, '여의도 자이', '상호로도, 띄어쓰기가 달라도 걸린다');
+});

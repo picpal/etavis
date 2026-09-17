@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
-import { Chevron, GearIcon, PersonIcon, TabIcon } from './primitives';
+import { BookmarkIcon, Chevron, GearIcon, PersonIcon, TabIcon } from './primitives';
 import { Card, haptic } from './common';
 import { Sheet } from './Sheet';
 import type { RootStackParamList } from '../../App';
@@ -60,7 +60,7 @@ export function TabBar() {
   const activeKey: TabKey =
     route.name === 'Today' ? 'today'
     : route.name === 'Nearby' ? 'nearby'
-    : route.name === 'History' || route.name === 'Settings' ? 'more'
+    : route.name === 'History' || route.name === 'Settings' || route.name === 'MyPlaces' ? 'more'
     : 'plan';
 
   const go = (target: keyof RootStackParamList) => {
@@ -132,7 +132,7 @@ export function TabBar() {
         onPick={target => {
           setMoreOpen(false);
           if (route.name === target) return;
-          if (target === 'Settings') navigation.navigate('Settings');
+          if (target === 'Settings' || target === 'MyPlaces') navigation.navigate(target);
           else go(target);
         }}
       />
@@ -146,12 +146,13 @@ type MoreItem = {
   target?: keyof RootStackParamList;
   label: string;
   note: string;
-  icon: 'person' | 'history' | 'gear';
+  icon: 'person' | 'places' | 'history' | 'gear';
 };
 
 const MORE_ITEMS: MoreItem[] = [
   // 프로필은 아직 화면이 없다. 자리만 잡아두고 준비 중임을 그대로 표시한다
   { key: 'profile', label: '내 프로필', note: '닉네임 · 제보와 받은 고마움', icon: 'person' },
+  { key: 'places', target: 'MyPlaces', label: '내 장소', note: '집 · 회사 · 자주 가는 곳', icon: 'places' },
   { key: 'history', target: 'History', label: '이동 기록', note: '지난 이동과 그때의 계획', icon: 'history' },
   { key: 'settings', target: 'Settings', label: '설정', note: '이동수단 · 지도 앱 · 알림', icon: 'gear' },
 ];
@@ -210,6 +211,8 @@ function MoreSheet({
                       <GearIcon size={20} tint={tint} />
                     ) : item.icon === 'person' ? (
                       <PersonIcon size={20} tint={tint} />
+                    ) : item.icon === 'places' ? (
+                      <BookmarkIcon size={20} tint={tint} />
                     ) : (
                       <TabIcon name="history" size={20} tint={tint} />
                     )}

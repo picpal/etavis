@@ -9,19 +9,35 @@
  * 0건이 곧 경유지 증발이라는 걸 2026-09-16 에 이미 한 번 겪었다
  * (`샌드위치 파는 카페` → 0건 → 계획에서 통째로 사라짐).
  */
+import { haversineM } from './geo';
 import { projectOnCorridor } from './routePlan/corridor';
 import type { LatLng, Mode, NearSide } from './routePlan/types';
 
 /**
- * 진행률 경계. end 는 s ≥ 0.6, start 는 s ≤ 0.4 다.
- * 가운데 0.4~0.6 은 어느 쪽도 아니다 — 애매한 자리를 양쪽에 다 넣으면 제약이 아니게 된다.
+ * 완화 단계. 좁은 쪽부터.
+ *
+ * 왜 진행률(`s`)이 아닌가: `s` 는 비율이라 경로 길이에 따라 뜻이 달라진다.
+ * 2km 경로의 `s ≥ 0.6` 은 마지막 800m 지만 40km 경로에서는 마지막 16km 다.
+ * 16km 떨어진 마트는 목적지 근처가 아니다.
+ *
+ * 1500m 은 `corridorSearch.ts` 의 `ANCHOR_MAX_M` 과 같은 값이다 — 거기서 이미
+ * "이걸 넘으면 역 근처가 아니라 별개의 경유다"라는 선을 긋고 있다.
  */
-export const NEAR_SPLIT_S = 0.6;
+export const NEAR_RADII_M = [1500, 3000] as const;
 
-/** s = 직행 폴리라인 위 진행 비율(0=출발지, 1=목적지). `routePlan/corridor.ts` 가 계산한다 */
-export function matchesNear(near: NearSide, s: number): boolean {
+/**
+ * 이 후보가 그쪽 끝에 있나. **검색·컷·필터 네 자리가 전부 이 함수를 쓴다** —
+ * 기준이 갈리면 검색이 애써 채운 것을 필터가 버린다(설계 §5.1).
+ */
+export function matchesNear(
+  near: NearSide,
+  coord: LatLng,
+  origin: LatLng,
+  destination: LatLng,
+  radiusM: number,
+): boolean {
   if (near === 'any') return true;
-  return near === 'end' ? s >= NEAR_SPLIT_S : s <= 1 - NEAR_SPLIT_S;
+  return haversineM(near === 'end' ? destination : origin, coord) <= radiusM;
 }
 
 /** 부담의 유무. 정도는 재지 않는다 — '생수 한 병'과 '장바구니 가득'을 나누면 태그가 흔들린다 */

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyNear, decideNear, matchesNear } from './nearSide.ts';
+import { applyNear, decideNear, matchesNear, NEAR_RADII_M } from './nearSide.ts';
 import type { Load, NeedWhen } from './nearSide.ts';
 import type { LatLng, Mode, NearSide } from './routePlan/types.ts';
 
@@ -12,20 +12,30 @@ const startSide = c('s1', 127.01); // s ≈ 0.1
 const middle = c('m1', 127.05);    // s ≈ 0.5
 const endSide = c('e1', 127.09);   // s ≈ 0.9
 
-test("matchesNear — 'any' 는 어디든 통과한다", () => {
-  assert.equal(matchesNear('any', 0), true);
-  assert.equal(matchesNear('any', 0.5), true);
-  assert.equal(matchesNear('any', 1), true);
+test('절대 거리 — 짧은 경로에서 목적지 1km 안은 end 다', () => {
+  const o = at(127.0), d = at(127.02); // 약 1.77km
+  assert.equal(matchesNear('end', at(127.019), o, d, 1500), true);
+  assert.equal(matchesNear('end', at(127.0), o, d, 1500), false);
 });
 
-test("matchesNear — end 는 0.6 부터, start 는 0.4 까지. 가운데는 어느 쪽도 아니다", () => {
-  assert.equal(matchesNear('end', 0.6), true);
-  assert.equal(matchesNear('end', 0.59), false);
-  assert.equal(matchesNear('start', 0.4), true);
-  assert.equal(matchesNear('start', 0.41), false);
-  // 0.5 는 양쪽 다 거절한다 — 애매한 자리를 양쪽에 다 넣으면 제약이 아니게 된다
-  assert.equal(matchesNear('end', 0.5), false);
-  assert.equal(matchesNear('start', 0.5), false);
+test('절대 거리 — 긴 경로에서 진행률 0.6 지점은 end 가 아니다', () => {
+  const o = at(127.0), d = at(127.5); // 약 44km. s=0.6 은 127.3
+  assert.equal(matchesNear('end', at(127.3), o, d, 1500), false);
+  assert.equal(matchesNear('end', at(127.495), o, d, 1500), true);
+});
+
+test('start 는 출발지 기준이다', () => {
+  const o = at(127.0), d = at(127.5);
+  assert.equal(matchesNear('start', at(127.005), o, d, 1500), true);
+  assert.equal(matchesNear('start', at(127.3), o, d, 1500), false);
+});
+
+test('any 는 언제나 통과한다', () => {
+  assert.equal(matchesNear('any', at(127.3), at(127.0), at(127.5), 1500), true);
+});
+
+test('반경 단계는 넓어지는 순서다', () => {
+  assert.deepEqual([...NEAR_RADII_M], [1500, 3000]);
 });
 
 test("applyNear('end') — 목적지 쪽 후보만 남는다", () => {

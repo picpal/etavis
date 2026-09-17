@@ -44,9 +44,10 @@ test('버전을 내리면 막는다 — 같은 빌드 번호 공간으로 되돌
   );
 });
 
-test('--downgrade 면 버전을 내릴 수 있다 — 1.0.x 를 0.x 로 되돌린 적이 있다', () => {
-  /* 정식 출시가 아닌데 1.0.0 으로 나가서 0.1.0 으로 내렸다(2026-09-17).
-     내리는 걸 막는 게 아니라 모르고 내리는 걸 막는 가드다 */
+test('--downgrade 면 버전을 내릴 수 있다', () => {
+  /* 내리는 걸 막는 게 아니라 모르고 내리는 걸 막는 가드다.
+     TestFlight 에서 실제로 내려 봤다가 테스터에게 안 가서 되돌렸지만
+     (release.mjs 머리말), 탈출구 자체는 남겨 둔다 */
   assert.doesNotThrow(() =>
     assertReleasable({ ...ok, currentVersion: '1.0.3', nextVersion: '0.1.0', allowDowngrade: true }),
   );

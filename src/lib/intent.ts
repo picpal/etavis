@@ -29,6 +29,11 @@ export type IntentStop = {
       타입을 import 하지 않고 인라인으로 둔다: 이 파일은 서버 스키마의 목 사본이라
       `kind` 도 같은 방식이고, 로컬 import 가 없어야 run-cases.mjs 의 flat 컴파일이 선다 */
   near: 'start' | 'end' | 'any';
+  /** 목은 물성을 추론하지 않는다 — 언제나 보수적 기본값이다. 진짜 판단은 LLM 몫이고,
+      목이 찍으면 서버가 죽었을 때 없던 제약이 생긴다 */
+  loadBefore: 'none' | 'hard';
+  loadAfter: 'none' | 'hard';
+  needWhen: 'beforeArrival' | 'afterArrival' | 'unknown';
 };
 
 export type Intent = {
@@ -238,7 +243,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
       return {
         ...base,
         stops: [
-          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any' },
+          { op: 'remove', queries: [gone], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any', loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown' },
           ...add,
         ],
       };
@@ -251,7 +256,7 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     if (target) {
       return {
         ...base,
-        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any' }],
+        stops: [{ op: 'remove', queries: [target], kind: 'specific', why: '', count: 1, flexible: false, openNow: false, prefers: [], near: 'any', loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown' }],
       };
     }
   }
@@ -346,6 +351,9 @@ function extractStops(text: string, openNow: boolean, count: number, near: 'star
       openNow,
       prefers: [],
       near,
+      loadBefore: 'none',
+      loadAfter: 'none',
+      needWhen: 'unknown',
     });
   }
 
@@ -353,7 +361,7 @@ function extractStops(text: string, openNow: boolean, count: number, near: 'star
     if (!cat.keys.some(k => text.includes(k))) continue;
     if (cat.queries.some(q => seen.has(q))) continue;
     cat.queries.forEach(q => seen.add(q));
-    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [], near });
+    found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [], near, loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown' });
   }
   return found;
 }

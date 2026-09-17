@@ -2,13 +2,18 @@
  * 경유지 목록 — 추천 경로(A5)의 본문. 행: 순번 · 이름 · 도착 시각(늦으면 '빼면 언제 도착') · 후보 셰브론.
  *
  * 왜: 이 화면의 질문은 "언제 도착하나, 뭘 바꾸면 되나" 둘뿐이다. 3안 선택은 뺐다.
- * 행을 왼쪽으로 밀면 빼기(바로 다시 계산), 탭하면 후보 팝업에서 다른 매장(고르면 다시 계산).
+ * 행을 왼쪽으로 밀면 빼기, 탭하면 후보 팝업에서 다른 매장(고르면 바로 반영).
  * 늦을 때는 행마다 '빼면 언제 도착'만 적는다 — 무엇을 뺄지는 사용자가 정한다.
+ *
+ * **빼기는 그 자리에서 계산하지 않는다.** 뺀 행은 지우지 않고 흐리게 남겨 '뺄 예정'으로
+ * 두고, 실제 재계산은 화면 아래 '다시 계산'을 누를 때 한 번만 한다. 예전에는 한 곳 뺄
+ * 때마다 검색부터 전부 다시 돌아서(외부 호출 약 30회) 남아 있던 후보까지 다른 곳으로
+ * 갈렸다 — 경유지가 줄면 회랑이 바뀌고, 회랑이 바뀌면 검색 앵커가 움직이기 때문이다.
  */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import { color, type } from '../theme/tokens';
+import { color, HIT_SLOP, type } from '../theme/tokens';
 import { Card, haptic } from './common';
 import { Chevron, Hairline } from './primitives';
 import { toHHMM } from '../state/plan';
@@ -19,6 +24,7 @@ const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 
 export function StopList({
   result, visits, arrivals, slots, departAtMin, arriveByMin, late, approx, onPick, onRemove,
+  pendingRemove, onUndoRemove,
 }: {
   result: PlanResult;
   visits: Visit[];
@@ -31,30 +37,42 @@ export function StopList({
   approx: string;
   onPick: (slotId: string) => void;
   onRemove: (slotId: string) => void;
+  /** 뺄 예정인 행. 아직 계획에서 지운 게 아니라 '다시 계산'을 누를 때 반영된다 */
+  pendingRemove: string[];
+  onUndoRemove: (slotId: string) => void;
 }) {
+  const left = visits.length - pendingRemove.length;
   return (
     <View style={{ gap: 8 }}>
-      <Text style={[type.label, { color: color.muted }]}>경유지 {visits.length}곳</Text>
+      <Text style={[type.label, { color: color.muted }]}>
+        경유지 {left}곳{pendingRemove.length > 0 ? ` · ${pendingRemove.length}곳 뺌` : ''}
+      </Text>
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             {visits.map((v, k) => {
+              const pending = pendingRemove.includes(v.slotId);
               const alts = (slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
               const st = result.slotStatus[v.slotId];
               const statusText = st && st !== 'ok' ? SLOT_STATUS_TEXT[st] : null;
-              // 늦을 때만: 이 경유지를 빼면 언제 도착하나 (rescore는 부분 집합에도 동작)
-              const without = late ? result.rescore(visits.filter((_, j) => j !== k)) : null;
+              /* 늦을 때만: 이 경유지를 빼면 언제 도착하나 (rescore는 부분 집합에도 동작).
+                 이미 뺄 예정인 행에는 붙이지 않는다 — 뺀 뒤의 시각을 뺀 행에 적으면 앞뒤가 안 맞는다 */
+              const without = late && !pending ? result.rescore(visits.filter((_, j) => j !== k)) : null;
               const withoutArrive = without ? departAtMin + without.totalMin : null;
               const withoutSlack = withoutArrive != null && arriveByMin != null ? Math.round(arriveByMin - withoutArrive) : null;
               return (
                 <React.Fragment key={v.slotId}>
                   {k > 0 && <Hairline style={{ marginLeft: 16 }} />}
                   <ReanimatedSwipeable
+                    enabled={!pending}
                     friction={2}
                     rightThreshold={32}
                     overshootRight={false}
-                    renderRightActions={() => (
+                    /* 세 번째 인자로 이 행의 제어권이 온다. 빼기는 행을 지우는 게 아니라
+                       흐리게 남기는 동작이라, 직접 닫지 않으면 열린 채로 굳는다 —
+                       이름과 '되돌리기'가 빨간 버튼에 밀려 잘린다 */
+                    renderRightActions={(_progress, _translation, methods) => (
                       <View style={{ justifyContent: 'center', paddingHorizontal: 8 }}>
                         <Pressable
-                          onPress={() => { haptic(); onRemove(v.slotId); }}
+                          onPress={() => { haptic(); methods.close(); onRemove(v.slotId); }}
                           accessibilityLabel={`${v.candidate.name} 빼기`}
                           style={({ pressed }) => ({ minWidth: 56, height: 40, paddingHorizontal: 12, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: color.danger, opacity: pressed ? 0.7 : 1 })}
                         >
@@ -64,23 +82,46 @@ export function StopList({
                     )}
                   >
                     <Pressable
-                      disabled={alts === 0}
+                      disabled={alts === 0 || pending}
                       onPress={() => { haptic(); onPick(v.slotId); }}
                       style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16, backgroundColor: pressed ? color.bg : color.surface })}
                     >
-                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}>
-                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>{k + 1}</Text>
+                      <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: pending ? color.track : color.primaryTint, alignItems: 'center', justifyContent: 'center', opacity: pending ? 0.6 : 1 }}>
+                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: pending ? color.muted : color.primary }}>{k + 1}</Text>
                       </View>
                       <View style={{ flex: 1, gap: 5 }}>
-                        <Text numberOfLines={1} style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>{v.candidate.name}</Text>
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19,
+                            color: pending ? color.muted : color.ink,
+                            textDecorationLine: pending ? 'line-through' : 'none',
+                          }}
+                        >
+                          {v.candidate.name}
+                        </Text>
                         {/* 도착 시각 배지 — 이름 다음에 바로 읽히게 이름 아래 줄, 초록 */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          {/* '도착'이 먼저 읽히고 시각이 굵게 — 숫자만 보이면 무슨 시각인지 모른다 */}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.greenBg }}>
-                            <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 14, color: color.green, opacity: 0.85 }}>도착</Text>
-                            <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 14, lineHeight: 16, color: color.green }}>{approx}{hhmm(arrivals[k])}</Text>
-                          </View>
-                          {statusText && <Text style={[type.caption, { color: color.amberDeep }]}>{statusText}</Text>}
+                          {pending ? (
+                            /* 도착 시각 자리에 되돌리기를 둔다 — 뺀 행에 초록 도착 배지가 남아 있으면
+                               뺐다는 것과 정면으로 어긋난다. 되돌릴 길은 이 행 안에 있어야 한다 */
+                            <Pressable
+                              onPress={() => { haptic(); onUndoRemove(v.slotId); }}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${v.candidate.name} 되돌리기`}
+                              hitSlop={HIT_SLOP}
+                              style={({ pressed }) => ({ paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.primaryTint, opacity: pressed ? 0.7 : 1 })}
+                            >
+                              <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>되돌리기</Text>
+                            </Pressable>
+                          ) : (
+                            /* '도착'이 먼저 읽히고 시각이 굵게 — 숫자만 보이면 무슨 시각인지 모른다 */
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: color.greenBg }}>
+                              <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 14, color: color.green, opacity: 0.85 }}>도착</Text>
+                              <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 14, lineHeight: 16, color: color.green }}>{approx}{hhmm(arrivals[k])}</Text>
+                            </View>
+                          )}
+                          {statusText && !pending && <Text style={[type.caption, { color: color.amberDeep }]}>{statusText}</Text>}
                         </View>
                         {withoutArrive != null && withoutSlack != null && (
                           <Text style={[type.caption, { color: withoutSlack >= 0 ? color.green : color.muted }]}>
@@ -88,7 +129,7 @@ export function StopList({
                           </Text>
                         )}
                       </View>
-                      {alts > 0 && <Chevron size={9} thickness={2} color={color.stroke} dir="right" />}
+                      {alts > 0 && !pending && <Chevron size={9} thickness={2} color={color.stroke} dir="right" />}
                     </Pressable>
                   </ReanimatedSwipeable>
                 </React.Fragment>

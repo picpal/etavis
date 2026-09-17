@@ -1,6 +1,6 @@
 /** A5 — 추천. 답(제시간 도착 여부)이 맨 위, 3안은 그 아래. "최적"이 아니라 "검증한 안 중 최선" */
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
@@ -98,6 +98,12 @@ export function OptionsScreen({ navigation }: Props) {
   const { state } = flow;
   const result = state.result;
   const [pickSlot, setPickSlot] = useState<string | null>(null);
+  /* 뺄 예정인 경유지. 여기 담아만 두고 계획은 '다시 계산'을 누를 때 한 번에 고친다.
+     예전에는 한 곳 뺄 때마다 removeChip → flow.reset → Calculating 이라, 검색부터
+     전부 다시 돌았다(외부 호출 약 30회). 세 곳을 하나씩 빼면 90회였고, 회랑이
+     매번 바뀌어 남아 있던 후보까지 다른 가게로 갈렸다.
+     칩을 실제로 건드리지 않으므로 되돌리기도 공짜다 — 목록에서 빼기만 취소하면 된다 */
+  const [pendingRemove, setPendingRemove] = useState<string[]>([]);
 
   const current = useMemo(
     () => (result ? effectiveVisits(result, state.slots, state.selectedOptionIdx, state.overrides) : null),
@@ -138,10 +144,25 @@ export function OptionsScreen({ navigation }: Props) {
   const stale = request ? flow.isStale(request) : false;
 
   // 완화안도 마감을 못 지킬 수 있다 — 그때 "−3분 여유"라고 쓰면 안 된다
-  /* 경유지 빼기 — 칩을 지우고 바로 다시 계산. 늦을 때 '무엇을 빼야 맞추나'가 이 화면의 질문이다 */
+  /* 경유지 빼기 — 표시만 해 둔다. 늦을 때 '무엇을 빼야 맞추나'가 이 화면의 질문이라
+     여러 곳을 재보게 되는데, 한 번 뺄 때마다 화면이 로딩으로 튀면 비교가 끊긴다 */
   const removeStop = (slotId: string) => {
     haptic();
-    removeChip(slotId);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setPendingRemove(p => (p.includes(slotId) ? p : [...p, slotId]));
+  };
+  const undoRemove = (slotId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setPendingRemove(p => p.filter(id => id !== slotId));
+  };
+
+  /* 조건이 달라진 상태. 여기서 미뤄 둔 빼기와, 이 화면 밖에서 바뀐 것(이동수단·마감·
+     목적지 — isStale 이 본다)을 함께 센다. 사용자에게는 둘 다 '숫자가 옛것'이다 */
+  const dirty = pendingRemove.length > 0 || stale;
+
+  const recalculate = () => {
+    haptic();
+    for (const slotId of pendingRemove) removeChip(slotId);
     flow.reset();
     navigation.replace('Calculating');
   };
@@ -159,15 +180,23 @@ export function OptionsScreen({ navigation }: Props) {
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 18, paddingHorizontal: 20, paddingBottom: 20, gap: 14 }}>
-        {stale && (
-          <Pressable onPress={() => { haptic(); flow.reset(); navigation.replace('Calculating'); }}
-            style={{ backgroundColor: color.amberBg, borderRadius: 14, padding: 14 }}>
-            <Text style={[type.body, { color: color.amberDeep }]}>조건이 바뀌었어요 · 다시 계산</Text>
-          </Pressable>
+        {/* 왜 아래 숫자가 흐린지 말해 준다. 누르는 자리는 아니다 —
+            다시 계산은 하단 기본 버튼 하나로 모았다. 같은 동작이 두 군데 있으면
+            어느 쪽이 '진짜'인지 사용자가 고민하게 된다 */}
+        {dirty && (
+          <View style={{ backgroundColor: color.amberBg, borderRadius: 14, padding: 14 }}>
+            <Text style={[type.body, { color: color.amberDeep }]}>
+              {pendingRemove.length > 0
+                ? `경유지 ${pendingRemove.length}곳을 뺐어요 · 아래 '다시 계산'을 눌러야 시간이 바뀌어요`
+                : "조건이 바뀌었어요 · 아래 '다시 계산'을 눌러주세요"}
+            </Text>
+          </View>
         )}
 
-        {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로 */}
-        <View style={{ gap: 10, paddingHorizontal: 2, paddingTop: 2 }}>
+        {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로.
+            조건이 달라졌으면 흐리게 — 지우지는 않는다. 무엇과 견줘 뺐는지가 이 숫자라
+            사라지면 비교 기준이 없어진다. 대신 현재값처럼 읽히지 않게 힘을 뺀다 */}
+        <View style={{ gap: 10, paddingHorizontal: 2, paddingTop: 2, opacity: dirty ? 0.4 : 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
             {/* 답은 항상 도착 시각. 마감이 있으면 옆에 '여유'/'늦어요' 한마디 — 늦으면 시각도 붉게.
                 추정이면 판정을 내지 않는다 — 추정치 위의 "여유"는 거짓 정밀도다 */}
@@ -223,11 +252,20 @@ export function OptionsScreen({ navigation }: Props) {
           approx={approx}
           onPick={slotId => { setPickSlot(slotId); }}
           onRemove={removeStop}
+          pendingRemove={pendingRemove}
+          onUndoRemove={undoRemove}
         />
       </ScrollView>
 
       <View style={{ backgroundColor: color.surface, borderTopWidth: 1, borderTopColor: color.hairline, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 16, gap: 10 }}>
-        <PrimaryButton label={`${approx}${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
+        {/* 조건이 달라졌으면 '다시 계산', 계산이 끝난 뒤에야 '경로로 계속'.
+            버튼 하나가 두 가지 일을 번갈아 맡는다 — 옛 숫자를 그대로 확정해 버리는
+            길을 아예 없애려면 같은 자리에 있어야 한다 */}
+        {dirty ? (
+          <PrimaryButton label="다시 계산" chevron height={56} borderRadius={18} onPress={recalculate} />
+        ) : (
+          <PrimaryButton label={`${approx}${hhmm(arriveMin)} 도착 경로로 계속`} chevron height={56} borderRadius={18} onPress={confirm} />
+        )}
         <Pressable onPress={() => { haptic(); navigation.popTo('Plan'); }} hitSlop={{ top: 8, bottom: 12, left: 20, right: 20 }}>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
             확정 전이라 언제든 대화로 바꿀 수 있어요 · <Text style={{ fontFamily: 'Pretendard-SemiBold', color: color.primary }}>대화로 바꾸기</Text>

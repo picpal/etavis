@@ -339,6 +339,12 @@ const googleProvider: PlaceSearchProvider = {
 let searchDegraded = false;
 export const isSearchDegraded = () => searchDegraded;
 
+/* 래퍼를 호출마다 새로 만들면 placesFallback 의 회로차단기 상태(downUntil)가 매번
+   리셋된다 — planSearchFn 이 반경 루프 라운드마다 getProvider 를 다시 부르므로
+   차단기가 프로덕션에서 무력해진다. primary 는 모듈 싱글턴 셋 중 하나라 그걸 키로
+   잡아 재사용한다. hasServer()·googlePlacesKey 는 런타임에 안 바뀐다. */
+const wrapped = new Map<PlaceSearchProvider, PlaceSearchProvider>();
+
 export function getProvider(near: LatLng | null): PlaceSearchProvider {
   const wanted = regionProviderKey(near);
   const pick = (): PlaceSearchProvider => {
@@ -348,14 +354,19 @@ export function getProvider(near: LatLng | null): PlaceSearchProvider {
     if (googlePlacesKey) return googleProvider;
     return mockProvider;
   };
+  const primary = pick();
+  const cached = wrapped.get(primary);
+  if (cached) return cached;
   /* 웹 데모에서만 목으로 받아낸다. 네이티브는 실패 배너가 정직하다 — placesFallback.ts 주석 참고.
      DestinationSheet 도 planSearchFn 도 이 함수를 지나므로 배선은 여기 한 곳이면 된다. */
-  return withMockFallback(pick(), mockProvider, {
+  const result = withMockFallback(primary, mockProvider, {
     enabled: Platform.OS === 'web',
     onFallback: () => {
       searchDegraded = true;
     },
   }) as PlaceSearchProvider;
+  wrapped.set(primary, result);
+  return result;
 }
 
 /** 플래너용 검색 함수 — Place를 PlaceCandidate로. hours는 아직 없다(다음 계획) */

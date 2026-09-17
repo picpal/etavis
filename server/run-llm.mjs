@@ -22,8 +22,16 @@ import { scoreCase, summarize, CHECKED_KEYS } from './case-score.mjs';
 const argv = process.argv.slice(2);
 const gi = argv.indexOf('--group');
 const ONLY = gi >= 0 ? argv[gi + 1] : null;
-// gi 가 -1 일 때 gi+1 은 0 이다 — 가드 없이 쓰면 그룹을 안 줬을 때 batchSize 를 잡아먹는다
-const pos = argv.filter((a, i) => !a.startsWith('--') && !(gi >= 0 && i === gi + 1));
+const ri = argv.indexOf('--repeat');
+const REPEAT = ri >= 0 ? Math.max(1, Number(argv[ri + 1]) || 1) : 1;
+// gi/ri 가 -1 일 때 +1 은 0 이 되어버린다 — [gi, gi+1, ...].filter(i => i >= 0) 로 쓰면
+// 플래그가 아예 없을 때도 0 이 살아남아 위치 인자 0번(batchSize)을 잡아먹는다.
+// gi/ri 자체가 -1 인 경우는 +1 도 통째로 걸러야 한다.
+const skip = new Set([
+  ...(gi >= 0 ? [gi, gi + 1] : []),
+  ...(ri >= 0 ? [ri, ri + 1] : []),
+]);
+const pos = argv.filter((a, i) => !a.startsWith('--') && !skip.has(i));
 const BATCH = Number(pos[0] ?? 40);
 const MODEL = pos[1] ?? 'gpt-5.6-sol';
 
@@ -128,30 +136,36 @@ function toIntent(out) {
   };
 }
 
-const got = {};
+const runs = [];
 let totalTokens = 0;
 // 배치 하나 = codex 호출 하나. 몇 번 태웠는지는 보고에 꼭 남긴다
 let calls = 0;
 
-for (let i = 0; i < all.length; i += BATCH) {
-  const chunk = all.slice(i, i + BATCH);
-  process.stderr.write(`배치 ${i / BATCH + 1} — ${chunk.length}건 요청 중...\n`);
-  const { text, tokens } = callModel(buildPrompt(chunk));
-  calls++;
-  totalTokens += tokens;
-  let n = 0;
-  for (const line of text.split('\n')) {
-    if (!line.trim().startsWith('{')) continue;
-    try {
-      const o = JSON.parse(line);
-      if (o.i != null && o.out) {
-        got[o.i] = o.out;
-        n++;
-      }
-    } catch {}
+for (let rep = 0; rep < REPEAT; rep++) {
+  const got = {};
+  for (let i = 0; i < all.length; i += BATCH) {
+    const chunk = all.slice(i, i + BATCH);
+    const repTag = REPEAT > 1 ? `회차 ${rep + 1}/${REPEAT} · ` : '';
+    process.stderr.write(`${repTag}배치 ${i / BATCH + 1} — ${chunk.length}건 요청 중...\n`);
+    const { text, tokens } = callModel(buildPrompt(chunk));
+    calls++;
+    totalTokens += tokens;
+    let n = 0;
+    for (const line of text.split('\n')) {
+      if (!line.trim().startsWith('{')) continue;
+      try {
+        const o = JSON.parse(line);
+        if (o.i != null && o.out) {
+          got[o.i] = o.out;
+          n++;
+        }
+      } catch {}
+    }
+    process.stderr.write(`  ${repTag}응답 ${n}/${chunk.length} · ${tokens} 토큰\n`);
   }
-  process.stderr.write(`  응답 ${n}/${chunk.length} · ${tokens} 토큰\n`);
+  runs.push(got);
 }
+const got = runs[0]; // 채점은 1회차 기준. 흔들림은 아래에서 따로 센다
 
 // 채점은 목·서버 러너와 같은 자로 한다. 무응답은 채점 대상이 아니라 별도로 센다
 const scored = all.map(c => ({ c, r: got[c.__i] ? scoreCase(c, toIntent(got[c.__i])) : null }));
@@ -191,6 +205,31 @@ console.log('\n그룹별 (실패 / 미검증 / 전체)');
 for (const [g, v] of Object.entries(sum.byGroup)) {
   const mark = v.bad === 0 ? (v.un ? '⚠️ ' : '✅') : '❌';
   console.log(`  ${mark} ${g.padEnd(10)} ${v.bad} / ${v.un} / ${v.n}`);
+}
+
+if (REPEAT > 1) {
+  const TAGS = ['near', 'loadBefore', 'loadAfter', 'needWhen'];
+  const unstable = {};
+  for (const t of TAGS) unstable[t] = 0;
+  let counted = 0;
+  for (const cs of all) {
+    const vals = runs.map(r => {
+      const o = r[cs.__i];
+      if (!o) return null;
+      const s = (o.stops ?? [])[0] ?? {};
+      return TAGS.map(t => s[t] ?? '-').join('|');
+    });
+    if (vals.some(v => v === null)) continue;
+    counted++;
+    const perTag = TAGS.map((_, k) => new Set(vals.map(v => v.split('|')[k])).size);
+    perTag.forEach((n, k) => { if (n > 1) unstable[TAGS[k]]++; });
+  }
+  console.log(`\n흔들림 (${REPEAT}회 반복 · ${counted}건)`);
+  for (const t of TAGS) {
+    const pct = counted ? Math.round((unstable[t] / counted) * 100) : 0;
+    console.log(`  ${t.padEnd(11)} 불일치 ${unstable[t]}/${counted} (${pct}%)`);
+  }
+  console.log('  판정: 20% 를 넘으면 설계 §13 의 후퇴(needWhen 제거)를 검토한다');
 }
 console.log(`\n전체 ${rows.length} · 통과 ${c('통과')} · 실패 ${c('실패')} · 미검증 ${c('미검증')} · 무응답 ${c('무응답')}`);
 console.log('\n--- 실패 ---');

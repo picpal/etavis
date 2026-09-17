@@ -132,6 +132,12 @@ const mockProvider: PlaceSearchProvider = {
 
 export const kakaoRestKey: string = (Constants.expoConfig?.extra?.kakaoRestKey as string | undefined)?.trim() ?? '';
 
+/** 서버가 있으면 카카오 로컬을 쓸 수 있다 — 키는 서버에만 있다 */
+const hasServer = (): boolean => {
+  const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
+  return !!extra.serverUrl?.trim() && !!extra.appToken?.trim();
+};
+
 /** 장소(POI) 검색 결과 */
 type KakaoKeywordDoc = {
   id: string;
@@ -154,12 +160,51 @@ type KakaoAddressDoc = {
   y: string;
 };
 
+/**
+ * 카카오 로컬 — Workers /places 프록시를 지난다.
+ *
+ * 예전엔 dapi.kakao.com 을 직접 불렀다. 카카오 REST 키는 도메인 제한이 안 걸려서
+ * 공개 웹 번들에 박히면 누구나 무제한으로 쓴다. 이제 키는 서버에만 있고,
+ * 이 호출은 guard 의 분당·일일 상한 안으로 들어온다.
+ *
+ * 5초에 끊는다 — runPlan 의 전체 예산이 12초라 프록시가 느려지면 계획이 통째로 죽는다.
+ * 실패는 그대로 던진다. 받아내는 건 placesFallback 의 몫이다(웹에서만).
+ */
+const PLACES_TIMEOUT_MS = 5000;
+
 async function kakaoFetch(kind: 'keyword' | 'address', params: URLSearchParams) {
-  const res = await fetch(`https://dapi.kakao.com/v2/local/search/${kind}.json?${params}`, {
-    headers: { Authorization: `KakaoAK ${kakaoRestKey}` },
-  });
-  if (!res.ok) throw new Error(`kakao ${kind} ${res.status}`);
-  return res.json();
+  const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
+  const baseUrl = extra.serverUrl?.trim();
+  const appToken = extra.appToken?.trim();
+  if (!baseUrl || !appToken) throw new Error('places: 서버 없음');
+
+  const num = (k: string) => (params.get(k) == null ? undefined : Number(params.get(k)));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), PLACES_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/places`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-app-token': appToken,
+        'x-device-id': Constants.sessionId ?? 'unknown',
+      },
+      body: JSON.stringify({
+        kind,
+        query: params.get('query') ?? '',
+        x: num('x'),
+        y: num('y'),
+        radius: num('radius'),
+        size: num('size'),
+        categoryCode: params.get('category_group_code') ?? undefined,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`places ${kind} ${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const kakaoProvider: PlaceSearchProvider = {
@@ -298,10 +343,9 @@ export const isSearchDegraded = () => searchDegraded;
 export function getProvider(near: LatLng | null): PlaceSearchProvider {
   const wanted = regionProviderKey(near);
   const pick = (): PlaceSearchProvider => {
-    if (wanted === 'kakao' && kakaoRestKey) return kakaoProvider;
+    if (wanted === 'kakao' && hasServer()) return kakaoProvider;
     if (wanted === 'google' && googlePlacesKey) return googleProvider;
-    // 원하는 쪽 키가 없으면 있는 쪽이라도 쓴다 (해외에서 구글 키가 없을 때 등)
-    if (kakaoRestKey) return kakaoProvider;
+    if (hasServer()) return kakaoProvider;
     if (googlePlacesKey) return googleProvider;
     return mockProvider;
   };

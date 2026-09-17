@@ -334,6 +334,11 @@ test('저장해 둔 곳이 없으면 채팅으로 목적지를 바꿀 수 없다
 
 test("짧은 라벨이 긴 말을 삼키지 않는다 — '포장마차집'은 집이 아니다", () => {
   const { savePlace } = require('../lib/placesStore') as typeof import('../lib/placesStore');
+  // 이 파일의 마지막 테스트라 savePlace 뒤 정리(removePlace)를 생략했다 — 뒤에 아무도
+  // 이 상태를 물려받지 않는다. 아래에 테스트를 더 붙인다면 위의 '채팅이 목적지를
+  // 바꾸면...' 테스트처럼 finally에서 removePlace로 지워야 한다: placesStore는
+  // 모듈 싱글턴이라 캐시가 이 파일 전체에서 이어지고, 정리를 빼먹으면 다음 테스트가
+  // 왜 깨지는지 한참 헤매게 된다.
   savePlace({
     id: 'home', slot: 'home', label: '집', name: '여의도 자이',
     address: '서울 영등포구 여의도동', coord: { latitude: 37.5219, longitude: 126.9245 }, createdAt: 1,

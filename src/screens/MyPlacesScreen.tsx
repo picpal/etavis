@@ -4,7 +4,7 @@
  * 집·회사는 비어 있어도 자리를 지킨다. 점선 카드가 "여기 등록하라"는 표시다 —
  * 목록 맨 위 두 자리가 늘 같은 자리여야 눈이 안 헤맨다.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -15,6 +15,7 @@ import { BookmarkIcon, Chevron } from '../components/primitives';
 import { NavHeader } from '../components/NavHeader';
 import { usePlaces } from '../lib/usePlaces';
 import type { SavedPlace } from '../lib/placesFormat';
+import { MyPlaceEditSheet } from '../sheets/MyPlaceEditSheet';
 import type { RootStackParamList } from '../../App';
 
 const SLOT_LABEL = { home: '집', work: '회사' } as const;
@@ -25,9 +26,17 @@ export function MyPlacesScreen() {
   const insets = useSafeAreaInsets();
   const places = usePlaces();
 
-  /* Task 7 에서 이 값으로 편집 시트를 연다. 이 과제에서는 담기만 한다 */
   const [editing, setEditing] = useState<{ place?: SavedPlace; slot?: 'home' | 'work' } | null>(null);
-  void editing;
+
+  /* '집 등록'으로 들어왔으면 시트를 바로 연다 — 한 번만 */
+  const openedPreset = useRef(false);
+  useEffect(() => {
+    const addSlot = route.params?.addSlot;
+    if (addSlot && !openedPreset.current) {
+      openedPreset.current = true;
+      setEditing({ slot: addSlot });
+    }
+  }, [route.params?.addSlot]);
 
   const home = places.saved.find(s => s.slot === 'home');
   const work = places.saved.find(s => s.slot === 'work');
@@ -175,6 +184,13 @@ export function MyPlacesScreen() {
           <Text style={[type.btn, { color: '#fff' }]}>+ 장소 추가</Text>
         </Pressable>
       </View>
+
+      <MyPlaceEditSheet
+        visible={!!editing}
+        onClose={() => setEditing(null)}
+        place={editing?.place}
+        presetSlot={editing?.slot ?? null}
+      />
     </View>
   );
 }

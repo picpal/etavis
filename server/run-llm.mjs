@@ -230,6 +230,27 @@ if (REPEAT > 1) {
     console.log(`  ${t.padEnd(11)} 불일치 ${unstable[t]}/${counted} (${pct}%)`);
   }
   console.log('  판정: 20% 를 넘으면 설계 §13 의 후퇴(needWhen 제거)를 검토한다');
+
+  // 위 비율은 "어느 태그가 흔들리는지"만 말한다. 실행 가능한 건 "어느 문장이,
+  // 어떤 값 사이에서 갈렸는지"다 — "택배 부치기"의 loadBefore 가 갈리면 심각하고,
+  // "밀폐 텀블러 커피"처럼 문장 자체가 애매한 게 갈리면 성격이 다르다. 흔들림이
+  // 실제로 방향(near)까지 바꾸는지는 이 출력을 손으로 decideNear(src/lib/nearSide.ts)
+  // 에 넣어 가린다 — 그 흡수 판정까지는 이 스크립트가 하지 않는다.
+  console.log('\n흔들림 케이스별 상세');
+  for (const cs of all) {
+    const raw = runs.map(r => {
+      const o = r[cs.__i];
+      if (!o) return null;
+      return (o.stops ?? [])[0] ?? {};
+    });
+    if (raw.some(v => v === null)) continue;
+    const flips = TAGS.filter(t => new Set(raw.map(s => s[t] ?? '-')).size > 1);
+    if (flips.length === 0) continue;
+    console.log(`  "${cs.text}"`);
+    for (const t of flips) {
+      console.log(`    ${t}: ${raw.map(s => s[t] ?? '-').join(' → ')}`);
+    }
+  }
 }
 console.log(`\n전체 ${rows.length} · 통과 ${c('통과')} · 실패 ${c('실패')} · 미검증 ${c('미검증')} · 무응답 ${c('무응답')}`);
 console.log('\n--- 실패 ---');

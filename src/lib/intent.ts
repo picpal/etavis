@@ -279,7 +279,18 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     }
   }
 
-  const stops = extractStops(scope, openNow, count, nearFromText(text));
+  const found = extractStops(scope, openNow, count, nearFromText(text));
+
+  /* 이미 계획에 있는 걸 다시 말한 것이면 더하지 않는다.
+     채팅은 여러 턴이고 사람은 같은 말을 고쳐 다시 한다. 그때마다 add 를 내보내면
+     경유지가 대화 단계마다 쌓인다 — 실기기 로그(2026-09-17)에서 '커피 사고 샌드위치'
+     와 '커피와 샌드위치'가 각각 add 로 나가 경유지가 네 곳이 됐고 32분 길이 96분이 됐다.
+     개수를 말했으면(count>1) 손대지 않는다. 그건 정말 여러 곳이라는 뜻이다.
+     프롬프트에도 같은 규칙이 있다(extract-intent.md '이미 계획에 있는 걸 다시 말할 때') */
+  const stops = found.filter(
+    st => !(st.count === 1 && st.queries.some(q => ctx.currentStops.includes(q))),
+  );
+  const droppedAsPlanned = stops.length < found.length;
 
   // 넓은 업종이면 좁힐 선택지를 낸다. 좁은 질의(브랜드·특정 지점)는 묻지 않는다
   for (const st of stops) {
@@ -299,8 +310,11 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     /들르|들러|들렀|들를|갔다|가야|가자|사야|사고|해야|필요|급해|뽑아|넣어|추가|있는 ?데|좀|줘|래|하고 싶|寄り|去|stop by|want/i.test(
       text,
     );
+  /* 이미 있어서 뺀 것은 '못 알아들었다'가 아니다 — 알아들었고, 바꿀 게 없었을 뿐이다.
+     여기를 빼먹으면 정확히 알아들은 문장에 '어디를 들르실지 다시 말씀해 주세요'가 붙는다 */
   const nothingFound =
     stops.length === 0 &&
+    !droppedAsPlanned &&
     base.arriveBy == null &&
     base.mode == null &&
     !base.resetStops &&

@@ -432,6 +432,17 @@ export type PlanAction =
 
 /* 테스트가 부를 수 있게 내보낸다 — plan.tsx 는 react-native 를 물어 node 로 그냥은
    못 읽는다. 스텁을 끼워 읽는 쪽은 plan.test.ts 에 있다(그쪽 주석 참고) */
+/**
+ * 같은 경유지로 볼 질의가 이미 몇 개 서 있나.
+ *
+ * 질의가 하나라도 겹치면 같은 곳으로 본다. `queries` 는 한 경유지를 찾기 위한
+ * 후보들이라(편의점·CU·GS25), 하나라도 겹치면 같은 자리를 두 번 세우는 것이다.
+ * '편의점 들르고 CU도' 를 한 곳으로 보는 기존 규칙과도 같은 잣대다.
+ */
+function countSameStops(chips: IntentChip[], queries: string[]): number {
+  return chips.filter(c => c.kind === 'stop' && c.queries.some(q => queries.includes(q))).length;
+}
+
 export function planReducer(state: PlanState, action: PlanAction): PlanState {
   switch (action.type) {
     case 'SET_DATASET': {
@@ -628,7 +639,13 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
           chips = chips.filter(c => !(c.kind === 'stop' && c.queries.some(q => st.queries.includes(q))));
           continue;
         }
-        for (let k = 0; k < Math.max(1, st.count); k++) {
+        /* 이미 계획에 있는 질의는 다시 세우지 않는다.
+           채팅은 한 번에 안 끝난다. 사용자가 '커피 사고 샌드위치' → (앱이 되물음) →
+           '커피와 샌드위치' 로 같은 말을 고쳐 말하면 추출은 매번 add 2 를 내고,
+           여기서 그대로 밀어 넣어 경유지가 카페·샌드위치·카페·샌드위치 네 곳이 됐다.
+           같은 종류를 정말 여러 곳 원하면 그건 count 로 온다 — 그래서 총 개수까지만 채운다 */
+        const want = Math.max(1, st.count);
+        for (let k = countSameStops(chips, st.queries); k < want; k++) {
           chips.push({
             id: `s-${chipSeq++}`, kind: 'stop', label: st.queries[0], queries: st.queries,
             stopKind: st.kind, openNow: st.openNow, flexible: st.flexible, why: st.why, near: st.near,

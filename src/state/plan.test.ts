@@ -162,3 +162,65 @@ test('아직 가보지 않은 경유지의 제보는 버린다', () => {
   const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: ahead.id, level: 'veryhigh' });
   assert.equal(after, s, '아무것도 안 바뀌면 상태는 같은 참조여야 한다');
 });
+
+/* ── 대화가 길어져도 같은 경유지가 쌓이면 안 된다 ──────────────────────────
+   실기기 로그(2026-09-17 10:43~10:45)에서 나온 일이다.
+     "커피 사고 샌드위치 사서 올라가려고"  → add 카페 · 샌드위치 가게
+     "두개를 한번에 살수있는곳이 있어?"     → 추출 결과 없음(되묻기만)
+     "커피와 샌드위치"                      → add 카페 · 샌드위치 가게  ← 또
+   같은 말을 고쳐 말한 것뿐인데 경유지가 네 곳이 됐고, 32분 길이 96분이 됐다 */
+const addStop = (queries: string[], count = 1): PlanAction => ({
+  type: 'APPLY_INTENT',
+  intent: {
+    resetStops: false,
+    stops: [
+      {
+        op: 'add', queries, kind: 'category', why: '', count,
+        flexible: true, openNow: false, prefers: [], near: 'any',
+      },
+    ],
+    endpoints: {},
+    order: 'auto',
+    arriveBy: null,
+    mode: null,
+    reject: null,
+    ambiguous: [],
+  },
+});
+
+const stopQueries = (s: PlanState) => s.chips.filter(c => c.kind === 'stop').map(c => c.label);
+
+test('같은 경유지를 다시 말해도 한 번만 선다 — 대화를 고쳐 말한 것뿐이다', () => {
+  const once = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['카페']).intent, resetStops: true } },
+    addStop(['샌드위치 가게']),
+  ]);
+  assert.deepEqual(stopQueries(once), ['카페', '샌드위치 가게'], '전제: 두 곳이 선다');
+
+  const twice = run(once, [addStop(['카페']), addStop(['샌드위치 가게'])]);
+  assert.deepEqual(stopQueries(twice), ['카페', '샌드위치 가게'], '다시 말했다고 네 곳이 되면 안 된다');
+});
+
+test('질의가 겹치면 같은 곳으로 본다 — 편의점 다음의 CU 는 새 경유지가 아니다', () => {
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['편의점', 'CU', 'GS25']).intent, resetStops: true } },
+    addStop(['CU']),
+  ]);
+  assert.deepEqual(stopQueries(s), ['편의점']);
+});
+
+test('정말 여러 곳이 필요하면 count 로 온다 — 그만큼은 채운다', () => {
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } },
+    addStop(['약국'], 3),
+  ]);
+  assert.deepEqual(stopQueries(s), ['약국', '약국', '약국'], 'count 만큼 총 세 곳');
+});
+
+test('다른 곳은 그대로 더한다 — 중복만 막지, 새 경유지를 막는 게 아니다', () => {
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['카페']).intent, resetStops: true } },
+    addStop(['약국']),
+  ]);
+  assert.deepEqual(stopQueries(s), ['카페', '약국']);
+});

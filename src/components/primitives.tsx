@@ -1,6 +1,6 @@
 /** 도형 프리미티브 — 디자인의 CSS 도형(원·사각·chevron·핸들·점선)을 재현 */
 import React from 'react';
-import { View, ViewStyle } from 'react-native';
+import { Platform, View, ViewStyle } from 'react-native';
 import Svg, { Line, Path, Circle, Rect } from 'react-native-svg';
 import { color } from '../theme/tokens';
 import { DASH_OFF, DASH_ON, fitDashV } from '../lib/dashFit';
@@ -47,12 +47,34 @@ export function Chevron({
  * 고정 주기로는 이음매가 dash 한가운데 떨어져 두 dash 가 붙거나 구멍이 난다.
  * 왜 이 방법인지는 `lib/dashFit.ts` 주석에 있다.
  */
+/**
+ * 세로 점선의 Svg 스타일. 웹만 다르다.
+ *
+ * RNW 에서 이 Svg 는 HTML <svg> 로 나오는데, height 를 안 준 <svg> 는 300x150 의
+ * 고유 크기를 갖는다. 부모 높이가 flex 로 정해지는 자리(A1 출발-목적지 카드의 레일 등)
+ * 에서는 그 150px 이 거꾸로 부모를 밀어올려, 카드가 실제 내용보다 68px 높아졌다.
+ * minHeight:0 은 줄어드는 걸 허용할 뿐 줄여 주지 않는다 — 절대 배치로 흐름에서 빼야
+ * 높이에 기여하지 않는다. top/bottom 을 둘 다 주는 방법은 안 통한다. <svg> 는
+ * replaced element 라 bottom 이 무시되고 고유 높이가 남는다. 그래서 height 를 100% 로
+ * 못 박는다.
+ *
+ * 네이티브는 건드리지 않는다. Yoga 에는 이 함정이 없고, 시뮬레이터로 확인하지 못한
+ * 변경을 출시 앱에 실을 이유가 없다.
+ */
+const DASH_SVG = Platform.OS === 'web'
+  ? ({ position: 'absolute', top: 0, left: 0, width: 2, height: '100%' } as const)
+  : ({ flex: 1, width: 2 } as const);
+
 export function DashedLineV({ style, stroke = color.stroke }: { style?: ViewStyle; stroke?: string }) {
   const [height, setHeight] = React.useState(0);
   const fit = fitDashV(height);
   return (
     <View
-      style={[{ width: 2 }, style]}
+      /* minHeight 0 은 Yoga 의 기본값이라 네이티브에는 아무 영향이 없다. 웹에서만 의미가 있다 —
+         아래 Svg 는 RNW 에서 HTML <svg> 로 나오고, height 를 안 준 <svg> 는 300x150 의 고유
+         크기를 갖는다. CSS 의 min-height 기본값이 auto 라 flex:1 이어도 그 150px 밑으로 못
+         줄어들고, 그게 부모 레일의 높이가 되어 카드를 실제 내용보다 68px 높였다. */
+      style={[{ width: 2, minHeight: 0 }, style]}
       pointerEvents="none"
       onLayout={e => {
         const next = e.nativeEvent.layout.height;
@@ -60,7 +82,7 @@ export function DashedLineV({ style, stroke = color.stroke }: { style?: ViewStyl
         if (Math.abs(next - height) > 0.5) setHeight(next);
       }}
     >
-      <Svg style={{ flex: 1, width: 2 }}>
+      <Svg style={DASH_SVG}>
         <Line
           x1={1}
           y1={0}

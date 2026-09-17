@@ -176,6 +176,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
             count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
             near, nearRelaxed: false,
             nearSource, nearBefore: 0, nearAfter: 0, nearRadiusM: null, nearRelaxedRaw: false,
+            loadBefore: st.loadBefore, loadAfter: st.loadAfter, needWhen: st.needWhen,
             searchStatus: 'none',
             searchRadiusM: 0, searchCalls: 0,
           } satisfies Slot;

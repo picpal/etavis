@@ -368,3 +368,17 @@ test('side 가 없으면 지금까지처럼 전부 조회한다', async () => {
   // 위와 같은 이유로 호출 횟수(15) 대신 조회된 앵커 집합의 크기를 본다 — side 없음이면 전부(5개)다
   assert.equal(new Set(seen).size, 5);
 });
+
+test('좁힌 앵커 집합에서도 후보가 맞는 앵커에 붙는다', async () => {
+  // a3(하차역, 127.49) 자리에 후보 하나. side=end 면 used=[a3,a4] 라 a3 에 붙고 walkM 은 0 이다.
+  // attach 가 used[i] 대신 anchors[i] 를 쓰면 a0(출발지)·a1(승차역)에 붙어 40km 대가 나온다 —
+  // 좁혀진 뒤에도 attach 가 올바른 인덱스로 앵커를 찾아 붙이는지를 확인한다
+  const fn = async (): Promise<PlaceCandidate[]> =>
+    [{ id: 'm', name: '마트', coord: at2(127.49) }];
+  const r = await searchAtAnchors(ALL, '마트', {
+    need: 1, target: 1, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates.length, 1);
+  assert.equal(r.candidates[0].anchorId, 'a3');
+  assert.equal(r.candidates[0].anchorWalkM, 0);
+});

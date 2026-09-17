@@ -409,7 +409,9 @@ test('앵커 컷도 near 쪽을 먼저 채운다 — 폴백 경로', async () =>
   const far: PlaceCandidate = { id: 'f', name: 'f', coord: at2(127.26) };
   const fn = async (): Promise<PlaceCandidate[]> => [near, far];
   const r = await searchAtAnchors(only, '마트', {
-    need: 1, target: 1, max: 1, side: 'end', origin: O2, destination: D2,
+    need: 1, target: 1, max: 2, side: 'end', origin: O2, destination: D2,
   }, fn);
   assert.equal(r.candidates[0].id, 'n', `목적지 쪽이 먼저여야 한다: ${r.candidates.map(c => c.id)}`);
+  // 반대쪽을 버리지 않는다 — 완화가 되돌릴 후보가 없으면 완화가 무의미해진다
+  assert.equal(r.candidates.length, 2);
 });

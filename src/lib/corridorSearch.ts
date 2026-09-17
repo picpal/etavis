@@ -36,6 +36,26 @@ const ABS_MAX: Record<Mode, number> = { car: 15000, walk: 2000, transit: 3000 };
 
 export const initialRadiusM = (mode: Mode): number => INITIAL[mode];
 
+/**
+ * near 쪽을 먼저 채우고 자른다. **반대쪽을 버리지 않는다** — applyNear 의 완화가
+ * 되돌릴 후보가 없으면 완화 자체가 무의미해진다(설계 §5.1).
+ * 회랑 컷과 앵커 컷이 같은 함수를 쓴다. 두 벌로 두면 기준이 갈린다.
+ */
+function nearFirst(
+  sorted: PlaceCandidate[],
+  side: NearSide,
+  origin: LatLng,
+  destination: LatLng,
+  max: number,
+): PlaceCandidate[] {
+  const on: PlaceCandidate[] = [];
+  const off: PlaceCandidate[] = [];
+  for (const c of sorted) {
+    (matchesNear(side, c.coord, origin, destination, NEAR_RADII_M[0]) ? on : off).push(c);
+  }
+  return [...on, ...off].slice(0, max);
+}
+
 /** 추정 우회 ≈ 2r·ρ 가 여유를 넘지 않게. 여유가 없으면 절대 상한 */
 export function maxRadiusM(mode: Mode, slackMin: number | null, rhoMinPerKm: number): number {
   const abs = ABS_MAX[mode];
@@ -74,13 +94,7 @@ export async function searchAlong(
     const sorted = [...list]
       .sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM);
     if (!sided || !opts.origin || !opts.destination) return sorted.slice(0, max);
-    const on: PlaceCandidate[] = [];
-    const off: PlaceCandidate[] = [];
-    for (const c of sorted) {
-      const hit = matchesNear(opts.side!, c.coord, opts.origin, opts.destination, NEAR_RADII_M[0]);
-      (hit ? on : off).push(c);
-    }
-    return [...on, ...off].slice(0, max);
+    return nearFirst(sorted, opts.side!, opts.origin, opts.destination, max);
   };
 
   const merge = (lists: PlaceCandidate[][]) => {
@@ -194,13 +208,7 @@ export async function searchAtAnchors(
     }
     const sorted = [...best.values()].sort((x, y) => (x.anchorWalkM ?? 0) - (y.anchorWalkM ?? 0));
     if (!kinds || !opts.origin || !opts.destination) return sorted.slice(0, max);
-    const on: PlaceCandidate[] = [];
-    const off: PlaceCandidate[] = [];
-    for (const c of sorted) {
-      const hit = matchesNear(opts.side!, c.coord, opts.origin, opts.destination, NEAR_RADII_M[0]);
-      (hit ? on : off).push(c);
-    }
-    return [...on, ...off].slice(0, max);
+    return nearFirst(sorted, opts.side!, opts.origin, opts.destination, max);
   };
 
   let radiusM = initial;

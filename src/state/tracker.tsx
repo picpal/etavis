@@ -15,6 +15,7 @@
  *   → '경로 확인 중'(내비 API 재요청에 해당) → 우회 / 이탈 확정
  */
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation, toFix } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
@@ -390,6 +391,9 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   // 경로를 확정하면 실제 GPS 추적을 자동으로 시작한다 (사용자가 켤 필요 없음)
   const autoStartedRef = useRef(false);
   useEffect(() => {
+    /* 웹 데모에는 지오펜스가 없다. 여기를 막지 않으면 A6 에 들어가는 순간
+       위치 권한 팝업이 또 뜬다 — A1 에서 이미 한 번 물었다. */
+    if (Platform.OS === 'web') return;
     if (!state.planConfirmed || autoStartedRef.current) return;
     autoStartedRef.current = true;
     logTrack({

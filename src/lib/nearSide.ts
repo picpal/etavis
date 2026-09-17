@@ -24,34 +24,32 @@ export function matchesNear(near: NearSide, s: number): boolean {
   return near === 'end' ? s >= NEAR_SPLIT_S : s <= 1 - NEAR_SPLIT_S;
 }
 
-/**
- * 들고 대중교통을 타기 어려운 것. 사면 곧 목적지여야 한다.
- *
- * `꽃`이 `꽃집`에도 걸리는 건 의도한 것이다 — 꽃을 사서 가는 길은 거의 항상 목적지 쪽이다.
- * 표를 늘리기 전에 오판 쪽을 먼저 보라: 틀리면 사용자가 말하지도 않은 제약이 붙는다.
- * 앉아서 머무는 업종(결혼식 전 카페)은 여기 신호가 아니다 — 그건 체류시간 축의 몫이다.
- */
-const CARRY = /커피|음료|주스|스무디|아이스크림|빙수|케이크|꽃/;
+/** 부담의 유무. 정도는 재지 않는다 — '생수 한 병'과 '장바구니 가득'을 나누면 태그가 흔들린다 */
+export type Load = 'none' | 'hard';
+/** 목적지에 닿기 전에 필요한가, 닿은 뒤에 필요한가 */
+export type NeedWhen = 'beforeArrival' | 'afterArrival' | 'unknown';
+export type StopTags = { loadBefore: Load; loadAfter: Load; needWhen: NeedWhen };
 
 /**
- * 물성 신호 — 사용자가 위치를 말하지 않았을 때의 기본값.
+ * 방향을 정하는 유일한 자리. LLM 은 방향을 뱉지 않는다 — 물성과 시점만 뱉고
+ * 여기서 방향이 된다(AGENTS.md: LLM은 '무엇을'만 뽑는다).
  *
- * `mode === 'transit'` 에서만 산다. 차·도보는 들고 갈 수 있으니 제약이 아니다.
+ * 분기 순서가 곧 우선순위다.
+ * - `loadBefore` 가 `needWhen` 보다 앞인 이유: 택배를 부치러 가면서 도착해서 쓸 것을
+ *   같이 사더라도, 상자를 오래 들고 다니는 쪽이 언제나 더 아프다.
+ * - `needWhen === 'beforeArrival'` 이 `loadAfter` 보다 앞인 이유: 걸어가며 먹을
+ *   아이스크림은 들고 가기 어렵지만 도착 전에 없어진다. 부담이 시점을 무조건 이기면 틀린다.
+ * - `mode === 'car'` 는 일찍 빠진다. 차는 near 가 아니라 정차 용이성이 지배 축이고,
+ *   그건 다음 단계다. 그래서 "차로 회 포장"을 못 잡는다 — 알려진 한계다(설계 §12).
  */
-export function nearFromCarry(mode: Mode, queries: readonly string[], why?: string): NearSide {
-  if (mode !== 'transit') return 'any';
-  return CARRY.test([why ?? '', ...queries].join(' ')) ? 'end' : 'any';
-}
-
-/** 사용자가 말한 위치가 언제나 이긴다. 물성 표는 말하지 않았을 때만 읽는다 */
-export function resolveNear(
-  stated: NearSide | undefined,
-  mode: Mode,
-  queries: readonly string[],
-  why?: string,
-): NearSide {
+export function decideNear(stated: NearSide | undefined, mode: Mode, tags: StopTags): NearSide {
   if (stated === 'start' || stated === 'end') return stated;
-  return nearFromCarry(mode, queries, why);
+  if (mode === 'car') return 'any';
+  if (tags.loadBefore === 'hard') return 'start';
+  if (tags.needWhen === 'beforeArrival') return 'start';
+  if (tags.loadAfter === 'hard') return 'end';
+  if (tags.needWhen === 'afterArrival') return 'end';
+  return 'any';
 }
 
 /**

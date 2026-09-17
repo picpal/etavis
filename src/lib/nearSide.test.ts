@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyNear, matchesNear, nearFromCarry, resolveNear } from './nearSide.ts';
-import type { LatLng } from './routePlan/types.ts';
+import { applyNear, decideNear, matchesNear } from './nearSide.ts';
+import type { Load, NeedWhen } from './nearSide.ts';
+import type { LatLng, Mode, NearSide } from './routePlan/types.ts';
 
 /** 위도 37.5 위의 동서 직선. 127.0 이 출발지, 127.1 이 목적지 — 경도가 곧 진행률이다 */
 const at = (lng: number): LatLng => ({ latitude: 37.5, longitude: lng });
@@ -69,29 +70,35 @@ test('폴리라인이 2점 미만이면 진행률을 못 잰다 — 조용히 �
   assert.equal(r.relaxed, false, '못 잰 걸 "못 찾았다"고 말하면 거짓말이 된다');
 });
 
-test('nearFromCarry — 대중교통에서 커피는 end. 들고 탈 수 없다', () => {
-  assert.equal(nearFromCarry('transit', ['카페'], '커피 사기'), 'end');
-  assert.equal(nearFromCarry('transit', ['꽃집'], ''), 'end');
+const tags = (lb: Load, la: Load, nw: NeedWhen) => ({ loadBefore: lb, loadAfter: la, needWhen: nw });
+
+const TABLE: [string, NearSide | undefined, Mode, Load, Load, NeedWhen, NearSide][] = [
+  ['택배 부치고 회사',      undefined, 'transit', 'hard', 'none', 'unknown',       'start'],
+  ['걸어가며 먹을 아이스크림', undefined, 'walk',    'none', 'hard', 'beforeArrival', 'start'],
+  ['텀블러 커피',           undefined, 'transit', 'none', 'hard', 'beforeArrival', 'start'],
+  ['카페에서 충전',         undefined, 'transit', 'none', 'none', 'beforeArrival', 'start'],
+  ['우산',                 undefined, 'transit', 'none', 'none', 'beforeArrival', 'start'],
+  ['세탁물 맡기고 회사',     undefined, 'transit', 'hard', 'none', 'unknown',       'start'],
+  ['장보고 집 (지하철)',     undefined, 'transit', 'none', 'hard', 'afterArrival',  'end'],
+  ['장보고 집 (도보)',       undefined, 'walk',    'none', 'hard', 'afterArrival',  'end'],
+  ['커피 사서 회사 (말 안 함)', undefined, 'transit', 'none', 'hard', 'unknown',     'end'],
+  ['꽃 사서 식장',          undefined, 'transit', 'none', 'hard', 'afterArrival',  'end'],
+  ['세탁물 찾아 집',        undefined, 'transit', 'none', 'hard', 'afterArrival',  'end'],
+  ['은행',                 undefined, 'transit', 'none', 'none', 'unknown',       'any'],
+  ['장보고 집 (자동차)',     undefined, 'car',     'none', 'hard', 'afterArrival',  'any'],
+];
+
+for (const [name, stated, mode, lb, la, nw, want] of TABLE) {
+  test(`decideNear — ${name} → ${want}`, () => {
+    assert.equal(decideNear(stated, mode, tags(lb, la, nw)), want);
+  });
+}
+
+test('사용자가 말한 위치가 태그를 이긴다', () => {
+  assert.equal(decideNear('start', 'transit', tags('none', 'hard', 'afterArrival')), 'start');
+  assert.equal(decideNear('end', 'transit', tags('hard', 'none', 'beforeArrival')), 'end');
 });
 
-test('nearFromCarry — 차·도보는 표를 읽지 않는다. 들고 갈 수 있다', () => {
-  assert.equal(nearFromCarry('car', ['카페'], '커피 사기'), 'any');
-  assert.equal(nearFromCarry('walk', ['카페'], '커피 사기'), 'any');
-});
-
-test('nearFromCarry — 들고 타기 어려운 품목이 없으면 any', () => {
-  assert.equal(nearFromCarry('transit', ['약국'], '약 사기'), 'any');
-  assert.equal(nearFromCarry('transit', ['카페'], '결혼식 전에 기다리기'), 'any',
-    '앉는 카페는 물성 신호가 아니다 — 그건 체류시간 축(다음 단계)이 볼 일이다');
-});
-
-test('resolveNear — 사용자가 말한 위치가 물성 표를 이긴다', () => {
-  assert.equal(resolveNear('start', 'transit', ['카페'], '커피 사기'), 'start');
-  assert.equal(resolveNear('end', 'car', ['약국'], '약 사기'), 'end');
-});
-
-test('resolveNear — 말하지 않았으면 물성 표로 떨어진다', () => {
-  assert.equal(resolveNear('any', 'transit', ['카페'], '커피 사기'), 'end');
-  assert.equal(resolveNear(undefined, 'transit', ['카페'], '커피 사기'), 'end');
-  assert.equal(resolveNear(undefined, 'transit', ['약국'], '약 사기'), 'any');
+test('자동차여도 사용자가 말했으면 지킨다', () => {
+  assert.equal(decideNear('end', 'car', tags('none', 'none', 'unknown')), 'end');
 });

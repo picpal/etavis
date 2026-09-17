@@ -11,7 +11,6 @@ module.exports = () => ({
   ...appJson.expo,
   extra: {
     ...appJson.expo.extra,
-    kakaoRestKey: process.env.KAKAO_REST_KEY ?? '',
     googlePlacesKey: process.env.GOOGLE_PLACES_KEY ?? '',
     // Workers 프록시. 비어 있으면 앱은 라우팅을 목 공급자로 돌린다
     serverUrl: process.env.SERVER_URL ?? '',

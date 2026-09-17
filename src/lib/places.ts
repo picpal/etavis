@@ -125,12 +125,11 @@ const mockProvider: PlaceSearchProvider = {
 };
 
 /* ── 카카오 로컬 API ──────────────────────────────────────────
-   REST 키를 Authorization 헤더에 담아 클라이언트에서 바로 부른다.
-   좌표가 WGS84 그대로라 변환이 필요 없다. 일 10만 건 무료.
-   키는 app.json의 extra.kakaoRestKey — 앱 번들에 들어가므로 추출이 가능하다.
-   실서비스로 가면 프록시 서버를 두는 게 맞다.                      */
-
-export const kakaoRestKey: string = (Constants.expoConfig?.extra?.kakaoRestKey as string | undefined)?.trim() ?? '';
+   키는 서버에만 있다. 클라이언트는 Workers /places 프록시를 지나고,
+   서버가 있는지만 hasServer()로 판정한다 — 카카오 키를 클라이언트
+   번들에 넣는 경로는 의도적으로 없앴다(app.config.js도 더 이상
+   KAKAO_REST_KEY를 extra에 주입하지 않는다). 좌표는 WGS84 그대로라
+   변환이 필요 없다.                                              */
 
 /** 서버가 있으면 카카오 로컬을 쓸 수 있다 — 키는 서버에만 있다 */
 const hasServer = (): boolean => {

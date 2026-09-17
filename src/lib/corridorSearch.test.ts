@@ -247,6 +247,17 @@ test('side 가 없으면 지금까지처럼 전 구간에서 찍는다', async (
   assert.ok(Math.max(...first) >= 127.499);
 });
 
+test('side 를 줘도 origin·destination 이 없으면 무시한다 — 계약대로 전 구간에서 찍는다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', // origin·destination 를 일부러 뺀다
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.min(...first) <= 127.001, `전 구간이어야 한다: ${first}`);
+  assert.ok(Math.max(...first) >= 127.499, `전 구간이어야 한다: ${first}`);
+});
+
 const anchors: Anchor[] = [
   { id: 'a0', kind: 'origin', name: '출발지', coord: at(37.5188, 126.8575), progressM: 0 },
   { id: 'a1', kind: 'board', name: '목동', coord: at(37.526097, 126.864538), progressM: 1100 },

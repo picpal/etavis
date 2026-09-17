@@ -61,7 +61,8 @@ export function MyPlaceEditSheet({
     setConfirmDelete(false);
   }, [visible, place, presetSlot]);
 
-  const taken = (s: 'home' | 'work') => places.saved.find(p => p.slot === s && p.id !== place?.id);
+  // 지금 고른 슬롯을 이미 차지한 장소 — 있으면 저장할 때 그쪽에서 뺏어온다. 자기 자신은 뺀다
+  const takenPlace = slot ? places.saved.find(p => p.slot === slot && p.id !== place?.id) : undefined;
   const canSave = !!picked;
 
   const onSave = () => {
@@ -202,9 +203,9 @@ export function MyPlaceEditSheet({
                 "지금 집인 '집'은..."처럼 겹쳐 읽힌다. 그리고 이게 예외가 아니라 기본값이라
                 거의 매번 겹친다. name(상호)은 항상 있고, 뭐가 바뀌는지 특정해 준다.
               */}
-              {slot && taken(slot) && (
+              {takenPlace && (
                 <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.amber }}>
-                  지금 {slot === 'home' ? '집' : '회사'}인 '{taken(slot)?.name}'{josa(taken(slot)!.name, '이/가')} 일반 장소로 바뀌어요
+                  지금 {slot === 'home' ? '집' : '회사'}인 '{takenPlace.name}'{josa(takenPlace.name, '이/가')} 일반 장소로 바뀌어요
                 </Text>
               )}
             </View>

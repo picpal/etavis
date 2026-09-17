@@ -124,6 +124,22 @@ test('사용자가 직접 붙인 라벨(슬롯 기본값과 다름)은 슬롯을
   assert.equal(old?.label, '우리집');
 });
 
+test('자기 편집으로 슬롯을 놓아도(같은 id, slot: null) 기본 라벨은 상호로 되돌아간다', () => {
+  let f = upsertSaved(file(), aSaved({ id: 'old', slot: 'home', label: '집', name: '킨코스코리아 국회의사당역센터' }));
+  f = upsertSaved(f, aSaved({ id: 'old', slot: null, label: '집', name: '킨코스코리아 국회의사당역센터' }));
+  const old = f.saved.find(s => s.id === 'old');
+  assert.equal(old?.slot, null);
+  assert.equal(old?.label, '킨코스코리아 국회의사당역센터');
+});
+
+test('자기 편집으로 슬롯을 놓아도 사용자가 직접 붙인 라벨은 그대로 남는다', () => {
+  let f = upsertSaved(file(), aSaved({ id: 'old', slot: 'home', label: '우리집' }));
+  f = upsertSaved(f, aSaved({ id: 'old', slot: null, label: '우리집' }));
+  const old = f.saved.find(s => s.id === 'old');
+  assert.equal(old?.slot, null);
+  assert.equal(old?.label, '우리집');
+});
+
 test('정렬은 집 → 회사 → 등록 순이다', () => {
   let f = file();
   f = upsertSaved(f, aSaved({ id: 'c', slot: null, createdAt: 10 }));

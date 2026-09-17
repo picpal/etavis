@@ -69,7 +69,14 @@ export async function handlePlaces(
     if (hit) return hit;
   }
 
-  const res = await deps.fetch(kakaoLocalUrl(req), {
+  /* deps.fetch(...) 로 바로 부르면 안 된다. 그러면 this 가 deps 객체가 되고,
+     Workers 의 fetch 는 전역 this 를 요구해 "Illegal invocation" 으로 던진다.
+     목 fetch 는 this 를 안 보므로 단위 테스트가 이걸 못 잡는다 — 실제로 키가
+     들어와 이 줄에 처음 닿은 날 500 으로 터졌다(그전엔 위 501 에서 먼저 반환됐다).
+     참조를 떼어 호출하면 this 가 undefined 가 되고, 그건 Workers 가 받아준다.
+     enrich.ts·transit.ts 는 deps.fetch 를 위치 인자로 내려보내서 원래 안전하다. */
+  const doFetch = deps.fetch;
+  const res = await doFetch(kakaoLocalUrl(req), {
     headers: { Authorization: `KakaoAK ${env.KAKAO_LOCAL_KEY}` },
   });
   if (!res.ok) return json({ error: 'upstream', status: res.status }, 502);

@@ -74,3 +74,20 @@ test('캐시 키는 좌표를 격자로 깎는다 — 11m 차이로 캐시가 �
   assert.equal(placesCacheKey(req({ y: 37.52710 })), placesCacheKey(req({ y: 37.52712 })));
   assert.notEqual(placesCacheKey(req({ query: '올리브영' })), placesCacheKey(req({ query: '파리바게뜨' })));
 });
+
+test('fetch 를 this 없이 부른다 — Workers 의 fetch 는 전역 this 를 요구한다', async () => {
+  let seenThis: unknown = 'unset';
+  const deps = {
+    // 화살표 함수면 this 를 못 본다. 일반 함수라야 호출 방식이 드러난다
+    fetch: function (this: unknown) {
+      seenThis = this;
+      return Promise.resolve(new Response(JSON.stringify({ documents: [] }), { status: 200 }));
+    } as unknown as typeof fetch,
+  };
+  await handlePlaces(req(), env(), deps);
+  assert.equal(
+    seenThis,
+    undefined,
+    'deps.fetch(...) 로 부르면 this 가 deps 가 되어 Workers 에서 Illegal invocation 이 난다',
+  );
+});

@@ -34,8 +34,11 @@ test('프롬프트가 태그 3개를 요구한다', () => {
   }
 });
 
-test('방향은 여전히 추론하지 않는다고 못 박는다', () => {
-  assert.ok(SYSTEM_PROMPT.includes('추론하지 않는다'));
+test('태그로 방향을 암시하지 말라고 못 박는다', () => {
+  // '추론하지 않는다' 는 옛 near 절에 이미 있어 이 규칙을 못 지킨다 —
+  // 새 절에만 있는 문구로 재야 규칙이 지워졌을 때 걸린다
+  assert.ok(SYSTEM_PROMPT.includes('코드가 정하니'), '방향 소유권 문장이 빠졌다');
+  assert.ok(SYSTEM_PROMPT.includes('암시하려 하지 마라'), '방향 암시 금지 문장이 빠졌다');
 });
 
 test('문서 원본도 태그 3개를 적고 있다 — 사본만 고치면 다음 사람이 원본을 믿는다', () => {
@@ -44,4 +47,14 @@ test('문서 원본도 태그 3개를 적고 있다 — 사본만 고치면 다�
   for (const k of ['loadBefore', 'loadAfter', 'needWhen']) {
     assert.ok(md.includes(k), `${k} 가 문서 원본에 없다`);
   }
+});
+
+test('문서와 사본의 버전 카운터가 같다 — 갈리면 원본을 못 믿는다', () => {
+  const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
+  const ts = readFileSync('server/src/prompt.ts', 'utf8');
+  const docV = md.match(/^#\s.*\(v(\d+)\)/m)?.[1];
+  const codeV = ts.match(/v(\d+)\s*\(\d{4}-\d{2}-\d{2}\)/)?.[1];
+  assert.ok(docV, '문서 헤더에서 버전을 못 읽었다');
+  assert.ok(codeV, 'prompt.ts 주석에서 버전을 못 읽었다');
+  assert.equal(docV, codeV, `문서 v${docV} vs 사본 v${codeV}`);
 });

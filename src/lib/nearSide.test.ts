@@ -77,6 +77,17 @@ test('형제 슬롯이 셋이면 셋을 요구한다', () => {
   assert.equal(r.relaxed, true); // 그쪽 2개 < 요구 3개, 총수 3개 ≥ 3 이라 예외도 안 걸린다
 });
 
+// 형제가 넷 이상이면 요구량은 NEAR_TARGET 이 아니라 need 다.
+// target 을 NEAR_TARGET 으로 고정하면 1500m 안의 4곳으로 통과해 버린다
+test('형제가 NEAR_TARGET 보다 많으면 need 만큼 요구한다', () => {
+  const list = [c('a', nearD(200)), c('b', nearD(400)), c('c', nearD(600)), c('d', nearD(800)),
+                c('x', at(127.0)), c('y', at(127.01))];
+  const r = applyNear(list, 'end', O, D, 5);
+  assert.equal(r.relaxed, true);
+  assert.equal(r.radiusM, null);
+  assert.equal(r.candidates.length, 6);
+});
+
 test('any 는 손대지 않는다', () => {
   const list = [c('a', nearD(200)), c('x', at(127.0))];
   const r = applyNear(list, 'any', O, D, 1);

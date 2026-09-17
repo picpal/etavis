@@ -10,7 +10,10 @@
 import React, { useEffect, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { color, type } from '../theme/tokens';
+import type { RootStackParamList } from '../../App';
 import { LatLng } from '../data/mockData';
 import { usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
@@ -38,8 +41,11 @@ export function DestinationSheet({
   const { height: H } = useWindowDimensions();
   const { state, setDestination, setOrigin } = usePlan();
   const here = useCurrentPlace();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const places = usePlaces();
   const recents = places.recents;
+  const home = places.saved.find(s => s.slot === 'home');
+  const work = places.saved.find(s => s.slot === 'work');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState({ searching: false, failed: false });
   const [kbHeight, setKbHeight] = useState(0);
@@ -270,6 +276,50 @@ export function DestinationSheet({
                 >
                   자주 가는 곳을 등록해 두면{'\n'}여기서 바로 고를 수 있어요
                 </Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(!home || !work) &&
+                  ([['home', '집 등록'], ['work', '회사 등록']] as const)
+                    .filter(([slot]) => (slot === 'home' ? !home : !work))
+                    .map(([slot, label]) => (
+                      <Pressable
+                        key={slot}
+                        onPress={() => {
+                          haptic();
+                          Keyboard.dismiss();
+                          onClose();
+                          navigation.navigate('MyPlaces', { addSlot: slot });
+                        }}
+                        style={({ pressed }) => ({
+                          paddingHorizontal: 16,
+                          paddingVertical: 10,
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          borderColor: color.stroke,
+                          backgroundColor: color.surface,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
+                        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 18, color: color.primary }}>
+                          {label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                {home && work && (
+                  <Pressable
+                    onPress={() => {
+                      haptic();
+                      Keyboard.dismiss();
+                      onClose();
+                      navigation.navigate('MyPlaces');
+                    }}
+                    style={({ pressed }) => ({ paddingHorizontal: 16, paddingVertical: 10, opacity: pressed ? 0.7 : 1 })}
+                  >
+                    <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 18, color: color.primary }}>
+                      내 장소 관리
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             </Card>
           )}

@@ -276,6 +276,21 @@ export function HeartIcon({ size = 15, filled = false, tint = '#B33B2B' }: { siz
   );
 }
 
+/** 북마크(저장한 장소) 아이콘 — 채움/외곽선 */
+export function BookmarkIcon({ size = 16, filled = false, tint = color.primary }: { size?: number; filled?: boolean; tint?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 16 16">
+      <Path
+        d="M4 2.4h8c.4 0 .7.3.7.7v10.2c0 .3-.3.5-.6.3L8 11.2l-4.1 2.4c-.3.2-.6 0-.6-.3V3.1c0-.4.3-.7.7-.7Z"
+        fill={filled ? tint : 'none'}
+        stroke={filled ? tint : color.stroke}
+        strokeWidth={1.6}
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 /** 연필(수정) 아이콘 */
 export function PencilIcon({ size = 14, tint = color.muted }: { size?: number; tint?: string }) {
   return (

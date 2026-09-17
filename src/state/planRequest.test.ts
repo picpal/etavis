@@ -104,7 +104,8 @@ test('빈 why 는 내려가지 않는다 — 글자 없는 할 일 한 줄을 �
    가는지만 본다. near 와 같은 종류의 누수라 같은 자리에 묶어 둔다 */
 
 test('칩의 태그가 슬롯으로 그대로 간다', () => {
-  const [s] = requestStopsFromChips([stop({ loadBefore: 'none', loadAfter: 'hard', needWhen: 'afterArrival' })]);
+  const [s] = requestStopsFromChips([stop({ loadBefore: 'hard', loadAfter: 'hard', needWhen: 'afterArrival' })]);
+  assert.equal(s.loadBefore, 'hard');
   assert.equal(s.loadAfter, 'hard');
   assert.equal(s.needWhen, 'afterArrival');
 });

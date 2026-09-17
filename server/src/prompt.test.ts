@@ -43,7 +43,7 @@ test('태그로 방향을 암시하지 말라고 못 박는다', () => {
 
 test('문서 원본도 태그 3개를 적고 있다 — 사본만 고치면 다음 사람이 원본을 믿는다', () => {
   const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
-  assert.ok(md.includes('(v10)'), '문서 헤더가 v10 이 아니다');
+  assert.ok(md.includes('(v11)'), '문서 헤더가 v11 이 아니다');
   for (const k of ['loadBefore', 'loadAfter', 'needWhen']) {
     assert.ok(md.includes(k), `${k} 가 문서 원본에 없다`);
   }

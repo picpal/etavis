@@ -2,8 +2,11 @@
 #
 #   npm run release -- 1.2.0   →   태그 v1.2.0   →   이 워크플로
 #
-# 돈이 나가는 건 마지막 스텝(EAS 빌드 1회)뿐이라, 그 앞의 두 게이트는
-# 공짜 러너에서 먼저 죽으라고 있다.
+# 돈이 나가는 건 EAS 빌드 1회뿐이라, 그 앞의 두 게이트는 공짜 러너에서 먼저
+# 죽으라고 있다.
+#
+# 이 워크플로가 초록이라는 말은 "빌드가 통과했고 제출을 EAS 에 넘겼다"는 뜻이다.
+# 애플이 그 바이너리를 처리했는지까지는 여기서 안 본다 — 아래 제출 스텝 참고.
 name: TestFlight
 
 on:
@@ -23,6 +26,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     # EAS 빌드 5분 + 무료 플랜 큐 대기. 큐가 길어질 때를 감안한 상한이다.
+    # (제출 대기는 더 이상 여기 없다 — 아래 제출 스텝 참고)
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +45,26 @@ jobs:
         run: npm test
 
       # 빌드 번호는 eas.json 의 appVersionSource: remote + autoIncrement 가 올린다.
-      # --auto-submit 은 같은 이름의 submit 프로필(production)로 TestFlight 에 올린다.
-      # 내부 그룹 `Team (Expo)` 가 `빌드 배포: 자동` 이라 테스터 폰까지 알아서 간다.
-      - name: EAS 빌드 → TestFlight 제출
+      # 빌드는 끝까지 지켜본다 — 컴파일이 깨졌다면 그건 우리가 고칠 일이라 빨개져야 한다.
+      - name: EAS 빌드
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: npx eas-cli@latest build --platform ios --profile production --non-interactive --auto-submit
+        run: npx eas-cli@latest build --platform ios --profile production --non-interactive
+
+      # 제출은 넘기기만 하고 기다리지 않는다(--no-wait).
+      #
+      # 전에는 빌드에 --auto-submit 을 붙여 제출이 끝날 때까지 기다렸는데, 애플
+      # 제출 큐가 한 시간 반씩 걸린다. 그 사이 러너가 붙들려 있다가 배포는 멀쩡히
+      # 끝났는데도 워크플로만 빨개졌다 — v1.0.2 는 90분 타임아웃으로 취소됐고,
+      # v1.0.3 은 폴링 중 ECONNRESET 으로 exit 1 이었다. 둘 다 TestFlight 에는
+      # 정상적으로 올라갔다. 기다림이 만든 거짓 실패라 기다림을 뺀다.
+      #
+      # --latest 는 방금 만든 그 빌드다. 위 concurrency 가 이 워크플로를 한 줄로
+      # 세우므로 그 사이에 다른 iOS 빌드가 끼어들지 않는다.
+      # 제출 결과는 EAS 대시보드와 App Store Connect 가 갖고 있다.
+      #   https://expo.dev/accounts/official.picpal/projects/etavia/submissions
+      # 내부 그룹 `Team (Expo)` 가 `빌드 배포: 자동` 이라 테스터 폰까지 알아서 간다.
+      - name: TestFlight 제출 — 넘기고 끝
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: npx eas-cli@latest submit --platform ios --profile production --latest --non-interactive --no-wait

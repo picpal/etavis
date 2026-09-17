@@ -983,3 +983,41 @@ test('자동차는 태그가 있어도 any 다 — 알려진 한계', async () =
   );
   assert.equal(slotsOf(actions)[0].near, 'any');
 });
+
+/* 형제 슬롯 요구량 — 검색어가 달라도 같은 near 를 쓰면 같은 쪽 후보 풀을 나눠 가진다 */
+
+test('검색어가 달라도 같은 near 를 쓰면 형제로 세어 요구량을 올린다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // 같은 검색어 형제만 세면 need=2 → 요구량 max(2,3)=3 → 목적지 쪽 3곳으로 통과했을 것이다.
+  // 같은 near 형제까지 세면 need=4 → 요구량 4 → 3곳으로는 모자라 완화한다
+  assert.equal(s.near, 'end');
+  assert.equal(s.nearRelaxedRaw, true);
+  assert.equal(s.nearRadiusM, null);
+});
+
+test('near 가 any 인 슬롯은 형제로 세지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category' }, // 태그 없음 → any
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // byNear('end') = 2 뿐이라 요구량은 max(2,3)=3 → 목적지 쪽 3곳으로 통과한다
+  assert.equal(s.nearRelaxedRaw, false);
+  assert.equal(s.nearRadiusM, 1500);
+});

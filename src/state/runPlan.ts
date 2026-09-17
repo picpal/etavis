@@ -5,7 +5,7 @@
  */
 import { initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, ANCHOR_MAX_M, type SearchFn } from '../lib/corridorSearch';
 import { plan } from '../lib/routePlan/plan';
-import type { RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
+import type { NearSide, RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
@@ -121,6 +121,13 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           needWhen: st.needWhen ?? 'unknown',
         }),
       }));
+      // 같은 near 를 가진 슬롯 수. 기존 siblings 는 같은 '검색어'만 세는데,
+      // 검색어가 달라도("마트"·"약국") 같은 쪽 끝을 나눠 가져야 하는 건 같다
+      const byNear = new Map<NearSide, number>();
+      for (const d of decided) {
+        if (d.near === 'any') continue;
+        byNear.set(d.near, (byNear.get(d.near) ?? 0) + Math.max(1, d.st.count));
+      }
       slots = await race(Promise.all(decided.map(async ({ st, near }) => {
         const nearSource: 'stated' | 'inferred' | 'none' =
           near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred';
@@ -203,8 +210,10 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다).
         // 그다음 near 로 한쪽 끝만 남긴다. 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이다
         const parked = applyParkingPolicy(found.candidates, request.mode);
-        // nearNeed 는 임시로 형제 수를 그대로 쓴다 — Task 11 에서 다른 계산으로 바뀐다
-        const nearNeed = siblings.get(st.queries.join('|')) ?? 1;
+        // 같은 검색어를 쓰는 형제와 같은 near 를 쓰는 형제 중 큰 쪽을 요구한다
+        const sameQuery = siblings.get(st.queries.join('|')) ?? 1;
+        const sameNear = near === 'any' ? 1 : byNear.get(near) ?? 1;
+        const nearNeed = Math.max(sameQuery, sameNear);
         const sided = applyNear(parked, near, request.origin, request.destination, nearNeed);
 
         return {

@@ -10,7 +10,6 @@
  * (`샌드위치 파는 카페` → 0건 → 계획에서 통째로 사라짐).
  */
 import { haversineM } from './geo';
-import { projectOnCorridor } from './routePlan/corridor';
 import type { LatLng, Mode, NearSide } from './routePlan/types';
 
 /**
@@ -69,27 +68,39 @@ export function decideNear(stated: NearSide | undefined, mode: Mode, tags: StopT
 }
 
 /**
- * 후보를 그쪽 끝으로 좁힌다. **`need` 만큼 못 남기면 전부 되돌리고 `relaxed` 를 세운다.**
+ * 그쪽 끝에서 이만큼은 있어야 교체 시트가 의미를 갖는다.
+ *
+ * 왜 1이 아닌가: 현행은 `need = count = 1` 이라 그쪽에 한 곳만 남아도 완화가 안 돌았다.
+ * 그 한 곳으로 확정되고 사용자는 대안 없는 추천을 본다 — 정확도보다 신뢰도가 먼저 무너진다.
+ */
+export const NEAR_TARGET = 3;
+
+/**
+ * 후보를 그쪽 끝으로 좁힌다. 반경을 넓혀 가며 요구량을 채우고, 끝내 못 채우면
+ * **전부 되돌리고** `relaxed` 를 세운다. 0건이 곧 경유지 증발이라는 걸 2026-09-16 에
+ * 한 번 겪었다(`샌드위치 파는 카페` → 0건 → 계획에서 통째로 사라짐).
+ *
  * 입력 순서를 보존한다 — 앞 단계(주차 정책)가 매긴 우선순위를 뒤집으면 안 된다.
  *
- * `need` 가 1 이 아닌 이유: 같은 검색어를 쓰는 형제 슬롯이 둘이면(= "편의점 두 곳")
- * 둘이 같은 후보 목록을 나눠 가져야 한다. near 가 1곳만 남기면 각 슬롯은 0건이 아니라
- * 1건이라 폴백이 안 돌고, enumerate 의 중복 방지에 걸려 **계획 전체**가 빈 배열이 된다.
- * 애초에 후보가 need 보다 적으면 near 가 원인이 아니므로 좁힌 결과를 그대로 쓴다.
+ * @param need 이 near 를 공유하는 형제 슬롯 수. `runPlan` 이 센다
+ * @returns radiusM 어느 단계에서 멈췄나. null 이면 전부 되돌린 것(또는 any)
  */
 export function applyNear<T extends { coord: LatLng }>(
   candidates: readonly T[],
   near: NearSide,
-  poly: LatLng[],
+  origin: LatLng,
+  destination: LatLng,
   need = 1,
-): { candidates: T[]; relaxed: boolean } {
-  // poly 가 2점 미만이면 진행률을 못 잰다. runPlan 은 항상 2점 이상을 주지만,
-  // 못 잰 것을 '그쪽에 없다'로 말하면 거짓말이 된다 — 조용히 제약 없이 통과시킨다
-  if (near === 'any' || candidates.length === 0 || poly.length < 2) {
-    return { candidates: [...candidates], relaxed: false };
+): { candidates: T[]; relaxed: boolean; radiusM: number | null } {
+  if (near === 'any' || candidates.length === 0) {
+    return { candidates: [...candidates], relaxed: false, radiusM: null };
   }
-  const kept = candidates.filter(c => matchesNear(near, projectOnCorridor(poly, c.coord).s));
-  return kept.length >= Math.min(need, candidates.length)
-    ? { candidates: kept, relaxed: false }
-    : { candidates: [...candidates], relaxed: true };
+  const target = Math.max(need, NEAR_TARGET);
+  // 애초에 후보가 목표보다 적으면 near 가 원인이 아니다 — 최소 need 만 지킨다
+  const want = candidates.length < target ? Math.min(need, candidates.length) : target;
+  for (const radiusM of NEAR_RADII_M) {
+    const kept = candidates.filter(c => matchesNear(near, c.coord, origin, destination, radiusM));
+    if (kept.length >= want) return { candidates: kept, relaxed: false, radiusM };
+  }
+  return { candidates: [...candidates], relaxed: true, radiusM: null };
 }

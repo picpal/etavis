@@ -7,21 +7,18 @@
  * 지도를 그리지 않는다는 정체성은 그대로다 — 이름·주소·현재 위치로부터의 거리만
  * 리스트로 보여주면 목적지를 고르는 데 충분하다.
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Keyboard, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { color, shadow, type } from '../theme/tokens';
+import { color, type } from '../theme/tokens';
 import { LatLng } from '../data/mockData';
 import { usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { usePlaces } from '../lib/usePlaces';
-import { getProvider, Place } from '../lib/places';
-import { formatDistanceM, haversineM } from '../lib/geo';
 import { Card, haptic } from '../components/common';
 import { CheckMark, PinIcon } from '../components/primitives';
+import { PlaceSearch } from '../components/PlaceSearch';
 import { Sheet } from '../components/Sheet';
-
-const DEBOUNCE = 250;
 
 export function DestinationSheet({
   visible,
@@ -44,12 +41,8 @@ export function DestinationSheet({
   const places = usePlaces();
   const recents = places.recents;
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Place[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [status, setStatus] = useState({ searching: false, failed: false });
   const [kbHeight, setKbHeight] = useState(0);
-  // 늦게 끝난 이전 요청이 최신 결과를 덮어쓰지 않게 한다
-  const reqId = useRef(0);
 
   /* 시트를 끌어올리는 건 Sheet가 한다. 여기서 키보드 높이를 재는 건
      결과 목록이 차지할 수 있는 높이를 계산하기 위해서다 */
@@ -66,43 +59,12 @@ export function DestinationSheet({
   useEffect(() => {
     if (!visible) {
       setQuery('');
-      setResults([]);
-      setSearching(false);
-      reqId.current++;
+      setStatus({ searching: false, failed: false });
     }
   }, [visible]);
 
   const myCoord = here.coord;
   const trimmed = query.trim();
-
-  useEffect(() => {
-    if (!trimmed) {
-      reqId.current++;
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    setFailed(false);
-    const id = ++reqId.current;
-    const timer = setTimeout(() => {
-      getProvider(myCoord)
-        .search(trimmed, myCoord)
-        .then(list => {
-          if (id !== reqId.current) return;
-          setResults(list);
-          setSearching(false);
-        })
-        .catch(() => {
-          // 키가 틀렸거나 네트워크가 끊긴 경우 — 조용히 빈 목록이면 원인을 알 수 없다
-          if (id !== reqId.current) return;
-          setResults([]);
-          setSearching(false);
-          setFailed(true);
-        });
-    }, DEBOUNCE);
-    return () => clearTimeout(timer);
-  }, [trimmed, myCoord]);
 
   const finish = (name: string, coord: LatLng | null, address: string | null) => {
     haptic();
@@ -131,273 +93,188 @@ export function DestinationSheet({
           <Text style={[type.titleL, { color: color.ink }]}>{isOrigin ? '어디서 출발하나요?' : '어디로 갈까요?'}</Text>
         </View>
 
-        {/* 주소·지명 검색 */}
-        <View
-          style={{
-            minHeight: 52,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-            paddingHorizontal: 18,
-            borderRadius: 16,
-            backgroundColor: color.surface,
-            ...shadow.input,
-          }}
-        >
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="장소명이나 주소로 검색"
-            placeholderTextColor={color.placeholder}
-            selectionColor={color.primary}
-            returnKeyType="search"
-            autoCorrect={false}
-            style={[type.bodyL, { flex: 1, color: color.ink, paddingVertical: 0 }]}
-          />
-          {searching && <ActivityIndicator size="small" color={color.stroke} />}
-        </View>
+        <PlaceSearch
+          query={query}
+          onChangeQuery={setQuery}
+          near={myCoord}
+          maxHeight={Math.max(180, H - kbHeight - 330)}
+          onPick={(name, coord, address) => finish(name, coord, address)}
+          onStatusChange={setStatus}
+        />
 
         {/*
+          최근·내 위치 목록만 감싼다 — 검색 결과는 PlaceSearch가 자기 스크롤을 갖는다.
           결과가 15건까지 오므로 반드시 스크롤 영역이어야 한다.
           키보드가 올라오면 남는 높이가 확 줄어서, 높이를 화면에서 계산해 묶는다.
           keyboardShouldPersistTaps — 키보드가 떠 있어도 결과를 한 번에 고를 수 있게
         */}
-        <ScrollView
-          style={{ maxHeight: Math.max(180, H - kbHeight - 330) }}
-          contentContainerStyle={{ gap: 14 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-        {/* 검색 결과 */}
-        {trimmed.length > 0 && (
-          <Card style={{ padding: 8 }}>
-            {results.map((place, i) => {
-              const distM = myCoord ? haversineM(myCoord, place.coord) : null;
-              return (
-                <React.Fragment key={place.id}>
-                  {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
-                  <Pressable
-                    onPress={() => finish(place.name, place.coord, place.address)}
-                    style={({ pressed }) => ({
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 12,
-                      paddingVertical: 12,
-                      paddingHorizontal: 12,
-                      opacity: pressed ? 0.7 : 1,
-                    })}
-                  >
-                    <PinIcon />
-                    <View style={{ flex: 1, gap: 3 }}>
-                      <Text
-                        style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 16, lineHeight: 20, color: color.ink }}
-                        numberOfLines={1}
-                      >
-                        {place.name}
-                      </Text>
-                      <Text
-                        style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}
-                        numberOfLines={1}
-                      >
-                        {place.address}
-                      </Text>
-                    </View>
-                    {distM != null && (
-                      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 17, color: color.muted }}>
-                        {formatDistanceM(distM)}
-                      </Text>
-                    )}
-                  </Pressable>
-                </React.Fragment>
-              );
-            })}
-
-            {/*
-              '입력한 대로 설정'은 없앴다. 좌표 없이 이름만 있는 목적지는
-              경로를 산정할 수도, 지도 앱에 넘길 수도 없다 — 조용히 엉뚱한 곳으로 안내하게 된다.
-            */}
-            {results.length === 0 && (
-              <View style={{ paddingVertical: 22, paddingHorizontal: 16, gap: 6, alignItems: 'center' }}>
-                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.body }}>
-                  {searching ? '찾는 중이에요' : '조회된 결과가 없습니다'}
-                </Text>
-                {!searching && (
+        {trimmed.length === 0 && (
+          <ScrollView
+            style={{ maxHeight: Math.max(180, H - kbHeight - 330) }}
+            contentContainerStyle={{ gap: 14 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+          {/* 출발지는 '내 위치'로 되돌릴 길이 있어야 한다 — 기본값이 GPS이므로 */}
+          {isOrigin && trimmed.length === 0 && (
+            <Card style={{ padding: 8 }}>
+              <Pressable
+                onPress={() => {
+                  haptic();
+                  Keyboard.dismiss();
+                  setOrigin(null, null, null);
+                  onClose();
+                }}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  paddingVertical: 14,
+                  paddingHorizontal: 12,
+                  opacity: pressed ? 0.7 : 1,
+                })}
+              >
+                <PinIcon />
+                <View style={{ flex: 1, gap: 3 }}>
                   <Text
                     style={{
-                      fontFamily: 'Pretendard-Regular',
-                      fontSize: 13,
-                      lineHeight: 19,
-                      color: color.muted,
-                      textAlign: 'center',
+                      fontFamily: state.originName ? 'Pretendard-Medium' : 'Pretendard-SemiBold',
+                      fontSize: 16,
+                      lineHeight: 20,
+                      color: state.originName ? color.ink : color.primary,
                     }}
                   >
-                    건물 이름이나 상호, 도로명 주소로{'\n'}다시 검색해 보세요
+                    내 위치
                   </Text>
-                )}
-              </View>
-            )}
-          </Card>
-        )}
-
-        {/* 출발지는 '내 위치'로 되돌릴 길이 있어야 한다 — 기본값이 GPS이므로 */}
-        {isOrigin && trimmed.length === 0 && (
-          <Card style={{ padding: 8 }}>
-            <Pressable
-              onPress={() => {
-                haptic();
-                Keyboard.dismiss();
-                setOrigin(null, null, null);
-                onClose();
-              }}
-              style={({ pressed }) => ({
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                paddingVertical: 14,
-                paddingHorizontal: 12,
-                opacity: pressed ? 0.7 : 1,
-              })}
-            >
-              <PinIcon />
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text
-                  style={{
-                    fontFamily: state.originName ? 'Pretendard-Medium' : 'Pretendard-SemiBold',
-                    fontSize: 16,
-                    lineHeight: 20,
-                    color: state.originName ? color.ink : color.primary,
-                  }}
-                >
-                  내 위치
-                </Text>
-                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 16, color: color.muted }}>
-                  {here.address ?? 'GPS로 지금 있는 곳에서 출발해요'}
-                </Text>
-              </View>
-              {!state.originName && (
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    backgroundColor: color.primary,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <CheckMark />
+                  <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 16, color: color.muted }}>
+                    {here.address ?? 'GPS로 지금 있는 곳에서 출발해요'}
+                  </Text>
                 </View>
-              )}
-            </Pressable>
-          </Card>
-        )}
+                {!state.originName && (
+                  <View
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 11,
+                      backgroundColor: color.primary,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <CheckMark />
+                  </View>
+                )}
+              </Pressable>
+            </Card>
+          )}
 
-        {trimmed.length === 0 && recents.length > 0 && (
-          <>
-            <Text style={[type.label, { color: color.muted }]}>최근에 쓴 곳</Text>
-            <Card style={{ padding: 8 }}>
-              {recents.map((recent, i) => {
-                const active = recent.name === (isOrigin ? state.originName : state.destinationName);
-                const key = `${recent.name}-${recent.coord.latitude}-${recent.coord.longitude}`;
-                return (
-                  <React.Fragment key={key}>
-                    {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
-                    <Pressable
-                      onPress={() => finish(recent.name, recent.coord, recent.address)}
-                      style={({ pressed }) => ({
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                        paddingVertical: 12,
-                        paddingHorizontal: 12,
-                        opacity: pressed ? 0.7 : 1,
-                      })}
-                    >
-                      {/*
-                        검색 결과 행과 같은 2줄 구성 — 이름 옆 한 줄에 우측 정렬로 욱여넣으면
-                        이름이 길 때(실제 검색 결과 대부분) 주소가 잘려 구 이름조차 안 보인다.
-                        확인용이라는 주소의 역할을 하려면 자기 줄이 있어야 한다.
-                        좌측 아이콘 자리는 비워 둔다 — 저장한 장소일 때 북마크 배지가 그 자리에 들어온다.
-                      */}
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text
-                          style={{
-                            fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
-                            fontSize: 16,
-                            lineHeight: 20,
-                            color: color.ink,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {recent.name}
-                        </Text>
-                        {recent.address.length > 0 && (
+          {trimmed.length === 0 && recents.length > 0 && (
+            <>
+              <Text style={[type.label, { color: color.muted }]}>최근에 쓴 곳</Text>
+              <Card style={{ padding: 8 }}>
+                {recents.map((recent, i) => {
+                  const active = recent.name === (isOrigin ? state.originName : state.destinationName);
+                  const key = `${recent.name}-${recent.coord.latitude}-${recent.coord.longitude}`;
+                  return (
+                    <React.Fragment key={key}>
+                      {i > 0 && <View style={{ height: 1, backgroundColor: 'rgba(16,32,58,0.06)', marginHorizontal: 12 }} />}
+                      <Pressable
+                        onPress={() => finish(recent.name, recent.coord, recent.address)}
+                        style={({ pressed }) => ({
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          paddingVertical: 12,
+                          paddingHorizontal: 12,
+                          opacity: pressed ? 0.7 : 1,
+                        })}
+                      >
+                        {/*
+                          검색 결과 행과 같은 2줄 구성 — 이름 옆 한 줄에 우측 정렬로 욱여넣으면
+                          이름이 길 때(실제 검색 결과 대부분) 주소가 잘려 구 이름조차 안 보인다.
+                          확인용이라는 주소의 역할을 하려면 자기 줄이 있어야 한다.
+                          좌측 아이콘 자리는 비워 둔다 — 저장한 장소일 때 북마크 배지가 그 자리에 들어온다.
+                        */}
+                        <View style={{ flex: 1, gap: 3 }}>
                           <Text
-                            style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}
+                            style={{
+                              fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
+                              fontSize: 16,
+                              lineHeight: 20,
+                              color: color.ink,
+                            }}
                             numberOfLines={1}
                           >
-                            {recent.address}
+                            {recent.name}
                           </Text>
-                        )}
-                      </View>
-                      {active && (
-                        <View
-                          style={{
-                            width: 22,
-                            height: 22,
-                            borderRadius: 11,
-                            backgroundColor: color.primary,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <CheckMark />
+                          {recent.address.length > 0 && (
+                            <Text
+                              style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}
+                              numberOfLines={1}
+                            >
+                              {recent.address}
+                            </Text>
+                          )}
                         </View>
-                      )}
-                    </Pressable>
-                  </React.Fragment>
-                );
-              })}
-            </Card>
-          </>
-        )}
+                        {active && (
+                          <View
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 11,
+                              backgroundColor: color.primary,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <CheckMark />
+                          </View>
+                        )}
+                      </Pressable>
+                    </React.Fragment>
+                  );
+                })}
+              </Card>
+            </>
+          )}
 
-        {/*
-          최근이 비면 그 자리가 통째로 빈다. 첫 실행에서 검색창만 덩그러니 남지 않게,
-          다음 행동(자주 가는 곳 등록)으로 잇는다. 등록이 끝난 사용자에게는 안 보인다.
-        */}
-        {trimmed.length === 0 && recents.length === 0 && (
-          <Card style={{ paddingVertical: 24, paddingHorizontal: 20, gap: 14, alignItems: 'center' }}>
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: color.primaryTint,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <PinIcon />
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text
-                style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink, textAlign: 'center' }}
+          {/*
+            최근이 비면 그 자리가 통째로 빈다. 첫 실행에서 검색창만 덩그러니 남지 않게,
+            다음 행동(자주 가는 곳 등록)으로 잇는다. 등록이 끝난 사용자에게는 안 보인다.
+          */}
+          {trimmed.length === 0 && recents.length === 0 && (
+            <Card style={{ paddingVertical: 24, paddingHorizontal: 20, gap: 14, alignItems: 'center' }}>
+              <View
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: color.primaryTint,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                아직 다녀온 곳이 없어요
-              </Text>
-              <Text
-                style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted, textAlign: 'center' }}
-              >
-                자주 가는 곳을 등록해 두면{'\n'}여기서 바로 고를 수 있어요
-              </Text>
-            </View>
-          </Card>
+                <PinIcon />
+              </View>
+              <View style={{ gap: 5 }}>
+                <Text
+                  style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink, textAlign: 'center' }}
+                >
+                  아직 다녀온 곳이 없어요
+                </Text>
+                <Text
+                  style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 19, color: color.muted, textAlign: 'center' }}
+                >
+                  자주 가는 곳을 등록해 두면{'\n'}여기서 바로 고를 수 있어요
+                </Text>
+              </View>
+            </Card>
+          )}
+          </ScrollView>
         )}
-        </ScrollView>
 
         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, textAlign: 'center' }}>
-          {failed
+          {status.failed
             ? '검색에 실패했어요 · 연결 상태나 API 키를 확인해 주세요'
             : here.status === 'denied'
               ? '위치 권한이 없어 거리는 표시되지 않아요'

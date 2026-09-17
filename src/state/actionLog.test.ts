@@ -197,7 +197,7 @@ test('plan.slots — 후보 이름·반지름·검색 횟수를 남긴다', () =
   const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
   assert.equal(log?.a, 'plan.slots');
   assert.equal(log?.d?.found, '올리브영 2곳');
-  assert.equal(log?.d?.search, '올리브영 near=any r=800 calls=5');
+  assert.equal(log?.d?.search, '올리브영 near=any(none) 0→0 nr=- r=800 calls=5');
   assert.equal(log?.d?.picks, '올리브영: 올리브영 목동점, 올리브영 국회의사당역점');
 });
 
@@ -238,11 +238,25 @@ test('plan.slots — near 와 제약을 푼 표시를 남긴다. 후보가 왜 �
   const slots = [{
     id: 'sl-1', query: '카페', stopKind: 'category', dwellMin: 5, count: 1,
     flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 5,
-    near: 'end', nearRelaxed: true,
+    near: 'end', nearSource: 'stated', nearRelaxedRaw: true, nearBefore: 8, nearAfter: 8, nearRadiusM: null,
     candidates: [{ id: 'k-1', name: '회사앞 카페', coord: { latitude: 37.5, longitude: 127.1 } }],
   }] as never;
   const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
-  assert.equal(log?.d?.search, '카페 near=end! r=800 calls=5');
+  assert.equal(log?.d?.search, '카페 near=end(stated)! 8→8 nr=- r=800 calls=5');
+});
+
+test('plan.slots — near 출처(nearSource)와 applyNear 전후 후보 수·완화 단계가 로그에 남는다', () => {
+  /* 추론(inferred)인지 사용자가 말한 것(stated)인지, 8→3처럼 몇 곳에서 몇 곳으로 줄었는지,
+     nr=1500 처럼 어느 반경에서 멈췄는지 — 이 세 값이 로그 문자열에 정확한 자리에 찍혀야
+     '왜 이 후보만 남았나'를 화면 없이 로그만으로 진단할 수 있다 */
+  const slots = [{
+    id: 'sl-1', query: '마트', stopKind: 'category', dwellMin: 10, count: 1,
+    flexible: true, openNow: false, searchStatus: 'ok', searchRadiusM: 800, searchCalls: 3,
+    near: 'end', nearSource: 'inferred', nearRelaxedRaw: false, nearBefore: 8, nearAfter: 3, nearRadiusM: 1500,
+    candidates: [{ id: 'm-1', name: '마트 A', coord: { latitude: 37.5, longitude: 127.1 } }],
+  }] as never;
+  const log = describeFlowAction({ type: 'SLOTS', slots } as never, flowState());
+  assert.equal(log?.d?.search, '마트 near=end(inferred) 8→3 nr=1500 r=800 calls=3');
 });
 
 test('확정 뒤의 대화 되돌리기는 버린 게 없다고 적는다', () => {

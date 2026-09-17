@@ -25,12 +25,27 @@ export interface Env {
   OPENAI_MODEL?: string;
   /** 앱이 보내는 공유 토큰. 없으면 누구나 이 엔드포인트로 남의 요금을 쓴다 */
   APP_TOKEN: string;
-  /** developers.kakaomobility.com REST 키. 카카오 로컬(developers.kakao.com) 키와 다르다 */
+  /**
+   * 카카오내비 길찾기(apis-navi.kakaomobility.com) 키.
+   *
+   * 2026-09-17 실측: developers.kakao.com 의 REST 키를 그대로 받는다("길찾기 성공").
+   * 전에 "카카오 로컬 키와 다르다"고 적어뒀는데 사실이 아니었다 — 제휴 계약이
+   * 필요한 건 카카오모빌리티 **대중교통** 통합 길찾기 쪽이고, 여기서 쓰는
+   * 자동차 길찾기는 아니다. 슬롯을 따로 둔 건 나중에 분리할 여지 때문이다.
+   */
   KAKAO_MOBILITY_KEY: string;
   /** NAVER API HUB 검색(블로그). 네이버 클라우드 콘솔의 Client ID·Secret */
   NCP_API_KEY_ID: string;
   NCP_API_KEY: string;
-  /** 구글 Places (New). Places API (New) 하나로만 제한된 키 */
+  /**
+   * 구글 Places (New).
+   *
+   * **Places API (New) 하나로만 제한한 키여야 한다.** 2026-09-17 현재는 그렇지
+   * 않고 GOOGLE_ROUTES_KEY 와 같은 키다(실측으로 둘 다 통과). 같은 이름이
+   * `app.json` 의 `extra.googlePlacesKey` 로 앱 번들에도 들어가므로
+   * (`src/lib/places.ts:240`) 번들에서 추출당하면 Routes 쿼터까지 같이 털린다.
+   * 분리는 남은 숙제다.
+   */
   GOOGLE_PLACES_KEY: string;
   /** Routes API 용 키. 없으면 GOOGLE_PLACES_KEY 를 쓴다(같은 키에 Routes 를 허용해 둔 경우) */
   GOOGLE_ROUTES_KEY?: string;
@@ -50,8 +65,22 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 
-/** 시뮬레이션에서 30건 중 29건(97%)을 맞힌 모델. server/bench-models.mjs 참고 */
-const DEFAULT_MODEL = 'gpt-5.6-sol';
+/**
+ * 2026-09-17 실측으로 gpt-5.6-sol 에서 옮겼다. 대표 34케이스(그룹당 1개,
+ * run-server-cases.mjs 와 같은 표본) 기준:
+ *
+ *   sol    중앙 8.4s · p90 21.7s · 최대 29.4s · 30/34 · $17.82/1000콜
+ *   terra  중앙 2.5s · p90  6.3s · 최대 13.7s · 29/34 · $10.39/1000콜
+ *
+ * **정확도 1점을 내주고 옮긴 게 아니다.** 앱 타임아웃 안에 답이 오느냐가 갈렸다 —
+ * sol 은 절반 가까이가 상한을 넘겨 로컬 목으로 떨어졌고, 목이 답하면 정확도는
+ * 30/34 근처가 아니라 훨씬 아래다. 사용자에게 **닿는** 정확도로는 terra 가 이긴다.
+ *
+ * 코드에 박는 이유: secret(OPENAI_MODEL)으로만 두면 워커가 초기화될 때 조용히
+ * sol 로 돌아간다. secret 이 전부 날아가 있던 걸 2026-09-17 에 겪었다.
+ * OPENAI_MODEL 은 급할 때 코드 배포 없이 바꾸는 탈출구로 남긴다.
+ */
+const DEFAULT_MODEL = 'gpt-5.6-terra';
 
 /** 엔드포인트들이 공유하는 문지기. 토큰 → 분당 상한(기기·IP) → JSON 파싱.
     전역 일일 상한은 여기서 보지 않는다 — /route 는 요청을 파싱해야 버킷이 정해진다 */

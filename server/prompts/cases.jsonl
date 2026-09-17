@@ -174,3 +174,13 @@
 {"g":"restate","text":"커피랑 샌드위치 같이 파는 데로 한 곳만","ctx":["카페","샌드위치 가게"],"expect":{"swap":true,"nstops":1,"note":"'한 곳만'은 합치라는 말이다"}}
 {"g":"restate","text":"약국도 들러줘","ctx":["카페","샌드위치 가게"],"expect":{"qhas":["약국"],"nstops":1,"note":"중복만 막는 것이지 새 경유지를 막는 게 아니다"}}
 {"g":"restate","text":"카페 한 곳 더 들르자","ctx":["카페"],"expect":{"n":2,"nstops":1,"note":"count 는 총 개수다 — 이미 한 곳 있으니 2. nstops 를 같이 건 이유: stops 가 비면 n 검사가 그냥 통과해 버린다"}}
+{"g":"tags","text":"지하철 타고 가는데 마트 들러서 장 보고 집에 갈게","expect":{"qhas":["마트"],"la":"hard","nw":"afterArrival"}}
+{"g":"tags","text":"나가는 길에 우산 하나 사야 해","expect":{"qhas":["우산"],"la":"none","nw":"beforeArrival"}}
+{"g":"tags","text":"택배 부치고 회사 가야 해","expect":{"lb":"hard"}}
+{"g":"tags","text":"세탁물 맡기고 출근할게","expect":{"lb":"hard"}}
+{"g":"tags","text":"세탁물 찾아서 집에 갈게","expect":{"la":"hard","nw":"afterArrival"}}
+{"g":"tags","text":"꽃 사서 결혼식장 갈 거야","expect":{"qhas":["꽃"],"la":"hard","nw":"afterArrival"}}
+{"g":"tags","text":"걸어가면서 먹을 아이스크림 하나 사자","expect":{"nw":"beforeArrival"}}
+{"g":"tags","text":"밀폐 텀블러에 커피 받아서 지하철 탈게","expect":{"nw":"beforeArrival"}}
+{"g":"tags","text":"은행 들렀다 가자","expect":{"lb":"none","la":"none","nw":"unknown"}}
+{"g":"near","text":"회사 근처 카페 들렀다 가자","expect":{"near":"end"}}

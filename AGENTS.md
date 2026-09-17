@@ -58,4 +58,5 @@ node server/run-cases.mjs --json > server/results.json && python3 server/make-xl
 | `server/src/guard.ts` | 과금 방어선(기기·IP·일일 상한). 상한값은 `PER_DAY` 한 곳 |
 | `server/case-score.mjs` | 채점 규칙. 목·codex·서버 러너가 공유한다 |
 | `server/run-server-cases.mjs` | 서버 실측 러너 (과금) |
+| `server/push-secrets.sh` | `.env` → 워커 secret 동기화. 워커가 갈아끼워지면 여기서 복구한다 |
 | `docs/채팅-추출-시뮬레이션.xlsx` | 케이스 시트는 스크립트가 만든다. **개선 이력만 손으로** |

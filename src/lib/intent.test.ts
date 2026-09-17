@@ -87,6 +87,14 @@ test("near — '빵집 앞'의 '집'에 걸리면 안 된다. 틀리게 잡는 �
   assert.equal(extractIntent('집 앞 편의점 들렀다가 출발할게', { currentStops: [] }).stops[0].near, 'start');
 });
 
+test('목은 태그를 보수적으로만 낸다', () => {
+  const got = extractIntent('마트 들렀다 집에 가자', { currentStops: [] });
+  const add = got.stops.find(s => s.op === 'add');
+  assert.equal(add?.loadBefore, 'none');
+  assert.equal(add?.loadAfter, 'none');
+  assert.equal(add?.needWhen, 'unknown');
+});
+
 /* known — 아래 세 테스트는 src/lib/knownPlaceMatch.ts 의 findKnownMatch 규칙을 목이
    그대로 따르는지 본다. src/state/plan.test.ts 의
    "짧은 라벨이 긴 말을 삼키지 않는다 — '포장마차집'은 집이 아니다" 가 같은 표를

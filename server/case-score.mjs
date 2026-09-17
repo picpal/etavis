@@ -12,7 +12,7 @@
 export const CHECKED_KEYS = [
   'qhas', 'qmulti', 'n', 'at', 'm', 'op', 'lock', 'flex', 'open', 'rej', 'amb', 'nostop',
   'swap', 'reset', 'dest', 'origin', 'order', 'qnot', 'nstops', 'minstops', 'ambopt',
-  'whyhas', 'whynot', 'why1', 'near',
+  'whyhas', 'whynot', 'why1', 'near', 'lb', 'la', 'nw',
 ];
 
 /**
@@ -50,6 +50,13 @@ export function scoreCase(c, got) {
   // 위치 — 사용자가 말한 쪽 끝을 뽑았나. 말하지 않았으면 any 여야 한다(지어내지 않는가)
   if (e.near && !got.stops.some(s => s.op !== 'remove' && (s.near ?? 'any') === e.near))
     fails.push(`near≠${e.near}`);
+  // 태그는 add 된 경유지에서만 본다 — remove 의 태그는 스키마가 이미 버린다
+  if (e.lb && !got.stops.some(s => s.op !== 'remove' && (s.loadBefore ?? 'none') === e.lb))
+    fails.push(`loadBefore≠${e.lb}`);
+  if (e.la && !got.stops.some(s => s.op !== 'remove' && (s.loadAfter ?? 'none') === e.la))
+    fails.push(`loadAfter≠${e.la}`);
+  if (e.nw && !got.stops.some(s => s.op !== 'remove' && (s.needWhen ?? 'unknown') === e.nw))
+    fails.push(`needWhen≠${e.nw}`);
   if (e.rej === true && !got.reject) fails.push('reject 안 함');
   if (e.rej === false && got.reject) fails.push('잘못 거절');
   if (e.amb && got.ambiguous.length === 0) fails.push('되묻지 않음');

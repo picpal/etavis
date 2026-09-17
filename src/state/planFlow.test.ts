@@ -66,6 +66,43 @@ test('requestKey는 좌표·모드·마감·칩·순서를 본다 (이름·출�
   assert.equal(requestKey(req), requestKey({ ...req, departAtMin: req.departAtMin + 1 }));
 });
 
+const base = (): PlanRequest => ({
+  origin: { latitude: 37.5, longitude: 127.0 },
+  destination: { latitude: 37.5, longitude: 127.1 },
+  originName: '내 위치', destinationName: '집',
+  mode: 'transit', arriveByMin: null, departAtMin: 540,
+  stops: [{
+    id: 'c1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+    stopKind: 'category', near: 'any',
+    loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown',
+  }],
+  order: 'auto',
+});
+
+test('near 가 바뀌면 다른 요청이다', () => {
+  const a = base();
+  const b = base();
+  b.stops[0].near = 'end';
+  assert.notEqual(requestKey(a), requestKey(b));
+});
+
+test('태그가 바뀌면 다른 요청이다 — 셋 다 각각', () => {
+  const a = base();
+  for (const mutate of [
+    (r: PlanRequest) => { r.stops[0].loadBefore = 'hard'; },
+    (r: PlanRequest) => { r.stops[0].loadAfter = 'hard'; },
+    (r: PlanRequest) => { r.stops[0].needWhen = 'afterArrival'; },
+  ]) {
+    const b = base();
+    mutate(b);
+    assert.notEqual(requestKey(a), requestKey(b));
+  }
+});
+
+test('같은 값이면 같은 키다', () => {
+  assert.equal(requestKey(base()), requestKey(base()));
+});
+
 test('isBusy', () => {
   assert.equal(isBusy('idle'), false);
   assert.equal(isBusy('searching'), true);

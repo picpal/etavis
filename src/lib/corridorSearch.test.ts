@@ -169,6 +169,95 @@ test('calls — 못 찾으면 회차마다 5씩 는다', async () => {
   assert.equal(r.calls, 20, '5점 × (3회차 + far 1회차)');
 });
 
+const at2 = (lng: number) => ({ latitude: 37.5, longitude: lng });
+const O2 = at2(127.0), D2 = at2(127.5);
+const line2 = [O2, D2];
+
+/** 검색 중심 좌표를 기록하는 목 */
+function spy(make: (center: { latitude: number; longitude: number }) => PlaceCandidate[]) {
+  const centers: number[] = [];
+  const fn = async (_q: string, center: { latitude: number; longitude: number }) => {
+    centers.push(center.longitude);
+    return make(center);
+  };
+  return { fn, centers };
+}
+
+/** 중심마다 후보 1개. 0건이면 far 폴백이 한 라운드 더 돌아 calls 가 5를 넘는다 */
+const one = (center: { latitude: number; longitude: number }): PlaceCandidate[] =>
+  [{ id: `p${center.longitude}`, name: 'p', coord: { ...center } }];
+
+test('side=end 면 샘플 점이 후반부에만 찍힌다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', origin: O2, destination: D2,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.equal(first.length, 5);
+  assert.ok(Math.min(...first) >= 127.249, `후반부여야 한다: ${first}`);
+  assert.ok(Math.max(...first) <= 127.5);
+});
+
+test('side=start 면 전반부에만 찍힌다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '약국', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'start', origin: O2, destination: D2,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.max(...first) <= 127.251, `전반부여야 한다: ${first}`);
+});
+
+test('side 를 줘도 라운드당 호출 수는 5회 그대로다', async () => {
+  const s = spy(one);
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', origin: O2, destination: D2,
+  }, s.fn);
+  assert.equal(r.calls, 5); // 반경이 상한과 같아 한 라운드만 돈다
+});
+
+test('target 을 near 쪽 개수로 센다 — 반대쪽만 8개면 반경을 더 넓힌다', async () => {
+  let round = 0;
+  const far = (i: number): PlaceCandidate =>
+    ({ id: `f${i}`, name: `f${i}`, coord: at2(127.0) });       // 전부 출발지 쪽
+  const close = (i: number): PlaceCandidate =>
+    ({ id: `c${i}`, name: `c${i}`, coord: at2(127.495) });      // 목적지에서 약 440m
+  const fn = async () => {
+    round++;
+    // 1라운드는 반대쪽만, 2라운드부터 목적지 쪽이 나온다
+    return round <= 5 ? [far(round)] : [far(round), close(round)];
+  };
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 3, initialRadiusM: 1000, maxRadiusM: 4000,
+    side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.ok(r.calls > 5, `한 라운드로 멈추면 안 된다: ${r.calls}`);
+  assert.equal(r.status, 'ok');
+});
+
+test('side 가 없으면 지금까지처럼 전 구간에서 찍는다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '카페', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.min(...first) <= 127.001);
+  assert.ok(Math.max(...first) >= 127.499);
+});
+
+test('side 를 줘도 origin·destination 이 없으면 무시한다 — 계약대로 전 구간에서 찍는다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', // origin·destination 를 일부러 뺀다
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.min(...first) <= 127.001, `전 구간이어야 한다: ${first}`);
+  assert.ok(Math.max(...first) >= 127.499, `전 구간이어야 한다: ${first}`);
+});
+
 const anchors: Anchor[] = [
   { id: 'a0', kind: 'origin', name: '출발지', coord: at(37.5188, 126.8575), progressM: 0 },
   { id: 'a1', kind: 'board', name: '목동', coord: at(37.526097, 126.864538), progressM: 1100 },
@@ -225,4 +314,104 @@ test('앵커 검색 — 도보 거리 오름차순', async () => {
   ]);
   const r = await searchAtAnchors(anchors, '올리브영', { need: 2, initialRadiusM: 1200 }, fn);
   assert.deepEqual(r.candidates.map(c => c.id), ['near', 'far']);
+});
+
+const anchor = (id: string, kind: Anchor['kind'], lng: number): Anchor =>
+  ({ id, kind, name: id, coord: at2(lng), progressM: 0 });
+
+const ALL: Anchor[] = [
+  anchor('a0', 'origin', 127.0),
+  anchor('a1', 'board', 127.01),
+  anchor('a2', 'transfer', 127.25),
+  anchor('a3', 'alight', 127.49),
+  anchor('a4', 'destination', 127.5),
+];
+
+test('side=end 면 하차역·목적지 앵커만 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '마트', { need: 1, target: 3, side: 'end', origin: O2, destination: D2 }, fn);
+  // stub 이 []만 돌려줘서 target(3)에 절대 못 미친다 — 반지름이 500→1000→1500 세 번 도는
+  // 만큼 같은 중심을 세 번씩 조회한다. 그래서 여기서는 "몇 번 불렀나"가 아니라
+  // "어느 중심을 불렀나"(집합)를 본다 — 호출 횟수로 재면 세 배로 뻥튀기된 값과 비교하게 된다.
+  assert.deepEqual([...new Set(seen)].sort(), ['127.49', '127.50']);
+});
+
+test('side=start 면 출발지·승차역 앵커만 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '약국', { need: 1, target: 3, side: 'start', origin: O2, destination: D2 }, fn);
+  assert.deepEqual([...new Set(seen)].sort(), ['127.00', '127.01']);
+});
+
+test('그쪽 종류의 앵커가 하나도 없으면 전부 본다 — 좁히다가 0건이 되면 안 된다', async () => {
+  const onlyTransfer = [anchor('t', 'transfer', 127.25)];
+  let calls = 0;
+  const fn = async () => { calls++; return []; };
+  await searchAtAnchors(onlyTransfer, '마트', { need: 1, target: 3, side: 'end', origin: O2, destination: D2 }, fn);
+  assert.ok(calls > 0, '앵커를 전부 버리면 안 된다');
+});
+
+test('side 가 없으면 지금까지처럼 전부 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '카페', { need: 1, target: 3 }, fn);
+  // 위와 같은 이유로 호출 횟수(15) 대신 조회된 앵커 집합의 크기를 본다 — side 없음이면 전부(5개)다
+  assert.equal(new Set(seen).size, 5);
+});
+
+test('좁힌 앵커 집합에서도 후보가 맞는 앵커에 붙는다', async () => {
+  // a3(하차역, 127.49) 자리에 후보 하나. side=end 면 used=[a3,a4] 라 a3 에 붙고 walkM 은 0 이다.
+  // attach 가 used[i] 대신 anchors[i] 를 쓰면 a0(출발지)·a1(승차역)에 붙어 40km 대가 나온다 —
+  // 좁혀진 뒤에도 attach 가 올바른 인덱스로 앵커를 찾아 붙이는지를 확인한다
+  const fn = async (): Promise<PlaceCandidate[]> =>
+    [{ id: 'm', name: '마트', coord: at2(127.49) }];
+  const r = await searchAtAnchors(ALL, '마트', {
+    need: 1, target: 1, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates.length, 1);
+  assert.equal(r.candidates[0].anchorId, 'a3');
+  assert.equal(r.candidates[0].anchorWalkM, 0);
+});
+
+test('컷이 near 쪽을 먼저 채운다 — 반대쪽이 경로에 더 가까워도', async () => {
+  // 목적지 쪽 1곳은 경로에서 멀고, 출발지 쪽 3곳은 경로 위에 있다
+  const list: PlaceCandidate[] = [
+    { id: 'n1', name: 'n1', coord: { latitude: 37.51, longitude: 127.5 } }, // end 쪽, D2 에서 약 1.1km
+    { id: 'f1', name: 'f1', coord: at2(127.0) },
+    { id: 'f2', name: 'f2', coord: at2(127.01) },
+    { id: 'f3', name: 'f3', coord: at2(127.02) },
+  ];
+  let done = false;
+  const fn = async () => { if (done) return []; done = true; return list; };
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 1, initialRadiusM: 3000, maxRadiusM: 3000,
+    max: 2, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates[0].id, 'n1', `end 쪽이 먼저여야 한다: ${r.candidates.map(c => c.id)}`);
+  assert.equal(r.candidates.length, 2); // 반대쪽도 버리지 않는다 — 완화가 되돌릴 게 있어야 한다
+});
+
+test('앵커 컷도 near 쪽을 먼저 채운다 — 폴백 경로', async () => {
+  // 하차역·목적지 앵커가 없어 폴백으로 전체를 본다. 그때도 목적지 쪽이 먼저다.
+  // near 는 앵커에서 21km 라 도보순으로는 꼴찌지만 D 에서 442m 다
+  const only = [anchor('t', 'transfer', 127.25)];
+  const near: PlaceCandidate = { id: 'n', name: 'n', coord: at2(127.495) };
+  const far: PlaceCandidate = { id: 'f', name: 'f', coord: at2(127.26) };
+  const fn = async (): Promise<PlaceCandidate[]> => [near, far];
+  const r = await searchAtAnchors(only, '마트', {
+    need: 1, target: 1, max: 2, side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.equal(r.candidates[0].id, 'n', `목적지 쪽이 먼저여야 한다: ${r.candidates.map(c => c.id)}`);
+  // 반대쪽을 버리지 않는다 — 완화가 되돌릴 후보가 없으면 완화가 무의미해진다
+  assert.equal(r.candidates.length, 2);
 });

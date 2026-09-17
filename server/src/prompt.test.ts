@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { kstHHMM, SYSTEM_PROMPT } from './prompt';
 
 test('UTC 를 KST 로 9시간 민다 — Workers 의 Date 는 UTC 다', () => {
@@ -25,4 +26,35 @@ test('프롬프트가 now 를 실제로 언급한다 — 서버가 넣는데 규
 test('near 규칙이 프롬프트에 실려 있다 — 스키마만 고치면 LLM 은 영영 안 뱉는다', () => {
   assert.ok(SYSTEM_PROMPT.includes('near'), 'near 규칙이 빠졌다');
   assert.ok(SYSTEM_PROMPT.includes('"near":"any"'), '출력 예시에 near 가 빠졌다');
+});
+
+test('프롬프트가 태그 3개를 요구한다', () => {
+  for (const k of ['loadBefore', 'loadAfter', 'needWhen']) {
+    assert.ok(SYSTEM_PROMPT.includes(k), `${k} 가 프롬프트에 없다`);
+  }
+});
+
+test('태그로 방향을 암시하지 말라고 못 박는다', () => {
+  // '추론하지 않는다' 는 옛 near 절에 이미 있어 이 규칙을 못 지킨다 —
+  // 새 절에만 있는 문구로 재야 규칙이 지워졌을 때 걸린다
+  assert.ok(SYSTEM_PROMPT.includes('코드가 정하니'), '방향 소유권 문장이 빠졌다');
+  assert.ok(SYSTEM_PROMPT.includes('암시하려 하지 마라'), '방향 암시 금지 문장이 빠졌다');
+});
+
+test('문서 원본도 태그 3개를 적고 있다 — 사본만 고치면 다음 사람이 원본을 믿는다', () => {
+  const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
+  assert.ok(md.includes('(v11)'), '문서 헤더가 v11 이 아니다');
+  for (const k of ['loadBefore', 'loadAfter', 'needWhen']) {
+    assert.ok(md.includes(k), `${k} 가 문서 원본에 없다`);
+  }
+});
+
+test('문서와 사본의 버전 카운터가 같다 — 갈리면 원본을 못 믿는다', () => {
+  const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
+  const ts = readFileSync('server/src/prompt.ts', 'utf8');
+  const docV = md.match(/^#\s.*\(v(\d+)\)/m)?.[1];
+  const codeV = ts.match(/v(\d+)\s*\(\d{4}-\d{2}-\d{2}\)/)?.[1];
+  assert.ok(docV, '문서 헤더에서 버전을 못 읽었다');
+  assert.ok(codeV, 'prompt.ts 주석에서 버전을 못 읽었다');
+  assert.equal(docV, codeV, `문서 v${docV} vs 사본 v${codeV}`);
 });

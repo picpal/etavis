@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { haversineM } from '../lib/geo.ts';
 import { mockRouteProvider } from '../lib/routePlan/mockProvider.ts';
-import type { PlaceCandidate } from '../lib/routePlan/types.ts';
+import type { LatLng, PlaceCandidate } from '../lib/routePlan/types.ts';
 import type { SearchFn } from '../lib/corridorSearch.ts';
 import { dwellFor, runPlan } from './runPlan.ts';
 import { initialPlanFlow, planFlowReducer } from './planFlow.ts';
@@ -18,6 +18,18 @@ const catalog: PlaceCandidate[] = [
 ];
 const search: SearchFn = async (q, near, r) =>
   catalog.filter(c => c.name.startsWith(q) && haversineM(near, c.coord) <= r);
+/** 목적지(127.1136) 1500m 안에 3곳, 밖에 2곳. near=end 완화 단계를 가르는 배치 */
+const martCatalog: PlaceCandidate[] = [
+  { id: 'm1', name: '마트 A', coord: at(37.5, 127.1100) }, // D 에서 약 318m
+  { id: 'm2', name: '마트 B', coord: at(37.5, 127.1050) }, // 약 760m
+  { id: 'm3', name: '마트 C', coord: at(37.5, 127.1000) }, // 약 1,201m
+  { id: 'm4', name: '마트 D', coord: at(37.5, 127.0650) }, // 약 4,294m
+  { id: 'm5', name: '마트 E', coord: at(37.5, 127.0600) }, // 약 4,736m
+  { id: 'k1', name: '약국 A', coord: at(37.5, 127.1105) },
+  { id: 'k2', name: '약국 B', coord: at(37.5, 127.0640) },
+];
+const martSearch: SearchFn = async (q, center, r) =>
+  martCatalog.filter(c => c.name.startsWith(q) && haversineM(center, c.coord) <= r);
 const req = (stops: PlanRequest['stops'], extra: Partial<PlanRequest> = {}): PlanRequest => ({
   origin: O, destination: D, originName: '집', destinationName: '회사', mode: 'car',
   arriveByMin: null, departAtMin: 480, stops, order: 'auto', ...extra,
@@ -792,7 +804,11 @@ const nearSearch: SearchFn = async (q, from, r) =>
 const slotsOf = (actions: PlanFlowAction[]) =>
   (actions.find(a => a.type === 'SLOTS') as {
     type: 'SLOTS';
-    slots: { candidates: { id: string }[]; near?: string; nearRelaxed?: boolean }[];
+    slots: {
+      near?: string; nearSource?: string; nearBefore?: number; nearAfter?: number;
+      nearRadiusM?: number | null; nearRelaxed?: boolean; nearRelaxedRaw?: boolean;
+      candidates: { id: string }[];
+    }[];
   }).slots;
 
 test("near='end' — 목적지 쪽 후보만 슬롯에 남는다", async () => {
@@ -831,10 +847,12 @@ test('그쪽에 한 곳도 없으면 제약을 풀고 계획은 그대로 간다
 });
 
 test('물성 신호 — 대중교통에서 커피를 사면 near 를 말 안 해도 목적지 쪽이 된다', async () => {
+  // decideNear 는 why 텍스트를 안 본다(CARRY 정규식은 748a030 에서 버렸다) — '커피'라는
+  // 물성은 이제 추출이 붙이는 loadAfter 태그로 온다. why 는 여전히 화면 표시용으로 남는다
   const { actions, dispatch } = collect();
   await runPlan(
     req(
-      [{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기' }],
+      [{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기', loadAfter: 'hard' }],
       { mode: 'transit' },
     ),
     { provider: mockRouteProvider(), search: nearSearch, dispatch },
@@ -847,7 +865,7 @@ test('물성 신호 — 대중교통에서 커피를 사면 near 를 말 안 해
 test('물성 신호 — 차로 가면 표를 읽지 않는다. 커피는 들고 탈 수 있다', async () => {
   const { actions, dispatch } = collect();
   await runPlan(
-    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기' }]),
+    req([{ id: 's-1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', why: '커피 사기', loadAfter: 'hard' }]),
     { provider: mockRouteProvider(), search: nearSearch, dispatch },
   );
   const [s] = slotsOf(actions);
@@ -872,4 +890,170 @@ test('같은 검색어 슬롯이 둘인데 그쪽에 한 곳뿐이면 제약을 
   const last = actions[actions.length - 1];
   assert.equal(last.type, 'RESULT', '계획이 나와야 한다');
   assert.ok((last as { type: 'RESULT'; result: { options: unknown[] } }).result.options.length > 0, '안이 하나는 있어야 한다');
+});
+
+/* 진단 필드 — nearSource·nearBefore·nearAfter·nearRadiusM·nearRelaxedRaw.
+   화면은 near·nearRelaxed 만 보지만, 로그(actionLog.ts)는 이 다섯을 전부 본다 */
+
+test('추론한 방향은 end 이고 nearSource=inferred 로 기록된다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category', loadBefore: 'none', loadAfter: 'hard', needWhen: 'afterArrival' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  assert.equal(s.near, 'end');
+  assert.equal(s.nearSource, 'inferred');
+  assert.equal(s.nearRadiusM, 1500);      // 1500m 안에 3곳이라 첫 단계에서 멈춘다
+  assert.equal(s.nearAfter, 3);
+  assert.equal(s.nearRelaxed, false);     // 화면은 추론을 사과하지 않는다
+  assert.equal(s.nearRelaxedRaw, false);
+  assert.equal(s.nearBefore, 5);          // martCatalog 의 마트 5곳 전부 — 완화 전 원본 개수
+});
+
+test('추론한 side 가 검색까지 닿는다 — 샘플이 목적지 쪽 절반에서만 찍힌다', async () => {
+  // side 를 searchAlong 에 안 넘기면 회랑 전체(0~1)에서 표본을 찍어 O 근처(127.0)
+  // 중심도 섞인다. side='end' 가 실제로 검색까지 닿으면 표본은 s∈[0.5,1] 에서만
+  // 찍히므로 중심 경도가 전부 127.056(=O+0.5*(D-O)) 이상이어야 한다.
+  const centers: LatLng[] = [];
+  const spy: SearchFn = async (q, center, r) => { centers.push(center); return martSearch(q, center, r); };
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: spy, dispatch },
+  );
+  assert.equal(slotsOf(actions)[0].near, 'end');
+  assert.ok(centers.length > 0);
+  assert.ok(centers.every(c => c.longitude >= 127.056),
+    `목적지 쪽 절반에서만 찍혀야 한다: ${centers.map(c => c.longitude.toFixed(4))}`);
+});
+
+test('사용자가 말한 방향은 stated 다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category', near: 'end' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  assert.equal(slotsOf(actions)[0].nearSource, 'stated');
+});
+
+test('방향이 없으면 nearSource=none 이고 반경도 안 남는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  assert.equal(s.near, 'any');
+  assert.equal(s.nearSource, 'none');
+  assert.equal(s.nearRadiusM, null);
+});
+
+test('추론이 완화돼도 화면 플래그는 안 서고 진단 플래그만 선다', async () => {
+  // 기존 catalog 의 올리브영은 127.05·127.07 — D 에서 3,851m·5,616m 라 두 단계 다 못 채운다
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false,
+           stopKind: 'brand', loadAfter: 'hard', needWhen: 'afterArrival' }],
+        { mode: 'transit' }),
+    { provider: mockRouteProvider(), search, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  assert.equal(s.near, 'end');
+  assert.equal(s.nearRelaxed, false);     // 사용자가 말한 게 아니라 사과하지 않는다
+  assert.equal(s.nearRelaxedRaw, true);   // 로그는 안다
+  assert.equal(s.nearRadiusM, null);
+  assert.equal(s.candidates.length, 2);   // 되돌렸으므로 경유지가 증발하지 않는다
+});
+
+test('자동차는 태그가 있어도 any 다 — 알려진 한계', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([{ id: 's-1', queries: ['마트'], count: 1, flexible: true, openNow: false,
+           stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' }]),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  assert.equal(slotsOf(actions)[0].near, 'any');
+});
+
+/* 형제 슬롯 요구량 — 검색어가 달라도 같은 near 를 쓰면 같은 쪽 후보 풀을 나눠 가진다 */
+
+test('검색어가 달라도 같은 near 를 쓰면 형제로 세어 요구량을 올린다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // 같은 검색어 형제만 세면 need=2 → 요구량 max(2,3)=3 → 목적지 쪽 3곳으로 통과했을 것이다.
+  // 같은 near 형제까지 세면 need=4 → 요구량 4 → 3곳으로는 모자라 완화한다
+  assert.equal(s.near, 'end');
+  assert.equal(s.nearRelaxedRaw, true);
+  assert.equal(s.nearRadiusM, null);
+});
+
+test('near 가 any 인 슬롯은 형제로 세지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', loadAfter: 'hard', needWhen: 'afterArrival' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category' }, // 태그 없음 → any
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // byNear('end') = 2 뿐이라 요구량은 max(2,3)=3 → 목적지 쪽 3곳으로 통과한다
+  assert.equal(s.nearRelaxedRaw, false);
+  assert.equal(s.nearRadiusM, 1500);
+});
+
+test('같은 검색어가 양쪽으로 갈려도 검색어 형제 수를 잃지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'start' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // sameQuery('마트') = 4, byNear('end') = 2. Math.max 를 버리고 sameNear 만 쓰면
+  // 요구량이 2로 떨어져 목적지 쪽 3곳으로 통과해 버린다
+  assert.equal(s.nearRelaxedRaw, true);
+  assert.equal(s.nearRadiusM, null);
+});
+
+test('양쪽 끝의 슬롯 수를 한 덩어리로 합치지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'start' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // byNear('end') = 2 뿐이라 요구량은 max(2,3)=3 → 목적지 쪽 3곳으로 통과한다.
+  // 양쪽을 한 덩어리로 세면 4가 돼 완화가 돈다
+  assert.equal(s.nearRelaxedRaw, false);
+  assert.equal(s.nearRadiusM, 1500);
 });

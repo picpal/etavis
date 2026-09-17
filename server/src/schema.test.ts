@@ -137,3 +137,28 @@ test('near — 없으면 any. 말하지 않은 제약을 지어내지 않는다'
   });
   assert.equal(i!.stops[0].near, 'any');
 });
+
+test('태그 3개를 허용 목록으로 검증한다', () => {
+  const got = parseIntent({
+    stops: [{ queries: ['마트'], loadBefore: 'none', loadAfter: 'hard', needWhen: 'afterArrival' }],
+  });
+  assert.equal(got?.stops[0].loadAfter, 'hard');
+  assert.equal(got?.stops[0].needWhen, 'afterArrival');
+});
+
+test('목록 밖 값은 보수적 기본값으로 떨어진다', () => {
+  const got = parseIntent({
+    stops: [{ queries: ['마트'], loadBefore: '아주무거움', loadAfter: 7, needWhen: null }],
+  });
+  assert.equal(got?.stops[0].loadBefore, 'none');
+  assert.equal(got?.stops[0].loadAfter, 'none');
+  assert.equal(got?.stops[0].needWhen, 'unknown');
+});
+
+test('op=remove 의 태그는 읽지 않는다', () => {
+  const got = parseIntent({
+    stops: [{ op: 'remove', queries: ['마트'], loadAfter: 'hard', needWhen: 'afterArrival' }],
+  });
+  assert.equal(got?.stops[0].loadAfter, 'none');
+  assert.equal(got?.stops[0].needWhen, 'unknown');
+});

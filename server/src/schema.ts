@@ -19,6 +19,12 @@ export type IntentStop = {
   prefers: string[];
   /** 경로의 어느 쪽 끝에 붙어야 하나. 사용자가 위치를 말했을 때만 start/end 다 */
   near: 'start' | 'end' | 'any';
+  /** 경유지까지 들고 가야 하는 것이 있나. 택배 부치기·세탁 맡기기 */
+  loadBefore: 'none' | 'hard';
+  /** 경유지에서 얻은 것을 대중교통·도보로 들고 이동하기 어려운가 */
+  loadAfter: 'none' | 'hard';
+  /** 목적지에 닿기 전에 필요한가, 닿은 뒤에 필요한가 */
+  needWhen: 'beforeArrival' | 'afterArrival' | 'unknown';
 };
 
 export type Intent = {
@@ -61,6 +67,12 @@ function parseStop(raw: unknown): IntentStop | null {
   // 세 값뿐이다. LLM 이 '목적지 근처' 같은 말이나 거리(m)를 뱉어도 여기서 떨어진다 —
   // 몇 미터인지는 코드가 정한다(AGENTS.md: LLM은 '무엇을'만 뽑는다)
   const near = r.near === 'start' || r.near === 'end' ? r.near : 'any';
+  // 지울 경유지의 물성은 의미가 없다 — 읽으면 공격면만 는다
+  const isRemove = r.op === 'remove';
+  const load = (v: unknown): 'none' | 'hard' => (!isRemove && v === 'hard' ? 'hard' : 'none');
+  const needWhen = !isRemove && (r.needWhen === 'beforeArrival' || r.needWhen === 'afterArrival')
+    ? r.needWhen
+    : 'unknown';
   return {
     op: r.op === 'remove' ? 'remove' : 'add',
     queries,
@@ -71,6 +83,9 @@ function parseStop(raw: unknown): IntentStop | null {
     openNow: r.openNow === true,
     prefers,
     near,
+    loadBefore: load(r.loadBefore),
+    loadAfter: load(r.loadAfter),
+    needWhen,
   };
 }
 

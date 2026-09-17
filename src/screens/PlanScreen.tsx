@@ -7,7 +7,7 @@ import type { NavigationAction } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, HIT_SLOP, type } from '../theme/tokens';
 import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
-import { RECENT_DESTINATIONS } from '../data/mockData';
+import { knownPlacesSnapshot } from '../lib/placesStore';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
@@ -347,7 +347,7 @@ export function PlanScreen({ navigation }: Props) {
       .extract(text, {
         currentStops: state.stops.map(s => s.name),
         // 좌표를 아는 곳만 넘긴다 — 목적지 변경은 그 안에서만 적용된다(plan.tsx APPLY_INTENT)
-        knownPlaces: RECENT_DESTINATIONS.map(r => r.name),
+        knownPlaces: knownPlacesSnapshot().map(p => p.name),
       })
       .then(({ intent, source }) => {
         if (seq !== seqRef.current) return; // 지나간 요청의 답은 버린다

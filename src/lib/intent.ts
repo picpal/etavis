@@ -219,7 +219,18 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
   if (endpoints.origin || endpoints.destination) {
     const known = ctx.knownPlaces ?? [];
     const name = endpoints.destination ?? endpoints.origin!;
-    if (!known.some(k => k.includes(name) || name.includes(k))) {
+    /* src/lib/knownPlaceMatch.ts 의 findKnownMatch 와 규칙이 같아야 한다 — 그게
+       src/state/plan.tsx 의 pick() 이 실제로 적용하는 규칙이다. 여기서 "아는 곳"이라고
+       답해 놓고 리듀서가 못 잡으면, 목적지도 안 바뀌고 되묻기도 안 떠서 화면이 아무
+       반응 없이 끝난다. 이 파일은 로컬 import 가 없어야 run-cases.mjs 의 flat 컴파일이
+       서므로(IntentStop.near 주석 참고) 가져다 쓰지 못하고 그대로 인라인한다 —
+       규칙을 바꾸면 두 파일을 같이 고칠 것.
+       정규화(공백 제거) 완전 일치, 아니면 아는 이름이 말로 시작하는 경우(2자 이상) */
+    const norm = (s: string) => s.replace(/\s+/g, '');
+    const said = norm(name);
+    const isKnown =
+      !!said && (known.some(k => norm(k) === said) || (said.length >= 2 && known.some(k => norm(k).startsWith(said))));
+    if (!isKnown) {
       return {
         ...base,
         endpoints,

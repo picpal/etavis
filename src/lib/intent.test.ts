@@ -94,3 +94,27 @@ test('목은 태그를 보수적으로만 낸다', () => {
   assert.equal(add?.loadAfter, 'none');
   assert.equal(add?.needWhen, 'unknown');
 });
+
+/* known — 아래 세 테스트는 src/lib/knownPlaceMatch.ts 의 findKnownMatch 규칙을 목이
+   그대로 따르는지 본다. src/state/plan.test.ts 의
+   "짧은 라벨이 긴 말을 삼키지 않는다 — '포장마차집'은 집이 아니다" 가 같은 표를
+   plan.tsx 의 pick() 쪽에서 돈다 — 한쪽만 고치면 둘 중 하나가 깨진다 */
+
+test("known — 완전 일치는 한 글자여도 잡는다('집'). plan.test.ts 의 같은 이름 테스트와 짝이다", () => {
+  const i = extractIntent('목적지를 집으로 바꿔줘', { currentStops: [], knownPlaces: ['집'] });
+  assert.deepEqual(i.endpoints, { destination: '집' });
+  assert.equal(i.ambiguous.length, 0, '아는 곳이면 안 되묻는다');
+});
+
+test("known — 짧은 라벨이 긴 말을 삼키지 않는다('포장마차집'은 '집'이 아니다). plan.test.ts 의 짝", () => {
+  const i = extractIntent('목적지를 포장마차집으로 바꿔줘', { currentStops: [], knownPlaces: ['집'] });
+  assert.deepEqual(i.endpoints, { destination: '포장마차집' });
+  const q = i.ambiguous.find(a => a.field === 'endpoints');
+  assert.ok(q, '아는 곳이 아니니 되물어야 한다 — 여기서 안 되물으면 plan.tsx 의 pick() 은 못 잡는데' + ' 화면은 아무 반응 없이 끝난다');
+});
+
+test("known — 두 글자 이상 앞자리 일치 + 공백 정규화('여의도공원 출입구8'이 '여의도 공원'으로 걸린다)", () => {
+  const i = extractIntent('목적지를  여의도 공원 으로 바꿔줘', { currentStops: [], knownPlaces: ['여의도공원 출입구8'] });
+  assert.deepEqual(i.endpoints, { destination: '여의도 공원' });
+  assert.equal(i.ambiguous.length, 0, '아는 곳이면 안 되묻는다');
+});

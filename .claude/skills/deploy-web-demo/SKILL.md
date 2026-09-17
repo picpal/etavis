@@ -52,6 +52,24 @@ for m in src/notifications src/lib/trackLog src/lib/prefs src/lib/currentPlace s
 done
 ```
 
+**목록에 없는 모듈이 새로 네이티브 API 를 물었는지도 본다.** 위 다섯은 이미 shim 이
+있는 것들이고, 앱에 새 모듈이 들어오면 목록 밖이라 대조로는 안 잡힌다. 2026-09-17 에
+메인의 `placesStore.ts`(내 장소·최근 목적지)가 `expo-file-system` 을 물고 들어와,
+빌드는 통과하는데 런타임에 `expo-file-system is not supported on web` 이 뜨고
+저장이 매번 빈 상태로 시작했다.
+
+```bash
+for f in $(git diff --name-only $(git merge-base main HEAD)..HEAD -- 'src/*' 'src/**/*'); do
+  [ -f "$f" ] && grep -l "from 'expo-" "$f" 2>/dev/null
+done | sort -u | while read f; do
+  [ -f "${f%.ts}.web.ts" ] || [ -f "${f%.tsx}.web.tsx" ] || echo "shim 없음: $f"
+done
+```
+
+`shim 없음` 이 나오면 그 모듈이 웹에서 어떻게 되는지 확인한다. 죽지 않고 빈 값으로
+degrade 하더라도, 저장·위치처럼 사용자가 결과를 보는 기능이면 `.web.ts` 를 만든다 —
+로직은 옮기지 말고 **읽고 쓰는 자리만** 바꾼다(`prefs.web.ts`·`placesStore.web.ts` 참고).
+
 ## 2. 타입·테스트
 
 ```bash
@@ -163,7 +181,7 @@ curl -s -o /dev/null -D - -X OPTIONS "$W/route" -H 'Origin: https://evil.test' -
 |---|---|
 | 데모가 흰 화면 | 배포 직후 전파 지연일 수 있다. 캐시 무시하고 새로고침. 그래도면 `index.html` 이 참조하는 JS 해시가 실제로 서빙되는지 확인 |
 | 모든 기능이 목 | 번들의 `serverUrl` 이 비었다 → 3번을 `--clear` 로 다시 |
-| `/places` 404 | 예전 코드가 배포됐다. 특히 **Cloudflare 대시보드에서 시크릿을 추가하면 코드가 되돌아간 적이 있다** → `cd server && npx wrangler deploy --config wrangler.toml` |
+| `/places` 404 | 예전 코드가 배포됐다. **Cloudflare 대시보드가 이 워커를 두 번 되돌렸다**(2026-09-17). 한 번은 "Add variable and deploy" 직후, 한 번은 대시보드 설정 탭을 열어 둔 채 작업하던 중에. 고치는 법은 같다 → `cd server && npx wrangler deploy --config wrangler.toml`. **예방: 시크릿은 `wrangler secret put` 으로 넣고, 넣은 뒤 대시보드 탭을 닫는다.** 넣은 직후에는 반드시 7번으로 라우트 생사를 확인한다 |
 | `/route` 는 되는데 `/places` 500 | 서버 로그를 본다: `cd server && npx wrangler tail --config wrangler.toml` |
 | API 루트가 정적 HTML | API 워커가 웹 데모로 덮어써졌다 → 6번의 루트 오염을 지우고 `--config` 로 서버 재배포 |
 

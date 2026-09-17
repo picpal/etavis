@@ -13,6 +13,8 @@ import { parseRouteRequest } from './routeSchema';
 import { kakaoDirectionsUrl, normalizeKakao } from './kakao';
 import { handleEnrich } from './enrich';
 import { handleTransit } from './transit';
+import { handlePlaces } from './places';
+import { parsePlacesRequest } from './placesSchema';
 import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 import { upstreamDetail } from './upstream';
 
@@ -32,6 +34,8 @@ export interface Env {
   GOOGLE_PLACES_KEY: string;
   /** Routes API 용 키. 없으면 GOOGLE_PLACES_KEY 를 쓴다(같은 키에 Routes 를 허용해 둔 경우) */
   GOOGLE_ROUTES_KEY?: string;
+  /** developers.kakao.com 로컬 REST 키. KAKAO_MOBILITY_KEY(길찾기)와 다르다 */
+  KAKAO_LOCAL_KEY: string;
   /** 대중교통 공급자. google | tmap | kakao. 없으면 google */
   TRANSIT_PROVIDER?: string;
   /** 바깥 응답 캐시. RATE 와 별개 — 용도가 섞이면 TTL 을 못 나눈다 */
@@ -123,13 +127,19 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
-    const known = ['/extract', '/route', '/enrich', '/transit'];
+    const known = ['/extract', '/route', '/enrich', '/transit', '/places'];
     if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
     if (gated instanceof Response) return gated;
     if (url.pathname === '/route') return handleRoute(gated.body, env);
     if (url.pathname === '/transit') return handleTransit(gated.body, env, { fetch, now: new Date() });
+    if (url.pathname === '/places') {
+      if (await overDailyCap(env.RATE, '/places', new Date())) return json({ error: 'daily cap' }, 429);
+      const parsed = parsePlacesRequest(gated.body);
+      if (!parsed) return json({ error: 'bad request' }, 400);
+      return handlePlaces(parsed, env, { fetch });
+    }
     if (url.pathname === '/enrich') {
       if (await overDailyCap(env.RATE, '/enrich', new Date())) return json({ error: 'daily cap' }, 429);
       return handleEnrich(gated.body, env, { fetch, now: new Date() });

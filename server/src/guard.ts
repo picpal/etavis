@@ -28,11 +28,11 @@ export type KVLike = {
     구간마다 한 번씩 부른다(`src/lib/routePlan/transitBudget.ts`). 20이면 1분에 두 번만
     계획할 수 있어 경로를 다시 짜는 정상 사용이 막힌다. /route와 같은 근거로 40으로 둔다.
     분당 상한은 폭주 방어선이지 돈줄이 아니다 — 돈은 아래 PER_DAY가 막는다 */
-export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 40 };
+export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 40, '/places': 300 };
 
 /** IP당 분당 상한. 기기당의 3배 — 사무실·모바일 NAT로 여럿이 한 IP를 쓰는 걸
     감안하되, 기기 id만 갈아끼우는 우회는 막는다 */
-export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 120 };
+export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 120, '/places': 900 };
 
 /**
  * 전역 일일 상한. 값의 근거는 2026-09-14 기준 각 API 요금표다.
@@ -44,6 +44,7 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  * | `/enrich`       | 구글 Places — `enrich.ts`에 월 900 카운터가 따로 있다 | | 600 |
  * | `/extract`      | OpenAI, 무료분 없음 | 문장당 | 1,200 |
  * | `/transit`      | Google Routes — Compute Routes Essentials 월 10,000 무료·$5/1,000 (2026-09-15 공식 요금·SKU 문서 확인: TRANSIT·transitDetails·대안 경로는 Pro/Enterprise 트리거가 아님) | | 300 |
+ * | `/places`       | developers.kakao.com 로컬 검색 — 2026-09-17 콘솔 확인 못 함(에이전트는 로그인 불가). Task 8 규칙대로 확인 불가 시 10,000 폴백. 계획 한 건 최악 150콜(`runPlan.ts:159`, 후보 3개×25콜×경유지 2) 기준 일 60건 이상을 받는다. 확정값은 Task 10에서 콘솔 확인 후 채운다 | | 10000 |
 
  * `/transit` 300/일은 월 10,000 무료분을 30일로 나눈 선이다. **이 숫자는 그대로 두되 뜻이 바뀌었다** —
  * 7단계(2026-09-16)부터 대중교통 계획 하나가 1회가 아니라 최대 10회를 쓴다(구간마다 한 번).
@@ -59,6 +60,7 @@ export const PER_DAY: Record<string, number> = {
   '/route:future': 4000,
   '/enrich': 600,
   '/transit': 300,
+  '/places': 10000,
 };
 
 const DAY_TTL_S = 2 * 24 * 60 * 60;

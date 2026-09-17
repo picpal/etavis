@@ -150,7 +150,9 @@ export type AnchorSearchOptions = {
   max?: number;
   /**
    * 어느 쪽 끝을 노릴까. 그쪽 종류의 앵커만 조회한다 — 앵커당 1콜이라 호출 수도 준다.
-   * origin·destination 은 여기서는 안 쓴다(선택은 kind만으로 된다). 8단계에서 쓴다.
+   * 앵커 *선택* 은 kind 만으로 된다. origin·destination 은 그 뒤 attach 안에서
+   * max(기본 30개)로 자르는 컷에 쓰인다 — nearFirst 를 거쳐 matchesNear 로
+   * near 쪽을 먼저 채운다.
    */
   side?: NearSide;
   origin?: LatLng;

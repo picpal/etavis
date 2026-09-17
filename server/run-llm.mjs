@@ -108,6 +108,12 @@ function toIntent(out) {
       count: s.count ?? 1,
       flexible: s.flexible ?? true,
       openNow: !!s.openNow,
+      // near 가 빠져 있었다 — case-score 가 (s.near ?? 'any') 로 읽어서
+      // near:'end' 기대값이 구조적으로 통과할 수 없었다
+      near: s.near ?? 'any',
+      loadBefore: s.loadBefore ?? 'none',
+      loadAfter: s.loadAfter ?? 'none',
+      needWhen: s.needWhen ?? 'unknown',
     })),
     endpoints: out.endpoints ?? {},
     order: out.order ?? 'auto',

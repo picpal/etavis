@@ -43,3 +43,25 @@ test('버전을 내리면 막는다 — 같은 빌드 번호 공간으로 되돌
     /1\.2\.0/,
   );
 });
+
+test('--downgrade 면 버전을 내릴 수 있다 — 1.0.x 를 0.x 로 되돌린 적이 있다', () => {
+  /* 정식 출시가 아닌데 1.0.0 으로 나가서 0.1.0 으로 내렸다(2026-09-17).
+     내리는 걸 막는 게 아니라 모르고 내리는 걸 막는 가드다 */
+  assert.doesNotThrow(() =>
+    assertReleasable({ ...ok, currentVersion: '1.0.3', nextVersion: '0.1.0', allowDowngrade: true }),
+  );
+});
+
+test('--downgrade 라도 같은 버전은 막는다 — 태그가 둘이 될 수는 없다', () => {
+  assert.throws(
+    () => assertReleasable({ ...ok, currentVersion: '1.1.0', allowDowngrade: true }),
+    /같은 버전/,
+  );
+});
+
+test('--downgrade 없이 내리면 무엇을 붙여야 하는지 알려준다', () => {
+  assert.throws(
+    () => assertReleasable({ ...ok, currentVersion: '1.0.3', nextVersion: '0.1.0' }),
+    /--downgrade/,
+  );
+});

@@ -1021,3 +1021,39 @@ test('near 가 any 인 슬롯은 형제로 세지 않는다', async () => {
   assert.equal(s.nearRelaxedRaw, false);
   assert.equal(s.nearRadiusM, 1500);
 });
+
+test('같은 검색어가 양쪽으로 갈려도 검색어 형제 수를 잃지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'start' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // sameQuery('마트') = 4, byNear('end') = 2. Math.max 를 버리고 sameNear 만 쓰면
+  // 요구량이 2로 떨어져 목적지 쪽 3곳으로 통과해 버린다
+  assert.equal(s.nearRelaxedRaw, true);
+  assert.equal(s.nearRadiusM, null);
+});
+
+test('양쪽 끝의 슬롯 수를 한 덩어리로 합치지 않는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['마트'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'end' },
+      { id: 's-2', queries: ['약국'], count: 2, flexible: true, openNow: false,
+        stopKind: 'category', near: 'start' },
+    ], { mode: 'transit' }),
+    { provider: mockRouteProvider(), search: martSearch, dispatch },
+  );
+  const s = slotsOf(actions)[0];
+  // byNear('end') = 2 뿐이라 요구량은 max(2,3)=3 → 목적지 쪽 3곳으로 통과한다.
+  // 양쪽을 한 덩어리로 세면 4가 돼 완화가 돈다
+  assert.equal(s.nearRelaxedRaw, false);
+  assert.equal(s.nearRadiusM, 1500);
+});

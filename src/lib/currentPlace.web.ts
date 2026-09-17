@@ -72,7 +72,9 @@ export function refreshCurrentPlace(): Promise<void> {
         );
       });
       fetchedAt = Date.now();
-      set({ status: 'ready', coord, address: null, shortAddress: '내 위치', area: null });
+      // 웹엔 역지오코딩이 없다. address 를 null 로 두면 HomeScreen 이 '주소를 찾지 못했어요'
+      // 로 읽어 정상 동작이 고장처럼 보인다 — 좌표는 잡혔으니 그렇게 말한다.
+      set({ status: 'ready', coord, address: '브라우저가 알려준 위치로 계산해요', shortAddress: '내 위치', area: null });
     } catch {
       // 거부·타임아웃·미지원 — 전부 데모 출발지로. 여기서 막히면 데모가 시작도 못 한다
       fetchedAt = Date.now();

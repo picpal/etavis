@@ -16,6 +16,14 @@ import { color, radius, shadow } from '../theme/tokens';
 
 const OPEN_MS = 300;
 const CLOSE_MS = 220;
+/**
+ * 키보드가 올라왔을 때 시트와 키보드 사이 틈.
+ *
+ * iOS 26 키보드는 상단 모서리가 둥글다. 시트 하단을 직각으로 딱 붙여 두면 두 모서리
+ * 사이로 딤이 비쳐 삼각 틈이 생긴다 — 붙지도 떨어지지도 않은 모양이다. 하단에도 같은
+ * 반경을 주고 이만큼 띄워, 둥근 판 두 장이 나란히 떠 있는 모습으로 맞춘다.
+ */
+const KB_GAP = 8;
 
 /** 키보드와 같은 곡선·같은 시간으로 움직인다 — 시트만 먼저 튀면 뒤에 딤이 번쩍인다 */
 function keyboardAnim(duration: number) {
@@ -66,7 +74,8 @@ export function Sheet({
     };
   }, []);
 
-  const maxH = screenH - insets.top - 40 - kbHeight;
+  const lifted = kbHeight > 0;
+  const maxH = screenH - insets.top - 40 - kbHeight - (lifted ? KB_GAP : 0);
   const fixedH = height ? Math.min(height, maxH) : undefined;
 
   useEffect(() => {
@@ -121,12 +130,15 @@ export function Sheet({
             position: 'absolute',
             left: 0,
             right: 0,
-            bottom: kbHeight,
+            bottom: lifted ? kbHeight + KB_GAP : 0,
             height: fixedH,
             maxHeight: maxH,
             backgroundColor: color.bg,
             borderTopLeftRadius: radius.sheet,
             borderTopRightRadius: radius.sheet,
+            // 떠 있을 때만 하단도 둥글다. 내려가 있으면 화면 바닥에 붙으므로 직각이 맞다
+            borderBottomLeftRadius: lifted ? radius.sheet : 0,
+            borderBottomRightRadius: lifted ? radius.sheet : 0,
             ...shadow.sheet,
           },
           sheetStyle,

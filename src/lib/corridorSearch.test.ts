@@ -169,6 +169,84 @@ test('calls — 못 찾으면 회차마다 5씩 는다', async () => {
   assert.equal(r.calls, 20, '5점 × (3회차 + far 1회차)');
 });
 
+const at2 = (lng: number) => ({ latitude: 37.5, longitude: lng });
+const O2 = at2(127.0), D2 = at2(127.5);
+const line2 = [O2, D2];
+
+/** 검색 중심 좌표를 기록하는 목 */
+function spy(make: (center: { latitude: number; longitude: number }) => PlaceCandidate[]) {
+  const centers: number[] = [];
+  const fn = async (_q: string, center: { latitude: number; longitude: number }) => {
+    centers.push(center.longitude);
+    return make(center);
+  };
+  return { fn, centers };
+}
+
+/** 중심마다 후보 1개. 0건이면 far 폴백이 한 라운드 더 돌아 calls 가 5를 넘는다 */
+const one = (center: { latitude: number; longitude: number }): PlaceCandidate[] =>
+  [{ id: `p${center.longitude}`, name: 'p', coord: { ...center } }];
+
+test('side=end 면 샘플 점이 후반부에만 찍힌다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', origin: O2, destination: D2,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.equal(first.length, 5);
+  assert.ok(Math.min(...first) >= 127.249, `후반부여야 한다: ${first}`);
+  assert.ok(Math.max(...first) <= 127.5);
+});
+
+test('side=start 면 전반부에만 찍힌다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '약국', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'start', origin: O2, destination: D2,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.max(...first) <= 127.251, `전반부여야 한다: ${first}`);
+});
+
+test('side 를 줘도 라운드당 호출 수는 5회 그대로다', async () => {
+  const s = spy(one);
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+    side: 'end', origin: O2, destination: D2,
+  }, s.fn);
+  assert.equal(r.calls, 5); // 반경이 상한과 같아 한 라운드만 돈다
+});
+
+test('target 을 near 쪽 개수로 센다 — 반대쪽만 8개면 반경을 더 넓힌다', async () => {
+  let round = 0;
+  const far = (i: number): PlaceCandidate =>
+    ({ id: `f${i}`, name: `f${i}`, coord: at2(127.0) });       // 전부 출발지 쪽
+  const close = (i: number): PlaceCandidate =>
+    ({ id: `c${i}`, name: `c${i}`, coord: at2(127.495) });      // 목적지에서 약 440m
+  const fn = async () => {
+    round++;
+    // 1라운드는 반대쪽만, 2라운드부터 목적지 쪽이 나온다
+    return round <= 5 ? [far(round)] : [far(round), close(round)];
+  };
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 3, initialRadiusM: 1000, maxRadiusM: 4000,
+    side: 'end', origin: O2, destination: D2,
+  }, fn);
+  assert.ok(r.calls > 5, `한 라운드로 멈추면 안 된다: ${r.calls}`);
+  assert.equal(r.status, 'ok');
+});
+
+test('side 가 없으면 지금까지처럼 전 구간에서 찍는다', async () => {
+  const s = spy(one);
+  await searchAlong(line2, '카페', {
+    need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000,
+  }, s.fn);
+  const first = s.centers.slice(0, 5);
+  assert.ok(Math.min(...first) <= 127.001);
+  assert.ok(Math.max(...first) >= 127.499);
+});
+
 const anchors: Anchor[] = [
   { id: 'a0', kind: 'origin', name: '출발지', coord: at(37.5188, 126.8575), progressM: 0 },
   { id: 'a1', kind: 'board', name: '목동', coord: at(37.526097, 126.864538), progressM: 1100 },

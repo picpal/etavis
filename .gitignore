@@ -63,4 +63,5 @@ node_modules
 server/.dev.vars
 # wrangler dev 로컬 상태(KV 에뮬레이션 등)
 server/.wrangler/
+/.wrangler/
 build-sim/

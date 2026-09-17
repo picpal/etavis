@@ -122,6 +122,23 @@ export type AnchorSearchOptions = {
   initialRadiusM?: number;
   maxRadiusM?: number;
   max?: number;
+  /**
+   * 어느 쪽 끝을 노릴까. 그쪽 종류의 앵커만 조회한다 — 앵커당 1콜이라 호출 수도 준다.
+   * origin·destination 은 여기서는 안 쓴다(선택은 kind만으로 된다). 8단계에서 쓴다.
+   */
+  side?: NearSide;
+  origin?: LatLng;
+  destination?: LatLng;
+};
+
+/**
+ * 어느 쪽 끝일 때 어느 앵커를 보나. `extractAnchors` 가 붙이는 kind 를 그대로 쓴다.
+ * `transfer`(환승역)는 어느 쪽도 아니라 any 일 때만 본다 — 환승 지점을 원하는
+ * 케이스는 NearSide 3값으로 표현되지 않는다(설계 §12).
+ */
+const ANCHOR_KINDS: Record<'start' | 'end', readonly Anchor['kind'][]> = {
+  end: ['alight', 'destination'],
+  start: ['origin', 'board'],
 };
 
 /**
@@ -134,6 +151,13 @@ export async function searchAtAnchors(
   opts: AnchorSearchOptions,
   search: SearchFn,
 ): Promise<{ candidates: PlaceCandidate[]; status: SearchStatus; radiusM: number; calls: number }> {
+  // 그쪽 앵커만 본다 — 앵커당 1콜이라 호출 수도 준다.
+  // 다만 그 종류가 하나도 없으면(하차역 없는 itinerary 등) 전부 본다. 좁히다 0건이 되면
+  // 회랑 폴백이 돌아 오히려 호출이 는다
+  const kinds = opts.side === 'start' || opts.side === 'end' ? ANCHOR_KINDS[opts.side] : null;
+  const picked = kinds ? anchors.filter(a => kinds.includes(a.kind)) : anchors;
+  const used = picked.length > 0 ? picked : anchors;
+
   const initial = opts.initialRadiusM ?? ANCHOR_INITIAL_M;
   const maxR = Math.max(initial, opts.maxRadiusM ?? ANCHOR_MAX_M);
   const target = Math.max(opts.need, opts.target ?? opts.need);
@@ -144,7 +168,7 @@ export async function searchAtAnchors(
   const attach = (lists: PlaceCandidate[][]) => {
     const best = new Map<string, PlaceCandidate>();
     for (let i = 0; i < lists.length; i++) {
-      const a = anchors[i];
+      const a = used[i];
       for (const c of lists[i]) {
         const walkM = Math.round(haversineM(a.coord, c.coord));
         const prev = best.get(c.id);
@@ -159,7 +183,7 @@ export async function searchAtAnchors(
   let found: PlaceCandidate[] = [];
   while (true) {
     const r = radiusM;
-    found = attach(await Promise.all(anchors.map(a => { calls++; return search(query, a.coord, r); })));
+    found = attach(await Promise.all(used.map(a => { calls++; return search(query, a.coord, r); })));
     if (found.length >= target) return { candidates: found, status: 'ok', radiusM: r, calls };
     if (r >= maxR) break;
     radiusM = Math.min(maxR, r * 2);

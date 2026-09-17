@@ -315,3 +315,56 @@ test('앵커 검색 — 도보 거리 오름차순', async () => {
   const r = await searchAtAnchors(anchors, '올리브영', { need: 2, initialRadiusM: 1200 }, fn);
   assert.deepEqual(r.candidates.map(c => c.id), ['near', 'far']);
 });
+
+const anchor = (id: string, kind: Anchor['kind'], lng: number): Anchor =>
+  ({ id, kind, name: id, coord: at2(lng), progressM: 0 });
+
+const ALL: Anchor[] = [
+  anchor('a0', 'origin', 127.0),
+  anchor('a1', 'board', 127.01),
+  anchor('a2', 'transfer', 127.25),
+  anchor('a3', 'alight', 127.49),
+  anchor('a4', 'destination', 127.5),
+];
+
+test('side=end 면 하차역·목적지 앵커만 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '마트', { need: 1, target: 3, side: 'end', origin: O2, destination: D2 }, fn);
+  // stub 이 []만 돌려줘서 target(3)에 절대 못 미친다 — 반지름이 500→1000→1500 세 번 도는
+  // 만큼 같은 중심을 세 번씩 조회한다. 그래서 여기서는 "몇 번 불렀나"가 아니라
+  // "어느 중심을 불렀나"(집합)를 본다 — 호출 횟수로 재면 세 배로 뻥튀기된 값과 비교하게 된다.
+  assert.deepEqual([...new Set(seen)].sort(), ['127.49', '127.50']);
+});
+
+test('side=start 면 출발지·승차역 앵커만 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '약국', { need: 1, target: 3, side: 'start', origin: O2, destination: D2 }, fn);
+  assert.deepEqual([...new Set(seen)].sort(), ['127.00', '127.01']);
+});
+
+test('그쪽 종류의 앵커가 하나도 없으면 전부 본다 — 좁히다가 0건이 되면 안 된다', async () => {
+  const onlyTransfer = [anchor('t', 'transfer', 127.25)];
+  let calls = 0;
+  const fn = async () => { calls++; return []; };
+  await searchAtAnchors(onlyTransfer, '마트', { need: 1, target: 3, side: 'end', origin: O2, destination: D2 }, fn);
+  assert.ok(calls > 0, '앵커를 전부 버리면 안 된다');
+});
+
+test('side 가 없으면 지금까지처럼 전부 조회한다', async () => {
+  const seen: string[] = [];
+  const fn = async (_q: string, center: { longitude: number }) => {
+    seen.push(center.longitude.toFixed(2));
+    return [];
+  };
+  await searchAtAnchors(ALL, '카페', { need: 1, target: 3 }, fn);
+  // 위와 같은 이유로 호출 횟수(15) 대신 조회된 앵커 집합의 크기를 본다 — side 없음이면 전부(5개)다
+  assert.equal(new Set(seen).size, 5);
+});

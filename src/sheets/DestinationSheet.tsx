@@ -106,9 +106,9 @@ export function DestinationSheet({
                 haptic();
                 setView('search');
               }}
-              // 화살표가 작아서(size 9) 왼쪽을 겨냥하다 살짝 빗나가면 Pressable을 벗어나
-              // 바로 아래 시트 딤(scrim)에 떨어진다 — 되돌아가려다 시트가 통째로 닫히는
-              // 건 되돌릴 수 없는 나쁜 실패 모드라, 왼쪽만 넉넉히 hitSlop을 준다.
+              // 화살표가 size 9로 작아 엄지로 겨냥하기 어렵다. 그 왼쪽은 원래
+              // 아무 동작도 없는 죽은 영역이라, 탭 영역만 왼쪽으로 넉넉히 넓힌다 —
+              // 아이콘 크기는 다른 화면과 맞추려 그대로 둔다.
               hitSlop={{ top: 12, bottom: 12, left: 24, right: 12 }}
               style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: pressed ? 0.6 : 1 })}
             >

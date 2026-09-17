@@ -112,7 +112,12 @@ function pickProvider(): { provider: RouteProvider; usingServer: boolean; enrich
       provider: hybridProvider(serverRouteProvider({ baseUrl, appToken, deviceId }), transit, mock),
       usingServer: true,
       enrich: serverEnrichFn({ baseUrl, appToken, deviceId }),
-      extract: serverExtractFn({ baseUrl, appToken, deviceId }),
+      // 목으로 떨어진 이유는 화면엔 '간단한 규칙으로 알아들었어요' 배너로만 보인다 —
+      // 왜인지는 로그에만 남긴다. /transit 바로 위와 같은 자리, 같은 이유다.
+      extract: serverExtractFn({
+        baseUrl, appToken, deviceId,
+        onFallback: reason => logTrack({ k: 'net', ep: '/extract', ms: 0, ok: false, d: { err: reason } }),
+      }),
     };
   }
   return { provider: mockRouteProvider(), usingServer: false, enrich: mockEnrichFn(), extract: localExtractFn() };

@@ -152,3 +152,71 @@ test('localExtractFn 은 항상 목이고 네트워크를 타지 않는다', asy
   assert.equal(out.source, 'local');
   assert.ok(Array.isArray(out.intent.stops));
 });
+
+/* 폴백 사유 — 화면은 몰라도 되지만 로그는 알아야 한다.
+   2026-09-17 에 워커 secret 이 비어 /extract 가 502 를 내고 있었는데, 실패 넷을
+   전부 조용히 삼키는 바람에 며칠간 아무도 몰랐다. 사유가 서로 구분돼야 의미가 있다. */
+
+test('상태코드 실패면 사유에 그 코드가 실린다', async () => {
+  const seen: string[] = [];
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply({ error: 'upstream' }, 502), fallback,
+    onFallback: r => seen.push(r),
+  });
+  await fn('t', CTX);
+  assert.deepEqual(seen, ['http 502']);
+});
+
+test('일일 상한과 서버 오류가 같은 사유로 뭉뚱그려지지 않는다', async () => {
+  const seen: string[] = [];
+  const mk = (status: number) => serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply({}, status), fallback, onFallback: r => seen.push(r),
+  });
+  await mk(429)('t', CTX);
+  await mk(502)('t', CTX);
+  assert.deepEqual(seen, ['http 429', 'http 502'], '두 사유가 구분돼야 어디를 고칠지 안다');
+});
+
+test('모양이 틀린 응답은 상태코드 실패와 다른 사유로 남는다', async () => {
+  const seen: string[] = [];
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply({ ...SERVER_INTENT, stops: 'nope' }), fallback,
+    onFallback: r => seen.push(r),
+  });
+  await fn('t', CTX);
+  assert.deepEqual(seen, ['shape'], '200 인데 모양이 틀린 건 프록시가 낀 것이다 — 상태코드 실패와 원인이 다르다');
+});
+
+test('예외(네트워크 끊김·타임아웃)는 사유에 내용이 실린다', async () => {
+  const seen: string[] = [];
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd', fallback,
+    fetchFn: (async () => { throw new Error('network down'); }) as unknown as typeof fetch,
+    onFallback: r => seen.push(r),
+  });
+  await fn('t', CTX);
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /network down/, '무엇 때문에 떨어졌는지가 남아야 한다');
+});
+
+test('성공하면 사유를 남기지 않는다 — 로그가 노이즈가 되면 아무도 안 본다', async () => {
+  const seen: string[] = [];
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply(SERVER_INTENT), fallback, onFallback: r => seen.push(r),
+  });
+  const out = await fn('t', CTX);
+  assert.equal(out.source, 'server');
+  assert.deepEqual(seen, []);
+});
+
+test('onFallback 을 안 넘겨도 폴백은 그대로 돈다 — 선택 인자다', async () => {
+  const fn = serverExtractFn({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: reply({}, 500), fallback,
+  });
+  assert.equal((await fn('t', CTX)).source, 'local');
+});

@@ -58,13 +58,24 @@ export function serverExtractFn(opts: {
   fetchFn?: typeof fetch;
   /** 테스트용 주입. 기본은 로컬 목 */
   fallback?: (text: string, ctx: IntentContext) => Intent;
+  /**
+   * 왜 떨어졌나. 화면은 `source` 만 보면 되지만 **로그는 알아야 한다** —
+   * 2026-09-17 에 워커 secret 이 비어 `/extract` 가 502 를 내고 있었는데 넷을 전부
+   * 조용히 삼키는 바람에 며칠간 아무도 몰랐다. `transitRouteProvider` 의
+   * `onFallback` 과 같은 자리, 같은 이유다. 사유는 서로 구분된다:
+   * `http <코드>` · `shape` · `throw <내용>`
+   */
+  onFallback?: (reason: string) => void;
 }): ExtractFn {
   const fetchFn = opts.fetchFn ?? fetch;
   const fallback = opts.fallback ?? extractIntent;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   return async (text, ctx) => {
-    const local = (): ExtractOutcome => ({ intent: fallback(text, ctx), source: 'local' });
+    const local = (reason: string): ExtractOutcome => {
+      opts.onFallback?.(reason);
+      return { intent: fallback(text, ctx), source: 'local' };
+    };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -82,11 +93,11 @@ export function serverExtractFn(opts: {
         }),
         signal: ctrl.signal,
       });
-      if (!res.ok) return local();
+      if (!res.ok) return local(`http ${res.status}`);
       const body = (await res.json()) as unknown;
-      return looksLikeIntent(body) ? { intent: body, source: 'server' } : local();
-    } catch {
-      return local();
+      return looksLikeIntent(body) ? { intent: body, source: 'server' } : local('shape');
+    } catch (e) {
+      return local(`throw ${String(e).slice(0, 120)}`);
     } finally {
       clearTimeout(timer);
     }

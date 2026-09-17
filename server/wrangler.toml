@@ -5,7 +5,7 @@ compatibility_date = "2026-09-01"
 # 웹 데모 오리진 허용 목록. 비어 있으면 CORS 헤더를 안 붙인다 = 네이티브 전용.
 # 데모를 배포하면 그 도메인을 여기 추가할 것 — 와일드카드로 열지 않는다.
 [vars]
-ALLOWED_ORIGINS = "http://localhost:8080,http://localhost:8081"
+ALLOWED_ORIGINS = "http://localhost:8080,http://localhost:8081,https://etavia-demo.picpal.workers.dev"
 TRANSIT_PROVIDER = "google"
 
 # 무료 티어 KV — 기기당 rate limit 카운터만 쓴다

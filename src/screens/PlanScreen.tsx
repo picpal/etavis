@@ -14,7 +14,7 @@ import { calcPromptVisible } from '../state/chatPrompt';
 import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
-import { answerAsk, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
+import { answerAsk, askTarget, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
 import { bulkyAsks, bulkyChipId, mergeBulkyAsks, nextAskField, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -367,7 +367,9 @@ export function PlanScreen({ navigation }: Props) {
         // 캐스팅하고, looksLikeIntent 도 ambiguous 원소별로는 들여다보지 않는다. Task 1의
         // 스키마가 아직 없는 배포된 Worker가 옛 모양({field, question})을 돌려주면
         // a.options 가 undefined라 .length 에서 던진다
-        const narrow = intent.ambiguous.filter(a => a.field.startsWith('stop:') && (a.options ?? []).length > 0);
+        const narrow = intent.ambiguous.filter(
+          a => askTarget(a.field)?.kind === 'query' && (a.options ?? []).length > 0,
+        );
         /* 칩으로 그릴 되묻기는 이 한 줄에서 빼야 한다. 안 빼면 같은 질문이 칩 줄 위와
            되묻기 블록에 두 번 나오고, 선택지를 고른 뒤에도 위쪽 한 줄만 낡은 채 남는다
            (2026-09-15 시뮬레이터에서 실제로 그랬다) */
@@ -377,14 +379,22 @@ export function PlanScreen({ navigation }: Props) {
            쌓이면 정작 물어본 것이 묻힌다. 첫 질문을 바로 띄우고 나머지는 큐에 둔다 */
         const forSheet = asksForSheet(narrow);
         setNarrowAsks(forSheet);
+        /* 닫음 기록은 큐에 있는 질문에 대해서만 뜻이 있다. `stop:<검색어>` 는 칩 id 가 아니라
+           검색어로 만들어지므로(intent.ts), 칩이 빠졌다가 같은 업종이 다시 들어오면 **다른 질문이
+           같은 field 로** 태어난다 — 기록을 남겨 두면 그 새 질문이 처음부터 닫힌 채로 생긴다.
+           `load:` 는 이 큐에 없고 병합 effect 가 다시 넣으므로 건드리지 않는다 */
+        setDismissedAsks(prev =>
+          prev.filter(f => askTarget(f)?.kind === 'chip' || forSheet.some(a => a.field === f)),
+        );
         /* 닫아 둔 질문은 여기서도 건너뛴다 — APPLY_INTENT(plan.tsx) 는 기존 칩을 보존하고
            chipSeq 만 늘려서 칩 id 가 재사용된다. 닫아 둔 field 는 다음 턴에도 같은
            질문을 가리키므로, [0] 을 그대로 쓰면 한 마디만 더해도 닫은 질문이 되살아난다.
 
-           이 `.then` 클로저는 요청을 보낸 시점의 dismissedAsks 를 본다 — 요청이 날아가
-           있는 동안 시트를 닫으면 그 닫음이 이번 응답에는 반영되지 않는다. 받아들이기로
-           한 구멍이다: 그 좁은 구간에서 딱 한 번 되열릴 뿐이고, 지금은 매번 되열리니
-           그보다는 낫다 */
+           이 `.then` 클로저는 요청을 보낸 시점의 dismissedAsks 를 본다. 양쪽으로 샌다 — 요청이
+           날아가 있는 동안 닫은 질문은 이번 응답에서 한 번 되열리고, 그 사이 칩 메뉴에서 연
+           질문은 거꾸로 건너뛰어진다. 받아들이기로 한 구멍이다: 창이 응답 한 번 길이뿐이고
+           기록 자체는 오염되지 않는다(여기서는 읽기만 한다). 닫으려면 dismissedAsks 를 미러링하는
+           ref 를 두고 여기서 ref 를 읽으면 양쪽이 한 번에 닫힌다 */
         setAskField(nextAskField(forSheet, dismissedAsks));
         setFellBack(source === 'local');
         setPending(false);
@@ -497,7 +507,7 @@ export function PlanScreen({ navigation }: Props) {
       setNarrowAsks(asks);
       // 답한 질문은 닫음 목록에 남겨 둘 이유가 없다 — 큐에서 이미 빠졌고, 같은 field 가
       // 나중에 다시 생기면 그건 새 질문이다
-      setDismissedAsks(prev => prev.filter(f => f !== openAsk.field));
+      setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev.filter(f => f !== openAsk.field) : prev));
       // 답한 뒤 다음 질문으로 넘어가되 닫아 둔 것은 건너뛴다 — 다른 질문에 답했다는
       // 이유로 사용자가 물리친 질문이 되살아나면 안 된다
       setAskField(nextAskField(asks, dismissedAsks));
@@ -512,11 +522,8 @@ export function PlanScreen({ navigation }: Props) {
       }
     }
     setNarrowAsks(asks);
-    // 답한 질문은 닫음 목록에 남겨 둘 이유가 없다 — 큐에서 이미 빠졌고, 같은 field 가
-    // 나중에 다시 생기면 그건 새 질문이다
-    setDismissedAsks(prev => prev.filter(f => f !== openAsk.field));
-    // 답한 뒤 다음 질문으로 넘어가되 닫아 둔 것은 건너뛴다 — 다른 질문에 답했다는
-    // 이유로 사용자가 물리친 질문이 되살아나면 안 된다
+    // 위 분기와 같은 이유 — 답한 질문은 닫음 목록에서 빼고, 다음 질문은 닫아 둔 것을 건너뛴다
+    setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev.filter(f => f !== openAsk.field) : prev));
     setAskField(nextAskField(asks, dismissedAsks));
   };
 
@@ -695,10 +702,10 @@ export function PlanScreen({ navigation }: Props) {
                 haptic();
                 setChipMenu(null);
                 // 명시적으로 여는 자리다 — 닫음 기록에서 빼야 다음 병합이 다시 닫지 않는다
-                setDismissedAsks(prev => prev.filter(f => f !== ask.field));
+                setDismissedAsks(prev => (prev.includes(ask.field) ? prev.filter(f => f !== ask.field) : prev));
                 setAskField(ask.field);
               }}
-              style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
+              style={{ minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
             >
               <Text style={[type.btn, { color: color.primary }]}>{ask.question}</Text>
             </Pressable>

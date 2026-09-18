@@ -314,6 +314,8 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     const hit = NARROW.find(n => n.keys.some(k => st.queries.some(q => q.includes(k))));
     if (!hit) continue;
     base.ambiguous.push({
+      // 접두사는 서버 스키마(server/prompts/extract-intent.md)와 맞춘 와이어 포맷이다 —
+      // 앱 쪽 해석은 state/narrowAsk.ts 의 ASK_STOP·askTarget 이 owner
       field: `stop:${st.queries[0]}`,
       question: hit.question,
       options: [...hit.options, '상관없어요'],

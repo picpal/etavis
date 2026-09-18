@@ -3,6 +3,7 @@
  * 도착시각을 누적하고 영업시간을 그 시각으로 검사한다. 설계 4단계.
  */
 import { haversineM } from '../geo';
+import type { StopTags } from '../nearSide';
 import { corridorLegM, destinationPoint, estimateC, originPoint, type CorridorPoint } from './corridor';
 import { DEST_ID, LegStore, ORIGIN_ID } from './legs';
 import type { LatLng, Mode, PlaceCandidate, Visit } from './types';
@@ -17,6 +18,11 @@ export type ScoreContext = {
   mode: Mode;
   departAtMin: number;
   legs: LegStore;
+  /**
+   * 슬롯의 물성 태그. 없으면 짐이 없는 것으로 본다 — 기존 호출부를 안 깨려고 선택 인자다.
+   * `burdenMin` 이 이걸 본다.
+   */
+  tagsOf?: (slotId: string) => StopTags | undefined;
 };
 
 export type Scored = {
@@ -30,7 +36,41 @@ export type Scored = {
   legsMin: number[];
   /** 방문별 도착 leg의 km. legsMin·arrivals와 같은 길이·순서 */
   legsKm: number[];
+  /**
+   * 짐을 진 채 이동한 시간. `totalMin` 에는 **안 들어간다** — 화면에 보이는 숫자는
+   * 계속 진짜 소요시간이어야 한다. 순위에만 쓴다(`comfortMin`).
+   *
+   * 왜 필요한가: 채점이 총 시간만 보면 "마트 들렀다 약국 갔다 집"이 이긴다.
+   * 장바구니를 들고 약국에 들어가는 비용이 점수에 없기 때문이다.
+   */
+  burdenMin: number;
 };
+
+/**
+ * 짐을 진 채 이동한 시간.
+ *
+ * `legsMin` 은 `[출발→v0, v0→v1, …, vN→도착]` 이라 방문 i 이후 이동은 `slice(i+1)` 이다.
+ * - `loadAfter: 'hard'` — 거기서 짐이 **생긴다** → 그 뒤 전부
+ * - `loadBefore: 'hard'` — 거기까지 짐을 **들고 간다** → 그 앞 전부
+ *
+ * 짐이 여럿이면 겹치는 구간이 두 번 세진다. 둘을 같이 들고 있으니 맞다.
+ * `count > 1` 슬롯도 방문마다 각자의 위치에서 계산돼 자연히 처리된다.
+ *
+ * 자동차는 0 이다 — 트렁크에 실으면 그만이고, 차의 지배 축은 정차 용이성이다
+ * (`nearSide.ts` 의 `decideNear` 가 차를 일찍 빼는 것과 같은 이유).
+ */
+function burdenOf(visits: Visit[], legsMin: number[], ctx: ScoreContext): number {
+  if (ctx.mode === 'car' || !ctx.tagsOf) return 0;
+  const sum = (a: number[]) => a.reduce((s, n) => s + n, 0);
+  let burden = 0;
+  for (let i = 0; i < visits.length; i++) {
+    const tags = ctx.tagsOf(visits[i].slotId);
+    if (!tags) continue;
+    if (tags.loadAfter === 'hard') burden += sum(legsMin.slice(i + 1));
+    if (tags.loadBefore === 'hard') burden += sum(legsMin.slice(0, i + 1));
+  }
+  return burden;
+}
 
 export function estimateLegKm(from: LatLng, to: LatLng, cFrom: CorridorPoint, cTo: CorridorPoint): number {
   return estimateC(corridorLegM(cFrom, cTo), haversineM(from, to)) / 1000;
@@ -72,7 +112,11 @@ export function scorePlan(visits: Visit[], ctx: ScoreContext): Scored {
     if (i < visits.length) clock += visits[i].dwellMin;
   }
 
-  return { visits, totalMin: clock - ctx.departAtMin, distanceKm, arrivals, unknownLegs, uncertaintyMin, legsMin, legsKm };
+  return {
+    visits, totalMin: clock - ctx.departAtMin, distanceKm, arrivals,
+    unknownLegs, uncertaintyMin, legsMin, legsKm,
+    burdenMin: burdenOf(visits, legsMin, ctx),
+  };
 }
 
 export function isOpenAt(c: PlaceCandidate, minuteOfDay: number): boolean {

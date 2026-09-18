@@ -26,7 +26,10 @@ export function bulkyAsks(chips: IntentChip[], mode: 'car' | 'walk' | 'transit')
   // 자동차는 짐 계산 자체를 건너뛴다(`routePlan/plan.ts` 의 `burdened`) — 물어도 안 쓴다
   if (mode === 'car') return [];
   return chips.flatMap(c => {
-    if (c.kind !== 'stop' || c.loadAfter != null) return [];
+    /* 거르는 기준은 `loadAfter` 가 아니라 `loadAsked` 다. 추출은 `loadAfter` 를
+       늘 채워 보내므로(없으면 `none` 으로 굳힌다) 값으로 거르면 한 칩도 안 남는다 —
+       사람이 답했다는 표식만이 "이미 물었다"의 근거가 된다 */
+    if (c.kind !== 'stop' || c.loadAsked) return [];
     if (!c.queries.some(q => BULKY.some(b => q.includes(b)))) return [];
     return [{
       field: `${FIELD_PREFIX}${c.id}`,
@@ -39,4 +42,35 @@ export function bulkyAsks(chips: IntentChip[], mode: 'car' | 'walk' | 'transit')
 /** 물성 되묻기의 field 에서 칩 id 를 꺼낸다. 다른 되묻기면 null */
 export function bulkyChipId(field: string): string | null {
   return field.startsWith(FIELD_PREFIX) ? field.slice(FIELD_PREFIX.length) : null;
+}
+
+/**
+ * 되묻기 큐를 **지금 물어야 할 물성 질문 집합에 맞춘다** — 새로 생긴 건 넣고,
+ * 물을 일이 없어진 건 뺀다.
+ *
+ * 빼는 쪽이 왜 필요한가: 걸어서 마트에 들르기로 하면 물성 질문이 큐에 들어가는데,
+ * 거기서 이동수단을 자동차로 바꾸면 `bulkyAsks` 는 빈 배열을 돌려준다(트렁크에
+ * 실으니 답이 계획을 안 바꾼다). 넣기만 하던 시절엔 그 빈 배열을 보고 그냥
+ * 돌아가서, 이미 떠 있던 질문이 자동차 모드에서도 그대로 남았다.
+ *
+ * 좁히기 질문(`stop:`)은 건드리지 않는다 — 이 함수가 아는 건 물성 질문뿐이고,
+ * 모르는 질문을 지우면 남의 큐를 망가뜨린다.
+ *
+ * 바뀐 게 없으면 `asks` 로 **받은 배열을 그대로** 돌려준다. 호출하는 effect 가
+ * 큐를 의존성에 들고 있어서, 매번 새 배열을 만들면 effect 가 자기 자신을 다시 부른다.
+ */
+export function mergeBulkyAsks(
+  queue: NarrowAsk[],
+  fresh: NarrowAsk[],
+  askField: string | null,
+): { asks: NarrowAsk[]; askField: string | null } {
+  const live = new Set(fresh.map(a => a.field));
+  const kept = queue.filter(a => bulkyChipId(a.field) == null || live.has(a.field));
+  const add = fresh.filter(a => !queue.some(q => q.field === a.field));
+  if (kept.length === queue.length && add.length === 0) return { asks: queue, askField };
+  const asks = [...kept, ...add];
+  /* 열려 있던 질문이 살아남았으면 그대로 둔다 — 답하던 질문을 새 질문이 밀어내면
+     사용자는 자기가 뭘 답하던 중이었는지 잃는다. 밀려난 경우에만 다음 질문으로 */
+  const stillOpen = askField != null && asks.some(a => a.field === askField);
+  return { asks, askField: stillOpen ? askField : asks[0]?.field ?? null };
 }

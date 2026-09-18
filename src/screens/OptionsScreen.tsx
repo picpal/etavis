@@ -97,7 +97,9 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated, showVe
 export function OptionsScreen({ navigation }: Props) {
   const flow = usePlanFlow();
   const request = usePlanRequest();
-  const { applyLive, removeChip } = usePlan();
+  /* `state` 는 아래에서 flow 의 것을 쓰므로 이름을 갈라 둔다 — 여기서 필요한 건
+     사용자가 실제로 한 말(`chat`)이고, 그건 계획 요청(`PlanRequest`)에는 없다 */
+  const { applyLive, removeChip, state: planState } = usePlan();
   const { state } = flow;
   const result = state.result;
   const [pickSlot, setPickSlot] = useState<string | null>(null);
@@ -127,6 +129,11 @@ export function OptionsScreen({ navigation }: Props) {
   const comfortIdx = result?.comfortIdx ?? null;
   /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
   const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
+  /* 두 기준이 같은 안을 가리킬 때(`sameAsFast`) 켜진 자리를 화면이 직접 든다.
+     그때는 어느 쪽을 눌러도 고를 안이 0 하나뿐이라 `selectedOptionIdx` 가 안 움직이고,
+     그 값으로 켜진 자리를 정하면 썸이 손가락을 안 따라온다 — 눌러도 아무 일도 없는
+     버튼은 앱이 멈춘 것처럼 보인다. 고르는 안은 그대로 두고 '어디를 눌렀나'만 기억한다 */
+  const [sameSeg, setSameSeg] = useState<0 | 1>(0);
   /* 아래 얼리 리턴(`if (!result || ...)`)보다 위에 둔다 — 그 리턴은 조건부라
      result 가 있다가 없어지는 렌더가 있을 수 있는데(`recalculate` 가 flow.reset 뒤
      아직 이 화면에 머무는 순간), 훅은 매 렌더 같은 순서로 불려야 한다(Rules of
@@ -150,10 +157,11 @@ export function OptionsScreen({ navigation }: Props) {
     if (!baseUrl || !appToken) return;
     const client = makeReasonClient({ baseUrl, appToken, deviceId: Constants.sessionId ?? 'unknown' });
     void client({
-      /* `PlanRequest` 에 사용자 문장은 없다 — origin·destination·mode·arriveByMin·
-         departAtMin·stops·order 뿐이다. 서버도 `text` 를 선택값으로 받으므로 빈
-         문자열을 보낸다. 설명은 두 안의 **순서 차이**만 보고도 쓸 수 있다 */
-      text: '',
+      /* 서버 프롬프트가 하는 일은 "사용자 문장을 읽고, 거기 없는 사실은 지어내지
+         않는다"이다. 빈 문자열을 보내면 읽을 문장이 없어 가게 이름만 보고 문장을
+         지어낸다 — 금지하려던 바로 그 짓이다. 사용자가 한 말은 `PlanRequest` 가
+         아니라 대화 스토어에 있다. 마지막 발화가 지금 화면을 만든 말이라 그걸 보낸다 */
+      text: planState.chat[planState.chat.length - 1] ?? '',
       mode: req.mode,
       fast: { stops: fast.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(fast.visits).totalMin) },
       comfort: { stops: comfort.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(comfort.visits).totalMin) },
@@ -240,9 +248,10 @@ export function OptionsScreen({ navigation }: Props) {
         <View style={{ gap: 6 }}>
           <SegmentControl
             options={['추천 순서', '최단 시간']}
-            value={tab.value}
+            value={tab.sameAsFast ? sameSeg : tab.value}
             onChange={i => {
               haptic();
+              setSameSeg(i === 0 ? 0 : 1);
               flow.select(i === 0 ? tab.target : 0);
             }}
             fontSize={14}
@@ -254,8 +263,12 @@ export function OptionsScreen({ navigation }: Props) {
             numberOfLines={1}
             style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
           >
+            {/* `가장 편해요` 라고 쓰던 자리다. 무엇과 견줘 '가장'인지 코드가 모른다 —
+                `sameAsFast` 에는 짐을 아예 안 잰 경우(자동차는 늘 그렇다)가 섞여 있다.
+                서버가 LLM 에게 금지한 말이기도 하다(`server/src/reason.ts` FORBIDDEN).
+                그래서 등수 대신 사실만 말한다: 지금은 두 기준의 답이 같다 */}
             {tab.sameAsFast
-              ? '지금 순서가 가장 편해요'
+              ? '두 기준이 지금은 같은 순서를 가리켜요'
               : tab.value === 0
                 ? whyLine ?? '짐을 들고 이동하는 시간을 줄였어요'
                 : '총 이동 시간이 가장 짧아요'}

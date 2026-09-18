@@ -181,8 +181,8 @@ export async function plan(
   const best = chosen[0];
 
   /**
-   * `편한 순서` 토글이 가리킬 자리. 짐을 안 재는 계획이면 `null` 이고 토글이 안 뜬다.
-   * `0` 이면 최단안이 곧 편한 안이라 보여줄 차이가 없다 — 그 판정은 화면이 한다.
+   * `추천 순서` 가 가리킬 자리. 짐을 안 재는 계획이면 `null`.
+   * `0` 이면 최단안이 곧 편한 안이라 두 기준이 같은 안을 가리킨다 — 그 판정은 화면이 한다.
    */
   const comfortBest = burdened
     ? [...finalMeasured].sort((a, b) => comfortMin(a) - comfortMin(b))[0]

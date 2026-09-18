@@ -15,7 +15,7 @@ import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
 import { answerAsk, askForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
-import { bulkyAsks, bulkyChipId, BULKY_YES } from '../state/bulkyAsk';
+import { bulkyAsks, bulkyChipId, mergeBulkyAsks, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
@@ -462,21 +462,16 @@ export function PlanScreen({ navigation }: Props) {
   const menuAsk = menuChip ? askForChip(narrowAsks, menuChip) : undefined;
 
   /* 물성 질문은 칩이 갱신된 **뒤**에 판단한다 — `applyChat` 안에서는 `applyIntent` 가
-     방금 dispatch 된 참이라 아직 옛 칩이다. 이미 큐에 있는 질문은 다시 넣지 않는다:
-     칩이 바뀔 때마다 이 effect 가 다시 도는데, 그때 같은 질문이 쌓이면 시트가
-     답한 질문을 또 묻는다 */
+     방금 dispatch 된 참이라 아직 옛 칩이다. 칩·이동수단이 바뀔 때마다 다시 도므로,
+     넣기·빼기 판단은 전부 `mergeBulkyAsks` 한 곳에서 한다(같은 질문을 쌓지 않고,
+     물을 일이 없어진 질문은 큐에서 뺀다). 바뀐 게 없으면 같은 배열 참조가 와서
+     `narrowAsks` 를 의존성에 둬도 effect 가 자기 자신을 다시 부르지 않는다 */
   useEffect(() => {
-    const asks = bulkyAsks(state.chips, state.mode);
-    if (asks.length === 0) return;
-    /* 이미 큐에 있는 질문은 다시 넣지 않는다 — 칩이 바뀔 때마다 이 effect 가 다시
-       도는데, 그때 같은 질문이 쌓이면 시트가 답한 질문을 또 묻는다.
-       `add` 가 비면 여기서 끝나므로 `narrowAsks` 를 의존성에 둬도 돌지 않는다 */
-    const add = asks.filter(a => !narrowAsks.some(q => q.field === a.field));
-    if (add.length === 0) return;
-    setNarrowAsks(prev => [...prev, ...add]);
-    // 열려 있는 질문이 없을 때만 첫 물성 질문을 띄운다 — 답하던 질문을 밀어내지 않는다
-    setAskField(cur => cur ?? add[0].field);
-  }, [state.chips, state.mode, narrowAsks]);
+    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField);
+    if (next.asks === narrowAsks) return;
+    setNarrowAsks(next.asks);
+    setAskField(next.askField);
+  }, [state.chips, state.mode, narrowAsks, askField]);
 
   const pickAnswer = (option: string) => {
     if (!openAsk) return;

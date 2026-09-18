@@ -55,6 +55,15 @@ export type IntentChip =
       /** 추출이 낸 물성·시점. 방향(near)은 코드가 이걸로 정한다 */
       loadBefore?: Load;
       loadAfter?: Load;
+      /** 사용자가 물성 질문에 답했다.
+       *
+       *  `loadAfter` 와 따로 두는 이유: `loadAfter` 는 **추출이 늘 채워 넣는 값**이다
+       *  (`server/src/schema.ts` 는 `hard` 가 아니면 `none` 으로 굳히고, 로컬 목
+       *  `lib/intent.ts` 도 `'none'` 을 박는다). 그러니 "값이 있다"는 사실은
+       *  LLM 이 찍어 봤다는 뜻일 뿐, 사람이 확인해 줬다는 뜻이 아니다 —
+       *  같은 문장에도 `hard/none` 이 갈렸다(2026-09-18 실측).
+       *  되묻기가 봐야 하는 건 값이 아니라 **누가 정했나**라서 표식을 따로 든다. */
+      loadAsked?: boolean;
       needWhen?: NeedWhen;
     }
   | { id: string; kind: 'arriveBy'; label: string; value: number };
@@ -727,13 +736,17 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       };
     }
     case 'SET_CHIP_LOAD': {
+      // 없는 칩이면 그대로 둔다 — 답을 적을 자리가 없는데 새 상태를 만들 이유가 없다
       const hit = state.chips.find(c => c.kind === 'stop' && c.id === action.chipId);
-      // 바뀐 게 없으면 같은 참조를 돌려준다 — 호출부가 그걸로 재계산을 건너뛴다
       if (!hit) return state;
       return {
         ...state,
         chips: state.chips.map(c =>
-          c.kind === 'stop' && c.id === action.chipId ? { ...c, loadAfter: action.loadAfter } : c,
+          /* 값과 함께 `loadAsked` 를 세운다 — 되묻기는 값이 아니라 이 표식을 보고
+             다시 물을지 정한다. 값만 적으면 추출의 추측과 구별이 안 된다 */
+          c.kind === 'stop' && c.id === action.chipId
+            ? { ...c, loadAfter: action.loadAfter, loadAsked: true }
+            : c,
         ),
       };
     }

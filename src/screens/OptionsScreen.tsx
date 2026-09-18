@@ -1,7 +1,8 @@
 /** A5 — 추천. 답(제시간 도착 여부)이 맨 위, 3안은 그 아래. "최적"이 아니라 "검증한 안 중 최선" */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Constants from 'expo-constants';
 import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
 import { nowMin } from '../lib/clock';
@@ -15,6 +16,7 @@ import { CandidateSheet } from '../sheets/CandidateSheet';
 import { StopList } from '../components/StopList';
 import { timingCopy } from '../lib/timingCopy';
 import { recommendTabState } from '../lib/routePlan/recommendTab';
+import { makeReasonClient } from '../lib/reasonClient';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -139,6 +141,33 @@ export function OptionsScreen({ navigation }: Props) {
   const comfortIdx = result.comfortIdx;
   /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
   const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
+  /* 서버가 준 설명 한 줄. 없으면 고정 문구로 떨어진다 — 설명은 장식이다 */
+  const [whyLine, setWhyLine] = useState<string | null>(null);
+  /* 계획당 한 번만 부른다(`server/src/guard.ts:80` 도 같은 상한을 건다).
+     추천안이 최단안과 같으면 보낼 두 번째 안이 없어 아예 부르지 않는다 */
+  const askedRef = useRef(false);
+  useEffect(() => {
+    if (tab.sameAsFast || askedRef.current || !result || !state.request) return;
+    const comfort = result.options[tab.target];
+    const fast = result.options[0];
+    if (!comfort || !fast) return;
+    askedRef.current = true;
+    const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
+    const baseUrl = extra.serverUrl?.trim();
+    const appToken = extra.appToken?.trim();
+    if (!baseUrl || !appToken) return;
+    const client = makeReasonClient({ baseUrl, appToken, deviceId: Constants.sessionId ?? 'unknown' });
+    void client({
+      /* `PlanRequest` 에 사용자 문장은 없다 — origin·destination·mode·arriveByMin·
+         departAtMin·stops·order 뿐이다. 서버도 `text` 를 선택값으로 받으므로 빈
+         문자열을 보낸다. 설명은 두 안의 **순서 차이**만 보고도 쓸 수 있다 */
+      text: '',
+      mode: req.mode,
+      fast: { stops: fast.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(fast.visits).totalMin) },
+      comfort: { stops: comfort.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(comfort.visits).totalMin) },
+    }).then(setWhyLine);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab.sameAsFast, tab.target, result]);
   const arriveMin = req.departAtMin + current.timing.totalMin;
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
@@ -221,7 +250,7 @@ export function OptionsScreen({ navigation }: Props) {
             {tab.sameAsFast
               ? '지금 순서가 가장 편해요'
               : tab.value === 0
-                ? '짐을 들고 이동하는 시간을 줄였어요'
+                ? whyLine ?? '짐을 들고 이동하는 시간을 줄였어요'
                 : '총 이동 시간이 가장 짧아요'}
           </Text>
         </View>

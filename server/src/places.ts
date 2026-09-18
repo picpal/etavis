@@ -32,7 +32,10 @@ export function kakaoLocalUrl(req: PlacesRequest, base = KAKAO_LOCAL_BASE): stri
 /** 좌표는 4자리(약 11m)로 깎는다. routeCacheKey 와 같은 규칙 */
 export function placesCacheKey(req: PlacesRequest): string {
   const g = (n: number | undefined) => (n === undefined ? '-' : n.toFixed(4));
-  return `places:${req.kind}:${req.query}:${g(req.x)},${g(req.y)}:${req.radius ?? '-'}:${req.size}:${req.categoryCode ?? '-'}`;
+  /* 정렬 기준이 키에 없으면 같은 좌표·검색어의 거리순 응답이 이름 검색에 그대로
+     재생된다. TTL 이 24시간이라 배포해도 하루 동안 고쳐지지 않는다 */
+  const sort = req.sortByDistance ? 'd' : 'r';
+  return `places:${req.kind}:${req.query}:${g(req.x)},${g(req.y)}:${req.radius ?? '-'}:${req.size}:${req.categoryCode ?? '-'}:${sort}`;
 }
 
 export type PlacesEnv = {

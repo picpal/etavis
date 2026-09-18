@@ -40,3 +40,21 @@ test('categoryCode 는 대문자·숫자 3자리만 받는다', () => {
   assert.equal(parsePlacesRequest({ kind: 'keyword', query: 'x', size: 5, categoryCode: 'PK6' })?.categoryCode, 'PK6');
   assert.equal(parsePlacesRequest({ kind: 'keyword', query: 'x', size: 5, categoryCode: '../../etc' }), null);
 });
+
+/* 이름으로 목적지를 찾을 때는 좌표를 주되 거리순은 아니어야 한다. 좌표 유무로 정렬을
+   정하면 그 둘을 분리할 길이 없어, 서울시청에서 '강남역'을 쳐도 강남역이 안 나왔다 */
+
+test('sortByDistance 를 false 로 주면 좌표가 있어도 거리순이 아니다', () => {
+  const r = parsePlacesRequest({ kind: 'keyword', query: '강남역', x: 126.978, y: 37.5665, sortByDistance: false });
+
+  assert.equal(r?.sortByDistance, false);
+  assert.equal(r?.x, 126.978, '좌표는 그대로 넘어간다 — 관련도 정렬의 힌트로는 쓴다');
+});
+
+test('필드를 안 보내면 좌표 유무로 정한다 — 이미 배포된 앱이 그렇게 보낸다', () => {
+  const withCoord = parsePlacesRequest({ kind: 'keyword', query: '올리브영', x: 126.978, y: 37.5665 });
+  const without = parsePlacesRequest({ kind: 'keyword', query: '올리브영' });
+
+  assert.equal(withCoord?.sortByDistance, true);
+  assert.equal(without?.sortByDistance, false);
+});

@@ -40,12 +40,19 @@ test('강등 사유를 onFallback 으로 넘긴다', async () => {
   assert.match(String(seen[0]), /429/);
 });
 
-test('near·radiusM 인자를 목에 그대로 넘긴다', async () => {
+test('near·intent·radiusM 인자를 목에 그대로 넘긴다', async () => {
   let got: unknown[] = [];
   const spy: SearchProviderLike = { key: 'mock', async search(...args) { got = args; return []; } };
   const near = { latitude: 37.5, longitude: 127 };
-  await withMockFallback(boom, spy, { enabled: true }).search('빵집', near, 1500);
-  assert.deepEqual(got, ['빵집', near, 1500]);
+  await withMockFallback(boom, spy, { enabled: true }).search('빵집', near, 'nearby', 1500);
+  assert.deepEqual(got, ['빵집', near, 'nearby', 1500]);
+});
+
+test('폴백은 intent 를 바꾸지 않는다 — 목으로 내려가도 이름 검색은 이름 검색이다', async () => {
+  let got: unknown[] = [];
+  const spy: SearchProviderLike = { key: 'mock', async search(...args) { got = args; return []; } };
+  await withMockFallback(boom, spy, { enabled: true }).search('강남역', null, 'byName');
+  assert.equal(got[2], 'byName');
 });
 
 // 회로차단기 — corridorSearch 의 반경 루프가 죽은 공급자를 라운드마다 다시 때리지 않게 한다.
@@ -102,16 +109,16 @@ test('primary 가 계속 성공하면 차단기는 절대 열리지 않는다', 
   assert.equal(calls, 3, 'primary 호출 수는 search 호출 수와 같아야 한다');
 });
 
-test('차단 중에도 near·radiusM 인자가 fallback 에 그대로 전달된다', async () => {
+test('차단 중에도 near·intent·radiusM 인자가 fallback 에 그대로 전달된다', async () => {
   let got: unknown[] = [];
   const spy: SearchProviderLike = { key: 'mock', async search(...args) { got = args; return []; } };
   const flaky: SearchProviderLike = { key: 'kakao', async search() { throw new Error('501'); } };
   let t = 1_000;
   const p = withMockFallback(flaky, spy, { enabled: true, now: () => t });
   const near = { latitude: 37.5, longitude: 127 };
-  await p.search('빵집', near, 1500); // open
+  await p.search('빵집', near, 'nearby', 1500); // open
   t += 1_000; // 쿨다운 안 — 이번엔 primary 건너뛰고 바로 fallback
   got = [];
-  await p.search('빵집', near, 1500);
-  assert.deepEqual(got, ['빵집', near, 1500]);
+  await p.search('빵집', near, 'nearby', 1500);
+  assert.deepEqual(got, ['빵집', near, 'nearby', 1500]);
 });

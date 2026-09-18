@@ -11,10 +11,14 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { LatLng } from '../data/mockData';
+import { isInKorea, keywordParams, type SearchIntent } from './placesParams';
 import { haversineM } from './geo';
 import { keepPlace, planSearch } from './placeQuery';
 import { withMockFallback } from './placesFallback';
 import type { PlaceCandidate } from './routePlan/types';
+
+/* 좌표 판정과 정렬 규칙의 출처는 placesParams.ts 하나다 — 호출부는 여기서 가져다 쓴다 */
+export { isInKorea, type SearchIntent };
 
 export type Place = {
   id: string;
@@ -28,20 +32,11 @@ export type ProviderKey = 'kakao' | 'google' | 'mock';
 
 export interface PlaceSearchProvider {
   readonly key: ProviderKey;
-  /** near가 주어지면 가까운 순으로 정렬한다. radiusM이 있으면 그 안으로 가둔다(구글은 아직 무시) */
-  search(query: string, near: LatLng | null, radiusM?: number): Promise<Place[]>;
-}
-
-/** 한국 본토 + 제주 + 울릉/독도를 덮는 대략적 바운딩 박스 */
-const KR_BBOX = { minLat: 33.0, maxLat: 38.7, minLng: 124.5, maxLng: 132.0 };
-
-export function isInKorea(p: LatLng): boolean {
-  return (
-    p.latitude >= KR_BBOX.minLat &&
-    p.latitude <= KR_BBOX.maxLat &&
-    p.longitude >= KR_BBOX.minLng &&
-    p.longitude <= KR_BBOX.maxLng
-  );
+  /**
+   * `intent` 가 정렬을 가른다 — `byName` 은 관련도순, `nearby` 는 거리순.
+   * `radiusM` 은 `nearby` 에서만 쓴다(구글은 아직 무시). 자세한 이유는 `placesParams.ts`.
+   */
+  search(query: string, near: LatLng | null, intent: SearchIntent, radiusM?: number): Promise<Place[]>;
 }
 
 /**
@@ -107,13 +102,15 @@ const SEARCH_LATENCY = 220;
 
 const mockProvider: PlaceSearchProvider = {
   key: 'mock',
-  search(query, near, radiusM) {
+  search(query, near, intent, radiusM) {
     const q = norm(query);
     return new Promise(resolve => {
       setTimeout(() => {
         if (!q) return resolve([]);
         let hits = CATALOG.filter(p => norm(p.name).includes(q) || norm(p.address).includes(q));
-        if (!near) return resolve(hits);
+        // 이름으로 찾을 때는 목도 거리순으로 흔들지 않는다 — 목이 실제와 다르게 굴면
+        // 개발 중에는 멀쩡해 보이고 실기에서만 깨진다
+        if (!near || intent === 'byName') return resolve(hits);
         if (radiusM != null) hits = hits.filter(p => haversineM(near, p.coord) <= radiusM);
         resolve(
           [...hits].sort((a, b) => haversineM(near, a.coord) - haversineM(near, b.coord)),
@@ -195,6 +192,10 @@ async function kakaoFetch(kind: 'keyword' | 'address', params: URLSearchParams) 
         radius: num('radius'),
         size: num('size'),
         categoryCode: params.get('category_group_code') ?? undefined,
+        /* 정렬 기준을 **말해서** 보낸다. 서버가 좌표 유무로 정하던 때는 이름 검색이
+           좌표를 주는 순간 거리순이 돼, 정확히 일치하는 목적지가 '가까운 15건' 밖으로
+           밀렸다. 좌표는 관련도 힌트로 계속 넘기므로 둘을 분리할 다른 길이 없다 */
+        sortByDistance: params.get('sort') === 'distance',
       }),
       signal: ctrl.signal,
     });
@@ -207,7 +208,7 @@ async function kakaoFetch(kind: 'keyword' | 'address', params: URLSearchParams) 
 
 const kakaoProvider: PlaceSearchProvider = {
   key: 'kakao',
-  async search(query, near, radiusM) {
+  async search(query, near, intent, radiusM) {
     /*
       카카오는 이름만 매칭한다 — "국민은행"에 "국민은행앞1 공영노상주차장"(PK6)과
       "현대그린푸드국민은행 여의도전산센터"(FD6)가 같이 온다. 2026-09-15 시뮬레이터에서
@@ -219,17 +220,15 @@ const kakaoProvider: PlaceSearchProvider = {
       여기서 실제 검색어로 옮긴다 — planSearch 가 둘 다 정한다.
     */
     const plan = planSearch(query);
-    const keywordParams = new URLSearchParams({ query: plan.query, size: '15' });
-    if (plan.categoryCode) keywordParams.set('category_group_code', plan.categoryCode);
-    // 기준 좌표를 주면 카카오가 가까운 순으로 정렬해 준다.
-    // 국내 좌표일 때만 넘긴다 — 해외에 있으면서 한국 장소를 찾는 경우 거리순이 무의미하다
-    if (near && isInKorea(near)) {
-      keywordParams.set('x', String(near.longitude));
-      keywordParams.set('y', String(near.latitude));
-      keywordParams.set('sort', 'distance');
-      // 회랑 검색은 반지름으로 가둔다. 카카오 상한 20km
-      if (radiusM != null) keywordParams.set('radius', String(Math.min(20000, Math.round(radiusM))));
-    }
+    // 정렬·반경 규칙은 `placesParams.ts` 에 있다 — 국내에서만 이름 검색이 깨지던
+    // 버그가 여기 살았고, 테스트가 붙는 자리로 옮겼다
+    const params = keywordParams({
+      query: plan.query,
+      near,
+      intent,
+      radiusM,
+      categoryCode: plan.categoryCode,
+    });
 
     /*
       장소명과 주소를 둘 다 받는다.
@@ -242,7 +241,7 @@ const kakaoProvider: PlaceSearchProvider = {
     const isCategoryQuery = plan.categoryCode != null || plan.pathAny.length > 0;
 
     const [keyword, address] = await Promise.all([
-      kakaoFetch('keyword', keywordParams),
+      kakaoFetch('keyword', params),
       isCategoryQuery
         ? Promise.resolve({ documents: [] })
         : kakaoFetch('address', new URLSearchParams({ query: plan.query, size: '5' })).catch(() => ({ documents: [] })),
@@ -325,7 +324,7 @@ export function getProvider(_near: LatLng | null): PlaceSearchProvider {
 /** 플래너용 검색 함수 — Place를 PlaceCandidate로. hours는 아직 없다(다음 계획) */
 export function planSearchFn(): (query: string, near: LatLng, radiusM: number) => Promise<PlaceCandidate[]> {
   return async (query, near, radiusM) => {
-    const places = await getProvider(near).search(query, near, radiusM);
+    const places = await getProvider(near).search(query, near, 'nearby', radiusM);
     return places.map(p => ({ id: p.id, name: p.name, coord: p.coord, address: p.address }));
   };
 }

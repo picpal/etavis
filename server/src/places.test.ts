@@ -91,3 +91,18 @@ test('fetch 를 this 없이 부른다 — Workers 의 fetch 는 전역 this 를 
     'deps.fetch(...) 로 부르면 this 가 deps 가 되어 Workers 에서 Illegal invocation 이 난다',
   );
 });
+
+test('캐시 키는 정렬 기준을 포함한다 — 안 그러면 거리순 응답이 이름 검색에 24시간 재생된다', () => {
+  const base = { kind: 'keyword', query: '강남역', x: 126.978, y: 37.5665, size: 15 } as const;
+  const byDistance: PlacesRequest = { ...base, sortByDistance: true };
+  const byRelevance: PlacesRequest = { ...base, sortByDistance: false };
+
+  assert.notEqual(placesCacheKey(byDistance), placesCacheKey(byRelevance));
+});
+
+test('거리순이 아니면 카카오에 sort 를 붙이지 않는다', () => {
+  const url = kakaoLocalUrl({ kind: 'keyword', query: '강남역', x: 126.978, y: 37.5665, size: 15, sortByDistance: false });
+
+  assert.equal(new URL(url).searchParams.get('sort'), null);
+  assert.equal(new URL(url).searchParams.get('x'), '126.978');
+});

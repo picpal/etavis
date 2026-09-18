@@ -61,5 +61,11 @@ export function parsePlacesRequest(raw: unknown): PlacesRequest | null {
     categoryCode = r.categoryCode;
   }
 
-  return { kind: r.kind, query, x, y, radius, size, categoryCode, sortByDistance: x !== undefined };
+  /* 정렬 기준은 클라이언트가 말한다. 좌표 유무로 정하던 때는 이름 검색과 회랑 검색이
+     같은 규칙을 썼고, 좌표를 주는 순간 거리순이 강제돼 정확히 일치하는 목적지가
+     '가까운 15건' 밖으로 밀려났다(src/lib/placesParams.ts).
+     필드가 없으면 예전대로 좌표 유무로 정한다 — 이미 배포된 앱이 그렇게 보낸다 */
+  const sortByDistance = typeof r.sortByDistance === 'boolean' ? r.sortByDistance : x !== undefined;
+
+  return { kind: r.kind, query, x, y, radius, size, categoryCode, sortByDistance };
 }

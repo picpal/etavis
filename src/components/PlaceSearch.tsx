@@ -68,7 +68,9 @@ export function PlaceSearch({
     const id = ++reqId.current;
     const timer = setTimeout(() => {
       getProvider(near)
-        .search(trimmed, near)
+        // 이름으로 목적지를 찾는 자리다 — 거리순으로 정렬하면 정확히 일치하는 곳이
+        // 가까운 후보 15건에 밀려 아예 안 보인다(placesParams.ts)
+        .search(trimmed, near, 'byName')
         .then(list => {
           if (id !== reqId.current) return;
           setResults(list);

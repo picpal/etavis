@@ -19,7 +19,13 @@ export type PlaceLike = {
 
 export type SearchProviderLike = {
   readonly key: string;
-  search(query: string, near: { latitude: number; longitude: number } | null, radiusM?: number): Promise<PlaceLike[]>;
+  /** `intent` 는 그대로 흘려보낸다 — 폴백은 정렬 규칙을 바꾸는 자리가 아니다 */
+  search(
+    query: string,
+    near: { latitude: number; longitude: number } | null,
+    intent: 'byName' | 'nearby',
+    radiusM?: number,
+  ): Promise<PlaceLike[]>;
 };
 
 export type FallbackOptions = {
@@ -52,17 +58,17 @@ export function withMockFallback<P extends SearchProviderLike>(
   let downUntil = 0;
   return {
     key: primary.key,
-    async search(query, near, radiusM) {
+    async search(query, near, intent, radiusM) {
       if (now() < downUntil) {
         opts.onFallback?.(new Error(`${primary.key} 차단기 열림 — 쿨다운 중`));
-        return fallback.search(query, near, radiusM);
+        return fallback.search(query, near, intent, radiusM);
       }
       try {
-        return await primary.search(query, near, radiusM);
+        return await primary.search(query, near, intent, radiusM);
       } catch (e) {
         downUntil = now() + BREAKER_COOLDOWN_MS;
         opts.onFallback?.(e);
-        return fallback.search(query, near, radiusM);
+        return fallback.search(query, near, intent, radiusM);
       }
     },
   };

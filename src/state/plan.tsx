@@ -436,6 +436,8 @@ export type PlanAction =
   | { type: 'APPLY_INTENT'; intent: Intent; source?: ExtractSource }
   | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'NARROW_STOP'; chipId: string; query: string }
+  /** 물성 되묻기의 답. `planRequest.ts` 가 이 값을 슬롯으로 내리고 거기서 추천 순서가 갈린다 */
+  | { type: 'SET_CHIP_LOAD'; chipId: string; loadAfter: 'none' | 'hard' }
   | { type: 'PUSH_CHAT'; text: string }
   /** A2에서 뒤로 나갈 때 — 대화와 대화가 만든 것을 전부 버리고 진입 시점 조건으로 되돌린다 */
   /* `committed` — 이 대화가 이미 확정 계획이 됐는가. 스토어가 아니라 **액션이 나른다.**
@@ -724,6 +726,17 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }
+    case 'SET_CHIP_LOAD': {
+      const hit = state.chips.find(c => c.kind === 'stop' && c.id === action.chipId);
+      // 바뀐 게 없으면 같은 참조를 돌려준다 — 호출부가 그걸로 재계산을 건너뛴다
+      if (!hit) return state;
+      return {
+        ...state,
+        chips: state.chips.map(c =>
+          c.kind === 'stop' && c.id === action.chipId ? { ...c, loadAfter: action.loadAfter } : c,
+        ),
+      };
+    }
     case 'REMOVE_CHIP': {
       const chip = state.chips.find(c => c.id === action.id);
       if (!chip) return state;
@@ -833,6 +846,8 @@ type PlanApi = {
   removeChip: (id: string) => void;
   /** 되묻기 선택지를 골랐을 때 — 그 경유지의 검색어를 고른 값 하나로 좁힌다 */
   narrowStop: (chipId: string, query: string) => void;
+  /** 물성 되묻기의 답을 칩에 남긴다 */
+  setChipLoad: (chipId: string, loadAfter: 'none' | 'hard') => void;
   pushChat: (text: string) => void;
   /** A2를 대화 전으로 되돌린다. `entry`는 A2에 들어온 시점의 조건 — 화면이 잡아서 넘긴다 */
   resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }) => void;
@@ -951,6 +966,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       applyIntent: (intent, source) => dispatch({ type: 'APPLY_INTENT', intent, source }),
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
+      setChipLoad: (chipId, loadAfter) => dispatch({ type: 'SET_CHIP_LOAD', chipId, loadAfter }),
       pushChat: text => {
         // 새 말이 들어오면 다시 '버릴 것'이 생긴다 — 안 내리면 "확정 → 새 대화 → 중간에
         // 나감"에서 버려야 할 경유지 칩이 남는다

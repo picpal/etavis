@@ -14,6 +14,7 @@ import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { StopList } from '../components/StopList';
 import { timingCopy } from '../lib/timingCopy';
+import { recommendTabState } from '../lib/routePlan/recommendTab';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -136,6 +137,8 @@ export function OptionsScreen({ navigation }: Props) {
   const req = state.request;
   /** `편한 순서` 가 가리킬 자리. null 이거나 0 이면 보여줄 차이가 없어 토글이 안 뜬다 */
   const comfortIdx = result.comfortIdx;
+  /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
+  const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
   const arriveMin = req.departAtMin + current.timing.totalMin;
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
@@ -195,33 +198,33 @@ export function OptionsScreen({ navigation }: Props) {
           </View>
         )}
 
-        {/* 0. 기준 고르기 — 짐을 덜 드는 순서가 따로 있을 때만 뜬다.
-            아래 숫자가 전부 이 선택을 따라 바뀌므로 판정보다 위에 둔다.
-            기본은 최단 시간이다 — 누르지 않으면 지금까지와 똑같이 동작한다 */}
-        {comfortIdx != null && comfortIdx !== 0 && (
-          <View style={{ gap: 6 }}>
-            <SegmentControl
-              options={['편한 순서', '최단 시간']}
-              value={state.selectedOptionIdx === comfortIdx ? 0 : 1}
-              onChange={i => {
-                haptic();
-                flow.select(i === 0 ? comfortIdx : 0);
-              }}
-              fontSize={14}
-              padV={9}
-            />
-            {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
-                설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
-            <Text
-              numberOfLines={1}
-              style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
-            >
-              {state.selectedOptionIdx === comfortIdx
+        {/* 0. 기준 고르기 — **늘 보인다.** 아래 숫자가 전부 이 선택을 따라 바뀌므로
+            판정보다 위에 둔다. 가리킬 추천안이 따로 없을 때도 자리를 비우지 않는다:
+            탭이 있다 없다 하면 사용자는 자기가 뭘 잘못 눌렀는지 의심한다 */}
+        <View style={{ gap: 6 }}>
+          <SegmentControl
+            options={['추천 순서', '최단 시간']}
+            value={tab.value}
+            onChange={i => {
+              haptic();
+              flow.select(i === 0 ? tab.target : 0);
+            }}
+            fontSize={14}
+            padV={9}
+          />
+          {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
+              설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
+          <Text
+            numberOfLines={1}
+            style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
+          >
+            {tab.sameAsFast
+              ? '지금 순서가 가장 편해요'
+              : tab.value === 0
                 ? '짐을 들고 이동하는 시간을 줄였어요'
                 : '총 이동 시간이 가장 짧아요'}
-            </Text>
-          </View>
-        )}
+          </Text>
+        </View>
 
         {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로.
             조건이 달라졌으면 흐리게 — 지우지는 않는다. 무엇과 견줘 뺐는지가 이 숫자라

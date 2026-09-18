@@ -202,6 +202,12 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
           measured: action.result.measuredCount,
           totalMin: best?.totalMin ?? null,
           picked: best?.visits.map(v => v.candidate.name).join(' · ') ?? '',
+          /* '편한 순서' 토글이 왜 안 떴는지 화면만 보고는 알 수 없다 — null 은 짐을 안 쟀다는
+             뜻이고(태그 없음·자동차), 0 은 최단안이 곧 편한 안이라는 뜻이다. 둘은 원인이 다르다 */
+          comfortIdx: action.result.comfortIdx,
+          comfort: action.result.comfortIdx != null
+            ? action.result.options[action.result.comfortIdx]?.visits.map(v => v.candidate.name).join(' · ') ?? ''
+            : '',
         },
       };
     }

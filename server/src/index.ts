@@ -16,6 +16,7 @@ import { handleTransit } from './transit';
 import { cachedPlaces, handlePlaces } from './places';
 import { parsePlacesRequest } from './placesSchema';
 import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
+import { handleReason } from './reason';
 import { upstreamDetail } from './upstream';
 
 export interface Env {
@@ -168,7 +169,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === '/health') return json({ ok: true });
 
-    const known = ['/extract', '/route', '/enrich', '/transit', '/places'];
+    const known = ['/extract', '/route', '/enrich', '/transit', '/places', '/reason'];
     if (!known.includes(url.pathname)) return json({ error: 'not found' }, 404);
 
     const gated = await gate(req, env, url.pathname);
@@ -197,6 +198,12 @@ async function handle(req: Request, env: Env): Promise<Response> {
     if (url.pathname === '/enrich') {
       if (await overDailyCap(env.RATE, '/enrich', new Date())) return json({ error: 'daily cap' }, 429);
       return handleEnrich(gated.body, env, { fetch, now: new Date() });
+    }
+    /* 분기를 여기서 끊는다. 빠뜨리면 아래 /extract 처리로 흘러가 엉뚱한 프롬프트를 탄다 —
+       마지막 분기가 조건 없는 fall-through 라 조용히 그렇게 된다 */
+    if (url.pathname === '/reason') {
+      if (await overDailyCap(env.RATE, '/reason', new Date())) return json({ error: 'daily cap' }, 429);
+      return handleReason(gated.body, env);
     }
     if (await overDailyCap(env.RATE, '/extract', new Date())) {
       // 앱은 429도 실패로 보고 로컬 목으로 떨어진다

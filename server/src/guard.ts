@@ -28,11 +28,11 @@ export type KVLike = {
     구간마다 한 번씩 부른다(`src/lib/routePlan/transitBudget.ts`). 20이면 1분에 두 번만
     계획할 수 있어 경로를 다시 짜는 정상 사용이 막힌다. /route와 같은 근거로 40으로 둔다.
     분당 상한은 폭주 방어선이지 돈줄이 아니다 — 돈은 아래 PER_DAY가 막는다 */
-export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 40, '/places': 300 };
+export const PER_MIN: Record<string, number> = { '/extract': 10, '/route': 40, '/enrich': 10, '/transit': 40, '/places': 300, '/reason': 10 };
 
 /** IP당 분당 상한. 기기당의 3배 — 사무실·모바일 NAT로 여럿이 한 IP를 쓰는 걸
     감안하되, 기기 id만 갈아끼우는 우회는 막는다 */
-export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 120, '/places': 900 };
+export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 120, '/enrich': 30, '/transit': 120, '/places': 900, '/reason': 30 };
 
 /**
  * 전역 일일 상한. 값의 근거는 2026-09-14 기준 각 API 요금표다.
@@ -77,6 +77,10 @@ export const PER_MIN_IP: Record<string, number> = { '/extract': 30, '/route': 12
  */
 export const PER_DAY: Record<string, number> = {
   '/extract': 1200,
+  /* 계획 하나당 최대 한 번, 그것도 '편한 순서'가 따로 있을 때만 부른다. /extract 를
+     줄여 쪼개지 않는다 — 그건 비용 분할이 아니라 핵심 기능 감축이다(901번째 추출이
+     429 를 받고 로컬 목으로 떨어진다). 상한에 닿으면 설명만 안 붙고 경로는 나온다 */
+  '/reason': 200,
   '/route:now': 8000,
   '/route:future': 4000,
   '/enrich': 600,

@@ -13,6 +13,8 @@ import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
 import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
+import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
+import { answerAsk, askForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
@@ -330,7 +332,10 @@ export function PlanScreen({ navigation }: Props) {
      추출 결과는 아래 칩으로 그대로 드러난다 — 잘못 잡힌 걸 사용자가 봐야 한다 */
   const [reply, setReply] = useState<string | null>(null);
   /** 업종을 좁히는 되묻기. 고르거나 경유지가 바뀌면 사라진다 */
-  const [narrowAsks, setNarrowAsks] = useState<{ field: string; question: string; options: string[] }[]>([]);
+  const [narrowAsks, setNarrowAsks] = useState<NarrowAsk[]>([]);
+  /* 지금 시트에 떠 있는 질문. 큐(`narrowAsks`)와 따로 두는 이유: 닫아도 질문은 남는다 —
+     경유지 칩을 눌러 다시 열 수 있어야 하고, 그때는 [0]이 아니라 그 칩의 질문을 연다 */
+  const [askField, setAskField] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const promptVisible = calcPromptVisible({ pending, chatLength: state.chat.length, dismissedAt });
   /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
@@ -363,7 +368,11 @@ export function PlanScreen({ navigation }: Props) {
            (2026-09-15 시뮬레이터에서 실제로 그랬다) */
         const plain = intent.ambiguous.find(a => !narrow.includes(a));
         setReply(intent.reject?.say ?? plain?.question ?? null);
-        setNarrowAsks(narrow);
+        /* 되묻기는 채팅에 그리지 않고 시트로 올린다 — 안내 멘트와 버튼 줄이 겹겹이
+           쌓이면 정작 물어본 것이 묻힌다. 첫 질문을 바로 띄우고 나머지는 큐에 둔다 */
+        const forSheet = asksForSheet(narrow);
+        setNarrowAsks(forSheet);
+        setAskField(forSheet[0]?.field ?? null);
         setFellBack(source === 'local');
         setPending(false);
       });
@@ -431,6 +440,7 @@ export function PlanScreen({ navigation }: Props) {
     // 화면이 들고 있던 대화의 부산물도 같이 버린다 — 스토어만 비우면 되묻기·안내가 남는다
     setReply(null);
     setNarrowAsks([]);
+    setAskField(null);
     setFellBack(false);
     setPending(false);
     setDismissedAt(-1);
@@ -444,12 +454,25 @@ export function PlanScreen({ navigation }: Props) {
     else navigation.goBack();
   };
 
-  /* 좁히기 질문은 아직 좁히기 질문에 답하지 않은 경유지만 가리킬 수 있다. 이미 좁혀진
-     칩(narrowed:true)을 후보에서 빼지 않으면, 두 경유지가 같은 값으로 좁혀졌을 때
-     나중 질문이 엉뚱한 쪽을 집는다 */
-  const chipFor = (field: string) => {
-    const q = field.slice('stop:'.length);
-    return state.chips.find(c => c.kind === 'stop' && !c.narrowed && c.queries.includes(q));
+  /* 지금 시트에 떠 있는 질문. 큐에서 사라졌으면(답했으면) 시트도 닫힌다 */
+  const openAsk = narrowAsks.find(a => a.field === askField) ?? null;
+  /* 칩 메뉴를 연 칩에 아직 답 안 한 되묻기가 있나 — 있으면 거기서 다시 열 수 있다 */
+  const menuChip = state.chips.find(c => c.id === chipMenu);
+  const menuAsk = menuChip ? askForChip(narrowAsks, menuChip) : undefined;
+
+  const pickAnswer = (option: string) => {
+    if (!openAsk) return;
+    const { narrowTo, asks } = answerAsk(narrowAsks, openAsk, option);
+    if (narrowTo) {
+      const target = state.chips.find(c => askForChip([openAsk], c));
+      if (target) {
+        narrowStop(target.id, narrowTo);
+        flow.reset(); // 검색어가 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
+      }
+    }
+    setNarrowAsks(asks);
+    // 남은 질문이 있으면 시트를 닫지 않고 다음 질문으로 넘어간다
+    setAskField(asks[0]?.field ?? null);
   };
 
   return (
@@ -544,6 +567,9 @@ export function PlanScreen({ navigation }: Props) {
                     {chip.kind === 'stop' && statusOf(chip.id) && statusOf(chip.id) !== 'ok'
                       ? ` · ${SLOT_STATUS_TEXT[statusOf(chip.id)!]}`
                       : ''}
+                    {/* 아직 답 안 한 되묻기가 있다는 표식. 시트를 닫아도 질문이 어디 있는지
+                        알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다 */}
+                    {askForChip(narrowAsks, chip) ? ' ▾' : ''}
                   </Text>
                   <Text
                     style={{
@@ -559,54 +585,6 @@ export function PlanScreen({ navigation }: Props) {
               ))}
             </View>
           )}
-
-          {/* 업종 되묻기 — 정거장 칩과 헷갈리지 않게 ✕ 없는 중립색 칩을 쓴다.
-              탭 = 고르기이지 지우기가 아니다 */}
-          {narrowAsks.map(ask => {
-            const chip = chipFor(ask.field);
-            if (!chip) return null; // 이미 지운 경유지면 되묻기도 그리지 않는다
-            return (
-              <View key={ask.field} style={{ gap: 8, alignSelf: 'flex-start' }}>
-                <AssistantShell>
-                  <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
-                    {ask.question}
-                  </Text>
-                </AssistantShell>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingLeft: 4 }}>
-                  {ask.options.map(option => (
-                    <Pressable
-                      key={option}
-                      onPress={() => {
-                        haptic();
-                        if (option === '상관없어요') {
-                          // 검색어는 그대로 둔다 — 로그도, 재계산도 없다
-                          setNarrowAsks(prev => prev.filter(a => a.field !== ask.field));
-                          return;
-                        }
-                        narrowStop(chip.id, option);
-                        flow.reset(); // 검색어가 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
-                        setNarrowAsks(prev => prev.filter(a => a.field !== ask.field));
-                      }}
-                      style={({ pressed }) => ({
-                        minHeight: 38,
-                        paddingVertical: 8,
-                        paddingHorizontal: 14,
-                        borderRadius: 14,
-                        backgroundColor: color.track,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        opacity: pressed ? 0.7 : 1,
-                      })}
-                    >
-                      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 14, lineHeight: 17, color: color.body }}>
-                        {option}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            );
-          })}
 
           {promptVisible &&
             (state.chat.length === 0 ? (
@@ -659,6 +637,20 @@ export function PlanScreen({ navigation }: Props) {
           {chipMenu && statusOf(chipMenu) && statusOf(chipMenu) !== 'ok' && (
             <Text style={[type.body, { color: color.muted }]}>{SLOT_STATUS_HELP[statusOf(chipMenu)!]}</Text>
           )}
+          {/* 되묻기를 닫아도 여기서 되살릴 수 있다. 시트를 닫는 순간 질문이 영영
+              사라지면, 표식(▾)만 남고 누를 곳이 없다 */}
+          {menuAsk && (
+            <Pressable
+              onPress={() => {
+                haptic();
+                setChipMenu(null);
+                setAskField(menuAsk.field);
+              }}
+              style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={[type.btn, { color: color.primary }]}>{menuAsk.question}</Text>
+            </Pressable>
+          )}
           <PrimaryButton
             label="이 경유지 빼기"
             height={52}
@@ -680,6 +672,9 @@ export function PlanScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </Sheet>
+
+      {/* 업종 되묻기 — 닫아도 질문은 큐에 남는다. 칩의 ▾ 를 눌러 다시 연다 */}
+      <NarrowAskSheet ask={openAsk} onPick={pickAnswer} onClose={() => setAskField(null)} />
     </View>
   );
 }

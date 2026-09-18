@@ -12,7 +12,7 @@ import type { ExtractSource } from '../lib/intentClient';
 import type { NearSide } from '../lib/routePlan/types';
 import type { Load, NeedWhen } from '../lib/nearSide';
 import { nowMin, toHHMM, toMin } from '../lib/clock';
-import { narrowStopChips, resetChatChips, syncConditionChips } from './chips';
+import { narrowStopChips, resetChatChips, syncConditionChips, shouldKeepCommittedPlan, type ResetReason } from './chips';
 import { logTrack } from '../lib/trackLog';
 import { describePlanAction } from './actionLog';
 import { knownPlacesSnapshot } from '../lib/placesStore';
@@ -835,7 +835,8 @@ type PlanApi = {
   narrowStop: (chipId: string, query: string) => void;
   pushChat: (text: string) => void;
   /** A2를 대화 전으로 되돌린다. `entry`는 A2에 들어온 시점의 조건 — 화면이 잡아서 넘긴다 */
-  resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }) => void;
+  /** `reason` 이 확정된 계획을 지킬지 정한다 — `chips.ts:shouldKeepCommittedPlan` */
+  resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }, reason: ResetReason) => void;
   arriveByLabel: string;
 };
 
@@ -957,8 +958,14 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         chatCommitted.current = false;
         dispatch({ type: 'PUSH_CHAT', text });
       },
-      resetChat: entry =>
-        dispatch({ type: 'RESET_CHAT', mode: entry.mode, arriveByMin: entry.arriveByMin, committed: chatCommitted.current }),
+      resetChat: (entry, reason) =>
+        dispatch({
+          type: 'RESET_CHAT',
+          mode: entry.mode,
+          arriveByMin: entry.arriveByMin,
+          // 확정 여부는 사실이고, 그 사실을 어떻게 쓸지는 부르는 쪽의 목적이 정한다
+          committed: shouldKeepCommittedPlan(reason, chatCommitted.current),
+        }),
       arriveByLabel: state.arriveByMin == null ? '도착 시각 상관없어요' : arriveByText(state.arriveByMin),
       slackMin: state.arriveByMin == null ? null : state.arriveByMin - toMin(state.destArriveAt),
     };

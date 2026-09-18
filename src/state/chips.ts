@@ -122,3 +122,24 @@ export function narrowStopChips(chips: IntentChip[], chipId: string, query: stri
       : c,
   );
 }
+
+/**
+ * `resetChat` 을 부르는 자리는 둘이고 목적이 다르다.
+ *
+ * - `leavingChat` — A2에서 뒤로 나간다. 대화가 만든 것을 버린다. 다만 **방금 확정한
+ *   계획은 지켜야 한다**: A5에서 `확인`을 누르면 `applyLive` 와 `navigation.reset` 이
+ *   같은 틱에 돌고, 그때 A2의 `beforeRemove` 가 낡은 클로저를 든 채 깨어나 "조용히
+ *   되돌린다" 가지를 탄다. 2026-09-16 실기 로그에서 `plan.apply {count:2}` 바로 다음
+ *   줄이 `chat.reset {stops:2}` 였고 진행 중 탭이 경유지 0곳으로 떴다.
+ * - `startingNewPlan` — 홈에서 '새로 계획하기' 로 들어온다. **확정 여부와 무관하게
+ *   지운다.** 여기서도 지키면 이전 대화의 칩('약국'·'닭강정집')이 새 대화에 그대로
+ *   남는다. 새 계획을 시작하겠다는 말은 이전 대화를 버리겠다는 말이다.
+ *
+ * 한 플래그(`committed`)만 보고 둘을 같이 처리한 것이 버그였다. 확정 여부는 사실이고,
+ * 그 사실을 어떻게 쓸지는 **부르는 쪽의 목적**이 정한다.
+ */
+export type ResetReason = 'leavingChat' | 'startingNewPlan';
+
+export function shouldKeepCommittedPlan(reason: ResetReason, committed: boolean): boolean {
+  return reason === 'leavingChat' && committed;
+}

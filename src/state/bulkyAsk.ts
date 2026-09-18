@@ -9,12 +9,10 @@
  * 묻는 비용은 탭 한 번이고, 답은 사용자가 제일 잘 안다.
  */
 import type { IntentChip } from './plan';
-import type { NarrowAsk } from './narrowAsk';
+import { askTarget, ASK_LOAD, type NarrowAsk } from './narrowAsk';
 
 export const BULKY_YES = '무거워요';
 export const BULKY_NO = '괜찮아요';
-
-const FIELD_PREFIX = 'load:';
 
 /**
  * 부피·무게가 생기는 업종어. 브랜드가 아니라 **업종**으로 둔다 —
@@ -32,7 +30,7 @@ export function bulkyAsks(chips: IntentChip[], mode: 'car' | 'walk' | 'transit')
     if (c.kind !== 'stop' || c.loadAsked) return [];
     if (!c.queries.some(q => BULKY.some(b => q.includes(b)))) return [];
     return [{
-      field: `${FIELD_PREFIX}${c.id}`,
+      field: `${ASK_LOAD}${c.id}`,
       question: `${c.label}에서 산 건 들고 다니기 무거우신가요?`,
       options: [BULKY_YES, BULKY_NO],
     }];
@@ -41,7 +39,8 @@ export function bulkyAsks(chips: IntentChip[], mode: 'car' | 'walk' | 'transit')
 
 /** 물성 되묻기의 field 에서 칩 id 를 꺼낸다. 다른 되묻기면 null */
 export function bulkyChipId(field: string): string | null {
-  return field.startsWith(FIELD_PREFIX) ? field.slice(FIELD_PREFIX.length) : null;
+  const t = askTarget(field);
+  return t?.kind === 'chip' ? t.chipId : null;
 }
 
 /**

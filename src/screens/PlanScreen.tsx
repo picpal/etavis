@@ -14,7 +14,7 @@ import { calcPromptVisible } from '../state/chatPrompt';
 import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
-import { answerAsk, askForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
+import { answerAsk, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
 import { bulkyAsks, bulkyChipId, mergeBulkyAsks, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -459,7 +459,7 @@ export function PlanScreen({ navigation }: Props) {
   const openAsk = narrowAsks.find(a => a.field === askField) ?? null;
   /* 칩 메뉴를 연 칩에 아직 답 안 한 되묻기가 있나 — 있으면 거기서 다시 열 수 있다 */
   const menuChip = state.chips.find(c => c.id === chipMenu);
-  const menuAsk = menuChip ? askForChip(narrowAsks, menuChip) : undefined;
+  const menuAsks = menuChip ? asksForChip(narrowAsks, menuChip) : [];
 
   /* 물성 질문은 칩이 갱신된 **뒤**에 판단한다 — `applyChat` 안에서는 `applyIntent` 가
      방금 dispatch 된 참이라 아직 옛 칩이다. 칩·이동수단이 바뀔 때마다 다시 도므로,
@@ -487,7 +487,7 @@ export function PlanScreen({ navigation }: Props) {
     }
     const { narrowTo, asks } = answerAsk(narrowAsks, openAsk, option);
     if (narrowTo) {
-      const target = state.chips.find(c => askForChip([openAsk], c));
+      const target = state.chips.find(c => asksForChip([openAsk], c).length > 0);
       if (target) {
         narrowStop(target.id, narrowTo);
         flow.reset(); // 검색어가 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
@@ -592,10 +592,10 @@ export function PlanScreen({ navigation }: Props) {
                       : ''}
                     {/* 아직 답 안 한 되묻기가 있다는 표식. 시트를 닫아도 질문이 어디 있는지
                         알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다.
-                        `askForChip` 은 `stop:` 접두사만 본다 — 물성 질문(`load:<chipId>`)은
-                        일부러 뺐다. 물성 질문은 좁히기와 달리 닫아도 계획이 정상 진행되고,
-                        표식까지 붙이면 칩 하나에 질문 두 종류가 달려 무엇을 묻는지 흐려진다 */}
-                    {askForChip(narrowAsks, chip) ? ' ▾' : ''}
+                        `asksForChip` 은 이 칩에 달린 되묻기를 전부 본다 — 좁히기(`stop:`)뿐
+                        아니라 물성(`load:<chipId>`)도. 물성만 접두사가 달라 표식이 안 뜨면
+                        큐에 있는데 재오픈할 길이 없는 질문이 생긴다 */}
+                    {asksForChip(narrowAsks, chip).length > 0 ? ' ▾' : ''}
                   </Text>
                   <Text
                     style={{
@@ -665,16 +665,16 @@ export function PlanScreen({ navigation }: Props) {
           )}
           {/* 되묻기를 닫아도 여기서 되살릴 수 있다. 시트를 닫는 순간 질문이 영영
               사라지면, 표식(▾)만 남고 누를 곳이 없다 */}
-          {menuAsk && (
+          {menuAsks.length > 0 && (
             <Pressable
               onPress={() => {
                 haptic();
                 setChipMenu(null);
-                setAskField(menuAsk.field);
+                setAskField(menuAsks[0].field);
               }}
               style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={[type.btn, { color: color.primary }]}>{menuAsk.question}</Text>
+              <Text style={[type.btn, { color: color.primary }]}>{menuAsks[0].question}</Text>
             </Pressable>
           )}
           <PrimaryButton

@@ -138,7 +138,7 @@ test('닫아 둔 뒤에 새 질문이 생기면 그건 띄운다 — 옛 질문�
 test('답하던 질문은 닫음 목록과 무관하게 그대로 둔다', () => {
   const queue = [stopAsk(), ...bulkyAsks([stop()], 'walk')];
 
-  const out = mergeBulkyAsks(queue, bulkyAsks([stop(), stop({ id: 's-2', label: '정육점', queries: ['정육점'] })], 'walk'), 'load:s-1', []);
+  const out = mergeBulkyAsks(queue, bulkyAsks([stop(), stop({ id: 's-2', label: '정육점', queries: ['정육점'] })], 'walk'), 'load:s-1', ['load:s-1']);
 
   assert.equal(out.askField, 'load:s-1');
 });

@@ -15,7 +15,7 @@ import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
 import { answerAsk, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
-import { bulkyAsks, bulkyChipId, mergeBulkyAsks, BULKY_YES } from '../state/bulkyAsk';
+import { bulkyAsks, bulkyChipId, mergeBulkyAsks, nextAskField, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
@@ -27,10 +27,6 @@ import type { SlotStatus } from '../lib/routePlan/types';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
-
-/* `mergeBulkyAsks` 의 `dismissed` 인자용 안정 참조. 매 렌더 새 배열 리터럴을 넘기면
-   그걸 의존성에 둔 effect 가 매번 다시 돈다 — Task 3 이 실제 닫음 상태로 바꾼다 */
-const NO_DISMISSED: string[] = [];
 
 /** 항공권 스타일 출발–도착 커넥터 */
 function ConnectorCard({ directMin, from, to }: { directMin: number; from: string; to: string }) {
@@ -341,6 +337,10 @@ export function PlanScreen({ navigation }: Props) {
   /* 지금 시트에 떠 있는 질문. 큐(`narrowAsks`)와 따로 두는 이유: 닫아도 질문은 남는다 —
      경유지 칩을 눌러 다시 열 수 있어야 하고, 그때는 [0]이 아니라 그 칩의 질문을 연다 */
   const [askField, setAskField] = useState<string | null>(null);
+  /* 사용자가 닫은 질문. 큐에서 빼지는 않는다 — 칩 메뉴에서 다시 열 수 있어야 하고,
+     빼면 "그 칩에 답 안 한 질문이 있다"는 표식(▾)도 같이 사라진다.
+     닫음은 그 질문 하나에 대한 것이지 큐 전체가 아니다 */
+  const [dismissedAsks, setDismissedAsks] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const promptVisible = calcPromptVisible({ pending, chatLength: state.chat.length, dismissedAt });
   /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
@@ -377,7 +377,15 @@ export function PlanScreen({ navigation }: Props) {
            쌓이면 정작 물어본 것이 묻힌다. 첫 질문을 바로 띄우고 나머지는 큐에 둔다 */
         const forSheet = asksForSheet(narrow);
         setNarrowAsks(forSheet);
-        setAskField(forSheet[0]?.field ?? null);
+        /* 닫아 둔 질문은 여기서도 건너뛴다 — APPLY_INTENT(plan.tsx) 는 기존 칩을 보존하고
+           chipSeq 만 늘려서 칩 id 가 재사용된다. 닫아 둔 field 는 다음 턴에도 같은
+           질문을 가리키므로, [0] 을 그대로 쓰면 한 마디만 더해도 닫은 질문이 되살아난다.
+
+           이 `.then` 클로저는 요청을 보낸 시점의 dismissedAsks 를 본다 — 요청이 날아가
+           있는 동안 시트를 닫으면 그 닫음이 이번 응답에는 반영되지 않는다. 받아들이기로
+           한 구멍이다: 그 좁은 구간에서 딱 한 번 되열릴 뿐이고, 지금은 매번 되열리니
+           그보다는 낫다 */
+        setAskField(nextAskField(forSheet, dismissedAsks));
         setFellBack(source === 'local');
         setPending(false);
       });
@@ -446,6 +454,7 @@ export function PlanScreen({ navigation }: Props) {
     setReply(null);
     setNarrowAsks([]);
     setAskField(null);
+    setDismissedAsks([]);
     setFellBack(false);
     setPending(false);
     setDismissedAt(-1);
@@ -471,11 +480,11 @@ export function PlanScreen({ navigation }: Props) {
      물을 일이 없어진 질문은 큐에서 뺀다). 바뀐 게 없으면 같은 배열 참조가 와서
      `narrowAsks` 를 의존성에 둬도 effect 가 자기 자신을 다시 부르지 않는다 */
   useEffect(() => {
-    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField, NO_DISMISSED);
+    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField, dismissedAsks);
     if (next.asks === narrowAsks) return;
     setNarrowAsks(next.asks);
     setAskField(next.askField);
-  }, [state.chips, state.mode, narrowAsks, askField]);
+  }, [state.chips, state.mode, narrowAsks, askField, dismissedAsks]);
 
   const pickAnswer = (option: string) => {
     if (!openAsk) return;
@@ -486,7 +495,12 @@ export function PlanScreen({ navigation }: Props) {
       flow.reset(); // 추천 순서가 바뀔 수 있다 — 계산은 사용자가 다시 들어갈 때
       const asks = narrowAsks.filter(a => a.field !== openAsk.field);
       setNarrowAsks(asks);
-      setAskField(asks[0]?.field ?? null);
+      // 답한 질문은 닫음 목록에 남겨 둘 이유가 없다 — 큐에서 이미 빠졌고, 같은 field 가
+      // 나중에 다시 생기면 그건 새 질문이다
+      setDismissedAsks(prev => prev.filter(f => f !== openAsk.field));
+      // 답한 뒤 다음 질문으로 넘어가되 닫아 둔 것은 건너뛴다 — 다른 질문에 답했다는
+      // 이유로 사용자가 물리친 질문이 되살아나면 안 된다
+      setAskField(nextAskField(asks, dismissedAsks));
       return;
     }
     const { narrowTo, asks } = answerAsk(narrowAsks, openAsk, option);
@@ -498,8 +512,12 @@ export function PlanScreen({ navigation }: Props) {
       }
     }
     setNarrowAsks(asks);
-    // 남은 질문이 있으면 시트를 닫지 않고 다음 질문으로 넘어간다
-    setAskField(asks[0]?.field ?? null);
+    // 답한 질문은 닫음 목록에 남겨 둘 이유가 없다 — 큐에서 이미 빠졌고, 같은 field 가
+    // 나중에 다시 생기면 그건 새 질문이다
+    setDismissedAsks(prev => prev.filter(f => f !== openAsk.field));
+    // 답한 뒤 다음 질문으로 넘어가되 닫아 둔 것은 건너뛴다 — 다른 질문에 답했다는
+    // 이유로 사용자가 물리친 질문이 되살아나면 안 된다
+    setAskField(nextAskField(asks, dismissedAsks));
   };
 
   return (
@@ -704,7 +722,15 @@ export function PlanScreen({ navigation }: Props) {
       </Sheet>
 
       {/* 업종 되묻기 — 닫아도 질문은 큐에 남는다. 칩의 ▾ 를 눌러 다시 연다 */}
-      <NarrowAskSheet ask={openAsk} onPick={pickAnswer} onClose={() => setAskField(null)} />
+      <NarrowAskSheet
+        ask={openAsk}
+        onPick={pickAnswer}
+        onClose={() => {
+          // 닫은 질문을 기억해 둔다 — 안 그러면 큐가 바뀔 때마다 이게 다시 떠오른다
+          if (openAsk) setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev : [...prev, openAsk.field]));
+          setAskField(null);
+        }}
+      />
     </View>
   );
 }

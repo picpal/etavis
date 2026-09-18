@@ -8,7 +8,7 @@ import { nowMin } from '../lib/clock';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
 import { effectiveVisits, josa, slotCandidates, toLegacyPlan } from '../state/planFlowBridge';
-import { haptic, PrimaryButton } from '../components/common';
+import { haptic, PrimaryButton, SegmentControl } from '../components/common';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
@@ -134,6 +134,8 @@ export function OptionsScreen({ navigation }: Props) {
   }
 
   const req = state.request;
+  /** `편한 순서` 가 가리킬 자리. null 이거나 0 이면 보여줄 차이가 없어 토글이 안 뜬다 */
+  const comfortIdx = result.comfortIdx;
   const arriveMin = req.departAtMin + current.timing.totalMin;
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
@@ -189,6 +191,34 @@ export function OptionsScreen({ navigation }: Props) {
               {pendingRemove.length > 0
                 ? `경유지 ${pendingRemove.length}곳을 뺐어요 · 아래 '다시 계산'을 눌러야 시간이 바뀌어요`
                 : "조건이 바뀌었어요 · 아래 '다시 계산'을 눌러주세요"}
+            </Text>
+          </View>
+        )}
+
+        {/* 0. 기준 고르기 — 짐을 덜 드는 순서가 따로 있을 때만 뜬다.
+            아래 숫자가 전부 이 선택을 따라 바뀌므로 판정보다 위에 둔다.
+            기본은 최단 시간이다 — 누르지 않으면 지금까지와 똑같이 동작한다 */}
+        {comfortIdx != null && comfortIdx !== 0 && (
+          <View style={{ gap: 6 }}>
+            <SegmentControl
+              options={['편한 순서', '최단 시간']}
+              value={state.selectedOptionIdx === comfortIdx ? 0 : 1}
+              onChange={i => {
+                haptic();
+                flow.select(i === 0 ? comfortIdx : 0);
+              }}
+              fontSize={14}
+              padV={9}
+            />
+            {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
+                설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
+            <Text
+              numberOfLines={1}
+              style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
+            >
+              {state.selectedOptionIdx === comfortIdx
+                ? '짐을 들고 이동하는 시간을 줄였어요'
+                : '총 이동 시간이 가장 짧아요'}
             </Text>
           </View>
         )}

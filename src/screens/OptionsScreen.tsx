@@ -123,24 +123,15 @@ export function OptionsScreen({ navigation }: Props) {
     [result, current, pickIdx, state.slots],
   );
 
-  if (!result || !current || !state.request) {
-    return (
-      <View style={{ flex: 1, backgroundColor: color.bg }}>
-        <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
-        {/* 늘어나는 요소가 없으면 탭바가 글 바로 밑에 붙어 화면 한가운데 뜬다 — flex:1 로 아래로 민다 */}
-        <View style={{ flex: 1 }}>
-          <Text style={[type.body, { color: color.muted, padding: 20 }]}>계산된 경로가 없어요. 계획 화면에서 다시 시작해 주세요.</Text>
-        </View>
-        <TabBar />
-      </View>
-    );
-  }
-
-  const req = state.request;
-  /** 짐을 덜 드는 안의 옵션 인덱스. 짐을 재지 않은 계획이면 null */
-  const comfortIdx = result.comfortIdx;
+  /** 짐을 덜 드는 안의 옵션 인덱스. 계획이 없거나 짐을 재지 않았으면 null */
+  const comfortIdx = result?.comfortIdx ?? null;
   /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
   const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
+  /* 아래 얼리 리턴(`if (!result || ...)`)보다 위에 둔다 — 그 리턴은 조건부라
+     result 가 있다가 없어지는 렌더가 있을 수 있는데(`recalculate` 가 flow.reset 뒤
+     아직 이 화면에 머무는 순간), 훅은 매 렌더 같은 순서로 불려야 한다(Rules of
+     Hooks). "값이 없으면 아무 것도 안 한다"는 일은 얼리 리턴 대신 이제 effect
+     안의 `!result` 가드가 맡는다 */
   /* 서버가 준 설명 한 줄. 없으면 고정 문구로 떨어진다 — 설명은 장식이다 */
   const [whyLine, setWhyLine] = useState<string | null>(null);
   /* 계획당 한 번만 부른다(`server/src/guard.ts:80` 도 같은 상한을 건다).
@@ -148,6 +139,7 @@ export function OptionsScreen({ navigation }: Props) {
   const askedRef = useRef(false);
   useEffect(() => {
     if (tab.sameAsFast || askedRef.current || !result || !state.request) return;
+    const req = state.request;
     const comfort = result.options[tab.target];
     const fast = result.options[0];
     if (!comfort || !fast) return;
@@ -168,6 +160,21 @@ export function OptionsScreen({ navigation }: Props) {
     }).then(setWhyLine);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.sameAsFast, tab.target, result]);
+
+  if (!result || !current || !state.request) {
+    return (
+      <View style={{ flex: 1, backgroundColor: color.bg }}>
+        <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
+        {/* 늘어나는 요소가 없으면 탭바가 글 바로 밑에 붙어 화면 한가운데 뜬다 — flex:1 로 아래로 민다 */}
+        <View style={{ flex: 1 }}>
+          <Text style={[type.body, { color: color.muted, padding: 20 }]}>계산된 경로가 없어요. 계획 화면에서 다시 시작해 주세요.</Text>
+        </View>
+        <TabBar />
+      </View>
+    );
+  }
+
+  const req = state.request;
   const arriveMin = req.departAtMin + current.timing.totalMin;
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);

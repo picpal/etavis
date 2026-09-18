@@ -15,6 +15,7 @@ import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
 import { answerAsk, askForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
+import { bulkyAsks, bulkyChipId, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
@@ -314,7 +315,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat, setChipLoad } = usePlan();
   const flow = usePlanFlow();
   const insets = useSafeAreaInsets();
   const ds = state.dataset;
@@ -460,8 +461,35 @@ export function PlanScreen({ navigation }: Props) {
   const menuChip = state.chips.find(c => c.id === chipMenu);
   const menuAsk = menuChip ? askForChip(narrowAsks, menuChip) : undefined;
 
+  /* 물성 질문은 칩이 갱신된 **뒤**에 판단한다 — `applyChat` 안에서는 `applyIntent` 가
+     방금 dispatch 된 참이라 아직 옛 칩이다. 이미 큐에 있는 질문은 다시 넣지 않는다:
+     칩이 바뀔 때마다 이 effect 가 다시 도는데, 그때 같은 질문이 쌓이면 시트가
+     답한 질문을 또 묻는다 */
+  useEffect(() => {
+    const asks = bulkyAsks(state.chips, state.mode);
+    if (asks.length === 0) return;
+    /* 이미 큐에 있는 질문은 다시 넣지 않는다 — 칩이 바뀔 때마다 이 effect 가 다시
+       도는데, 그때 같은 질문이 쌓이면 시트가 답한 질문을 또 묻는다.
+       `add` 가 비면 여기서 끝나므로 `narrowAsks` 를 의존성에 둬도 돌지 않는다 */
+    const add = asks.filter(a => !narrowAsks.some(q => q.field === a.field));
+    if (add.length === 0) return;
+    setNarrowAsks(prev => [...prev, ...add]);
+    // 열려 있는 질문이 없을 때만 첫 물성 질문을 띄운다 — 답하던 질문을 밀어내지 않는다
+    setAskField(cur => cur ?? add[0].field);
+  }, [state.chips, state.mode, narrowAsks]);
+
   const pickAnswer = (option: string) => {
     if (!openAsk) return;
+    const chipId = bulkyChipId(openAsk.field);
+    if (chipId) {
+      // 물성 질문 — 칩에 답을 남긴다. 좁히기(narrowStop)와 다른 값이라 다른 자리에 쓴다
+      setChipLoad(chipId, option === BULKY_YES ? 'hard' : 'none');
+      flow.reset(); // 추천 순서가 바뀔 수 있다 — 계산은 사용자가 다시 들어갈 때
+      const asks = narrowAsks.filter(a => a.field !== openAsk.field);
+      setNarrowAsks(asks);
+      setAskField(asks[0]?.field ?? null);
+      return;
+    }
     const { narrowTo, asks } = answerAsk(narrowAsks, openAsk, option);
     if (narrowTo) {
       const target = state.chips.find(c => askForChip([openAsk], c));
@@ -568,7 +596,10 @@ export function PlanScreen({ navigation }: Props) {
                       ? ` · ${SLOT_STATUS_TEXT[statusOf(chip.id)!]}`
                       : ''}
                     {/* 아직 답 안 한 되묻기가 있다는 표식. 시트를 닫아도 질문이 어디 있는지
-                        알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다 */}
+                        알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다.
+                        `askForChip` 은 `stop:` 접두사만 본다 — 물성 질문(`load:<chipId>`)은
+                        일부러 뺐다. 물성 질문은 좁히기와 달리 닫아도 계획이 정상 진행되고,
+                        표식까지 붙이면 칩 하나에 질문 두 종류가 달려 무엇을 묻는지 흐려진다 */}
                     {askForChip(narrowAsks, chip) ? ' ▾' : ''}
                   </Text>
                   <Text

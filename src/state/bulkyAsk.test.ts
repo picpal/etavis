@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bulkyAsks, bulkyChipId, mergeBulkyAsks, BULKY_YES, BULKY_NO } from './bulkyAsk';
+import { bulkyAsks, bulkyChipId, mergeBulkyAsks, nextAskField, BULKY_YES, BULKY_NO } from './bulkyAsk';
 import type { IntentChip } from './plan';
 import type { NarrowAsk } from './narrowAsk';
 
@@ -55,7 +55,7 @@ test('field 에서 칩 id 를 되꺼낸다', () => {
 const ask = (field: string): NarrowAsk => ({ field, question: `${field}?`, options: ['예', '아니요'] });
 
 test('새로 생긴 물성 질문은 큐 뒤에 붙는다', () => {
-  const next = mergeBulkyAsks([], [ask('load:s-1')], null);
+  const next = mergeBulkyAsks([], [ask('load:s-1')], null, []);
 
   assert.deepEqual(next.asks.map(a => a.field), ['load:s-1']);
   assert.equal(next.askField, 'load:s-1');
@@ -64,21 +64,21 @@ test('새로 생긴 물성 질문은 큐 뒤에 붙는다', () => {
 test('이미 큐에 있는 질문은 다시 넣지 않는다 — 같은 질문이 쌓이면 답한 걸 또 묻는다', () => {
   const queue = [ask('load:s-1')];
 
-  const next = mergeBulkyAsks(queue, [ask('load:s-1')], 'load:s-1');
+  const next = mergeBulkyAsks(queue, [ask('load:s-1')], 'load:s-1', []);
 
   assert.equal(next.asks, queue); // 같은 참조 — effect 가 다시 돌지 않는다
   assert.equal(next.askField, 'load:s-1');
 });
 
 test('물을 일이 없어진 물성 질문은 큐에서 빠진다 — 자동차로 바꿨는데 짐을 묻고 있으면 안 된다', () => {
-  const next = mergeBulkyAsks([ask('load:s-1')], [], 'load:s-1');
+  const next = mergeBulkyAsks([ask('load:s-1')], [], 'load:s-1', []);
 
   assert.deepEqual(next.asks, []);
   assert.equal(next.askField, null);
 });
 
 test('빠진 질문이 열려 있었으면 다음 질문으로 넘어간다', () => {
-  const next = mergeBulkyAsks([ask('load:s-1'), ask('stop:빵집')], [], 'load:s-1');
+  const next = mergeBulkyAsks([ask('load:s-1'), ask('stop:빵집')], [], 'load:s-1', []);
 
   assert.deepEqual(next.asks.map(a => a.field), ['stop:빵집']);
   assert.equal(next.askField, 'stop:빵집');
@@ -87,15 +87,67 @@ test('빠진 질문이 열려 있었으면 다음 질문으로 넘어간다', ()
 test('좁히기 질문은 건드리지 않는다 — 이 함수가 맡는 건 물성 질문뿐이다', () => {
   const queue = [ask('stop:빵집')];
 
-  const next = mergeBulkyAsks(queue, [], 'stop:빵집');
+  const next = mergeBulkyAsks(queue, [], 'stop:빵집', []);
 
   assert.equal(next.asks, queue);
   assert.equal(next.askField, 'stop:빵집');
 });
 
 test('답하던 질문은 새 질문이 와도 밀리지 않는다', () => {
-  const next = mergeBulkyAsks([ask('load:s-1')], [ask('load:s-1'), ask('load:s-9')], 'load:s-1');
+  const next = mergeBulkyAsks([ask('load:s-1')], [ask('load:s-1'), ask('load:s-9')], 'load:s-1', []);
 
   assert.deepEqual(next.asks.map(a => a.field), ['load:s-1', 'load:s-9']);
   assert.equal(next.askField, 'load:s-1');
+});
+
+const stopAsk = (f = 'stop:마트'): NarrowAsk =>
+  ({ field: f, question: '어떤 마트로 할까요?', options: ['이마트', '동네 마트', '상관없어요'] });
+
+test('닫아 둔 질문은 자동으로 열지 않는다', () => {
+  const asks = [stopAsk(), ...bulkyAsks([stop()], 'walk')];
+
+  assert.equal(nextAskField(asks, ['stop:마트']), 'load:s-1');
+});
+
+test('전부 닫아 뒀으면 아무것도 열지 않는다', () => {
+  const asks = [stopAsk()];
+
+  assert.equal(nextAskField(asks, ['stop:마트']), null);
+});
+
+test('닫은 게 없으면 첫 질문을 연다', () => {
+  assert.equal(nextAskField([stopAsk()], []), 'stop:마트');
+});
+
+test('가지치기가 닫아 둔 질문을 다시 열지 않는다 — N1 회귀', () => {
+  const queue = [stopAsk(), ...bulkyAsks([stop()], 'walk')];
+
+  // 자동차로 바꿔 물성 질문이 사라진다. 사용자는 이미 시트를 닫아 둔 상태
+  const out = mergeBulkyAsks(queue, [], null, ['stop:마트']);
+
+  assert.deepEqual(out.asks.map(a => a.field), ['stop:마트']);
+  assert.equal(out.askField, null);
+});
+
+test('닫아 둔 뒤에 새 질문이 생기면 그건 띄운다 — 옛 질문이 큐 앞에 있어도', () => {
+  const out = mergeBulkyAsks([stopAsk()], bulkyAsks([stop()], 'walk'), null, ['stop:마트']);
+
+  assert.equal(out.askField, 'load:s-1', '큐 앞의 닫은 질문을 건너뛴다');
+});
+
+test('답하던 질문은 닫음 목록과 무관하게 그대로 둔다', () => {
+  const queue = [stopAsk(), ...bulkyAsks([stop()], 'walk')];
+
+  const out = mergeBulkyAsks(queue, bulkyAsks([stop(), stop({ id: 's-2', label: '정육점', queries: ['정육점'] })], 'walk'), 'load:s-1', []);
+
+  assert.equal(out.askField, 'load:s-1');
+});
+
+test('바뀐 게 없으면 같은 배열 참조를 돌려준다 — effect 가 자기 자신을 다시 부르면 안 된다', () => {
+  const queue = bulkyAsks([stop()], 'walk');
+
+  const out = mergeBulkyAsks(queue, queue, 'load:s-1', []);
+
+  assert.equal(out.asks, queue, '참조가 같아야 한다');
+  assert.equal(out.askField, 'load:s-1');
 });

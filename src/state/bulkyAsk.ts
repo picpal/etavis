@@ -44,6 +44,16 @@ export function bulkyChipId(field: string): string | null {
 }
 
 /**
+ * 자동으로 열 질문. **닫아 둔 것은 고르지 않는다.**
+ *
+ * 닫기는 그 질문 하나에 대한 것이지 큐 전체가 아니다 — 그래서 새 질문은 계속 뜨고,
+ * 닫은 질문은 칩 메뉴에서만 다시 열린다(`asksForChip`).
+ */
+export function nextAskField(asks: NarrowAsk[], dismissed: readonly string[]): string | null {
+  return asks.find(a => !dismissed.includes(a.field))?.field ?? null;
+}
+
+/**
  * 되묻기 큐를 **지금 물어야 할 물성 질문 집합에 맞춘다** — 새로 생긴 건 넣고,
  * 물을 일이 없어진 건 뺀다.
  *
@@ -62,14 +72,20 @@ export function mergeBulkyAsks(
   queue: NarrowAsk[],
   fresh: NarrowAsk[],
   askField: string | null,
+  dismissed: readonly string[],
 ): { asks: NarrowAsk[]; askField: string | null } {
   const live = new Set(fresh.map(a => a.field));
   const kept = queue.filter(a => bulkyChipId(a.field) == null || live.has(a.field));
   const add = fresh.filter(a => !queue.some(q => q.field === a.field));
   if (kept.length === queue.length && add.length === 0) return { asks: queue, askField };
   const asks = [...kept, ...add];
-  /* 열려 있던 질문이 살아남았으면 그대로 둔다 — 답하던 질문을 새 질문이 밀어내면
-     사용자는 자기가 뭘 답하던 중이었는지 잃는다. 밀려난 경우에만 다음 질문으로 */
-  const stillOpen = askField != null && asks.some(a => a.field === askField);
-  return { asks, askField: stillOpen ? askField : asks[0]?.field ?? null };
+  /* 답하던 질문이 살아남았으면 그대로 둔다 — 새 질문이 밀어내면 사용자는 자기가
+     뭘 답하던 중이었는지 잃는다. 닫음 목록보다 이 판단이 앞선다:
+     지금 답하고 있다는 건 닫지 않았다는 뜻이다 */
+  if (askField != null && asks.some(a => a.field === askField)) return { asks, askField };
+
+  /* 그 밖에는 닫지 않은 질문 중 첫 번째. `askField` 가 null(닫음)이든 잘렸든 같은
+     규칙이다 — 두 경우를 가르려 했더니 "닫았는데 새 질문이 생긴" 경우가 어디에도
+     안 맞았다. 닫음 목록이 그 구분을 대신한다 */
+  return { asks, askField: nextAskField(asks, dismissed) };
 }

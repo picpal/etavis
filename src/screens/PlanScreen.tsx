@@ -28,6 +28,10 @@ import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
+/* `mergeBulkyAsks` 의 `dismissed` 인자용 안정 참조. 매 렌더 새 배열 리터럴을 넘기면
+   그걸 의존성에 둔 effect 가 매번 다시 돈다 — Task 3 이 실제 닫음 상태로 바꾼다 */
+const NO_DISMISSED: string[] = [];
+
 /** 항공권 스타일 출발–도착 커넥터 */
 function ConnectorCard({ directMin, from, to }: { directMin: number; from: string; to: string }) {
   return (
@@ -467,7 +471,7 @@ export function PlanScreen({ navigation }: Props) {
      물을 일이 없어진 질문은 큐에서 뺀다). 바뀐 게 없으면 같은 배열 참조가 와서
      `narrowAsks` 를 의존성에 둬도 effect 가 자기 자신을 다시 부르지 않는다 */
   useEffect(() => {
-    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField);
+    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField, NO_DISMISSED);
     if (next.asks === narrowAsks) return;
     setNarrowAsks(next.asks);
     setAskField(next.askField);

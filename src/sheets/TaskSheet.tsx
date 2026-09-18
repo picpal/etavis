@@ -10,7 +10,7 @@ import { Card, haptic } from '../components/common';
 import { CongestionKey, CONGESTION, congestionLabel, hasVisitedStop } from '../lib/congestion';
 import { CheckCircle, CheckMark, Hairline } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
-import { cancelScheduled, scheduleDepartureReminder } from '../notifications';
+import { departureReminderSeconds, DEPARTURE_LEAD_MIN } from '../lib/dwellReminder';
 
 const GREEN_DEEP = '#0F5C3E';
 
@@ -66,7 +66,6 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   const insets = useSafeAreaInsets();
   const { height: H } = useWindowDimensions();
   const { state, toggleTask, updateTask, addTask, removeTask, reportStopCongestion } = usePlan();
-  const scheduledRef = React.useRef<string | null>(null);
   // 할 일 인라인 편집
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const draftTextRef = React.useRef('');
@@ -84,6 +83,8 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
   const dwelling = stopIdx >= 0 && state.atStop && stopIdx === state.passedCount;
   // 이미 지나온 곳. 떠났어도 붐볐는지는 안다 — 오히려 그때가 제일 잘 안다
   const departed = stopIdx >= 0 && stopIdx < state.passedCount;
+  /* 출발 알림이 걸릴 체류인가 — 예약하는 쪽(tracker)과 같은 함수로 판단한다 */
+  const willRemind = stop != null && departureReminderSeconds(stop.dwellMin, { compress: false }) != null;
   /*
     가 본 곳이고 아직 제보를 안 했으면 계속 묻는다.
     전에는 `dwelling`만 봤다. 체류 중에 시트를 안 열고 지나가면 그 경유지의 혼잡도를
@@ -155,22 +156,10 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     ? GRABBAR_H + topH + SCROLL_PAD_TOP + listH + bottomH
     : SHEET_CHROME_H + listH + (showCongestion ? CONGESTION_H : 0) + insets.bottom + 24;
 
-  /* 경유지에 도착(시트 열림)하면 출발 5분 전 알림을 자동 예약.
-     이미 떠나온 곳은 뺀다 — 혼잡도를 제보하러 여는 일이 생겼는데, 그때마다
-     지나간 시각으로 출발 알림을 다시 걸면 안 된다 */
-  const stopName = stop?.name;
-  React.useEffect(() => {
-    if (!stopId || !stopName || departed) return;
-    let cancelled = false;
-    scheduleDepartureReminder(stopName, departAt).then(id => {
-      if (cancelled) cancelScheduled(id);
-      else scheduledRef.current = id;
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stopId, stopName]);
+  /* 출발 알림은 여기서 걸지 않는다. 전에는 이 자리에서 시트가 열릴 때 예약했는데,
+     **도착과 시트 열림은 같은 사건이 아니다** — 도착해도 시트를 안 열면 안 잡혔고,
+     안 가본 경유지의 카드를 열면 잡혔다. 이제 도착을 아는 곳(`tracker.tsx` 의
+     `arrive` 이벤트)이 건다. 화면은 무엇이 예약됐는지 말만 한다(아래 안내 문구). */
 
   const doneCount = stop ? stop.tasks.filter(t => t.done).length : 0;
 
@@ -461,13 +450,15 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
             onLayout={e => setBottomH(e.nativeEvent.layout.height)}
             style={{ paddingHorizontal: 20, paddingTop: 14, paddingBottom: insets.bottom + 24, gap: 14 }}
           >
-          {/* 출발 5분 전 알림은 도착하면 자동 예약 — 별도 토글 없음.
-              떠나온 곳에는 예약도 안 하므로(위 useEffect) 약속도 하지 않는다 */}
-          {!departed && (
+          {/* 출발 알림은 도착하면 tracker 가 자동 예약한다 — 별도 토글 없음.
+              떠나온 곳에는 예약하지 않으므로 약속도 하지 않는다. 체류가 리드 시간보다
+              짧아 예약 자체가 없는 경우도 마찬가지다 — 안 울릴 것을 약속하면 안 된다.
+              울릴지 말지는 `dwellReminder` 한 곳이 정하고 화면은 그것을 따른다 */}
+          {!departed && willRemind && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}>
               <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: color.stroke }} />
               <Text style={{ flex: 1, fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
-                출발 5분 전({departAt} 출발)에 알려드릴게요
+                출발 {DEPARTURE_LEAD_MIN}분 전({departAt} 출발)에 알려드릴게요
               </Text>
             </View>
           )}

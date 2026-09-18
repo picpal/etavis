@@ -170,8 +170,8 @@ export type PlanResult = {
   directKm: number;
   options: PlanOption[];
   /**
-   * `편한 순서` 토글이 가리킬 options 인덱스. 짐을 안 재는 계획이면 null.
-   * 0 이면 최단안이 곧 편한 안이라 보여줄 차이가 없다 — 화면이 토글을 숨긴다.
+   * `추천 순서` 가 가리킬 options 인덱스. 짐을 안 재는 계획이면 null.
+   * 0 이면 최단안이 곧 편한 안이라 두 기준이 같은 안을 가리킨다.
    */
   comfortIdx: number | null;
   alternatives: Alternative[];

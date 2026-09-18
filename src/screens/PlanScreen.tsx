@@ -14,7 +14,8 @@ import { calcPromptVisible } from '../state/chatPrompt';
 import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
-import { answerAsk, askForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
+import { answerAsk, askTarget, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
+import { bulkyAsks, bulkyChipId, mergeBulkyAsks, nextAskField, BULKY_YES } from '../state/bulkyAsk';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
@@ -314,7 +315,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat, setChipLoad } = usePlan();
   const flow = usePlanFlow();
   const insets = useSafeAreaInsets();
   const ds = state.dataset;
@@ -336,6 +337,10 @@ export function PlanScreen({ navigation }: Props) {
   /* 지금 시트에 떠 있는 질문. 큐(`narrowAsks`)와 따로 두는 이유: 닫아도 질문은 남는다 —
      경유지 칩을 눌러 다시 열 수 있어야 하고, 그때는 [0]이 아니라 그 칩의 질문을 연다 */
   const [askField, setAskField] = useState<string | null>(null);
+  /* 사용자가 닫은 질문. 큐에서 빼지는 않는다 — 칩 메뉴에서 다시 열 수 있어야 하고,
+     빼면 "그 칩에 답 안 한 질문이 있다"는 표식(▾)도 같이 사라진다.
+     닫음은 그 질문 하나에 대한 것이지 큐 전체가 아니다 */
+  const [dismissedAsks, setDismissedAsks] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
   const promptVisible = calcPromptVisible({ pending, chatLength: state.chat.length, dismissedAt });
   /** 목으로 떨어졌는지. 사용자에게 말해야 한다 — 같은 문장이 다음엔 다르게 잡힐 수 있으니까 */
@@ -362,7 +367,9 @@ export function PlanScreen({ navigation }: Props) {
         // 캐스팅하고, looksLikeIntent 도 ambiguous 원소별로는 들여다보지 않는다. Task 1의
         // 스키마가 아직 없는 배포된 Worker가 옛 모양({field, question})을 돌려주면
         // a.options 가 undefined라 .length 에서 던진다
-        const narrow = intent.ambiguous.filter(a => a.field.startsWith('stop:') && (a.options ?? []).length > 0);
+        const narrow = intent.ambiguous.filter(
+          a => askTarget(a.field)?.kind === 'query' && (a.options ?? []).length > 0,
+        );
         /* 칩으로 그릴 되묻기는 이 한 줄에서 빼야 한다. 안 빼면 같은 질문이 칩 줄 위와
            되묻기 블록에 두 번 나오고, 선택지를 고른 뒤에도 위쪽 한 줄만 낡은 채 남는다
            (2026-09-15 시뮬레이터에서 실제로 그랬다) */
@@ -372,7 +379,23 @@ export function PlanScreen({ navigation }: Props) {
            쌓이면 정작 물어본 것이 묻힌다. 첫 질문을 바로 띄우고 나머지는 큐에 둔다 */
         const forSheet = asksForSheet(narrow);
         setNarrowAsks(forSheet);
-        setAskField(forSheet[0]?.field ?? null);
+        /* 닫음 기록은 큐에 있는 질문에 대해서만 뜻이 있다. `stop:<검색어>` 는 칩 id 가 아니라
+           검색어로 만들어지므로(intent.ts), 칩이 빠졌다가 같은 업종이 다시 들어오면 **다른 질문이
+           같은 field 로** 태어난다 — 기록을 남겨 두면 그 새 질문이 처음부터 닫힌 채로 생긴다.
+           `load:` 는 이 큐에 없고 병합 effect 가 다시 넣으므로 건드리지 않는다 */
+        setDismissedAsks(prev =>
+          prev.filter(f => askTarget(f)?.kind === 'chip' || forSheet.some(a => a.field === f)),
+        );
+        /* 닫아 둔 질문은 여기서도 건너뛴다 — APPLY_INTENT(plan.tsx) 는 기존 칩을 보존하고
+           chipSeq 만 늘려서 칩 id 가 재사용된다. 닫아 둔 field 는 다음 턴에도 같은
+           질문을 가리키므로, [0] 을 그대로 쓰면 한 마디만 더해도 닫은 질문이 되살아난다.
+
+           이 `.then` 클로저는 요청을 보낸 시점의 dismissedAsks 를 본다. 양쪽으로 샌다 — 요청이
+           날아가 있는 동안 닫은 질문은 이번 응답에서 한 번 되열리고, 그 사이 칩 메뉴에서 연
+           질문은 거꾸로 건너뛰어진다. 받아들이기로 한 구멍이다: 창이 응답 한 번 길이뿐이고
+           기록 자체는 오염되지 않는다(여기서는 읽기만 한다). 닫으려면 dismissedAsks 를 미러링하는
+           ref 를 두고 여기서 ref 를 읽으면 양쪽이 한 번에 닫힌다 */
+        setAskField(nextAskField(forSheet, dismissedAsks));
         setFellBack(source === 'local');
         setPending(false);
       });
@@ -441,6 +464,7 @@ export function PlanScreen({ navigation }: Props) {
     setReply(null);
     setNarrowAsks([]);
     setAskField(null);
+    setDismissedAsks([]);
     setFellBack(false);
     setPending(false);
     setDismissedAt(-1);
@@ -458,21 +482,49 @@ export function PlanScreen({ navigation }: Props) {
   const openAsk = narrowAsks.find(a => a.field === askField) ?? null;
   /* 칩 메뉴를 연 칩에 아직 답 안 한 되묻기가 있나 — 있으면 거기서 다시 열 수 있다 */
   const menuChip = state.chips.find(c => c.id === chipMenu);
-  const menuAsk = menuChip ? askForChip(narrowAsks, menuChip) : undefined;
+  const menuAsks = menuChip ? asksForChip(narrowAsks, menuChip) : [];
+
+  /* 물성 질문은 칩이 갱신된 **뒤**에 판단한다 — `applyChat` 안에서는 `applyIntent` 가
+     방금 dispatch 된 참이라 아직 옛 칩이다. 칩·이동수단이 바뀔 때마다 다시 도므로,
+     넣기·빼기 판단은 전부 `mergeBulkyAsks` 한 곳에서 한다(같은 질문을 쌓지 않고,
+     물을 일이 없어진 질문은 큐에서 뺀다). 바뀐 게 없으면 같은 배열 참조가 와서
+     `narrowAsks` 를 의존성에 둬도 effect 가 자기 자신을 다시 부르지 않는다 */
+  useEffect(() => {
+    const next = mergeBulkyAsks(narrowAsks, bulkyAsks(state.chips, state.mode), askField, dismissedAsks);
+    if (next.asks === narrowAsks) return;
+    setNarrowAsks(next.asks);
+    setAskField(next.askField);
+  }, [state.chips, state.mode, narrowAsks, askField, dismissedAsks]);
 
   const pickAnswer = (option: string) => {
     if (!openAsk) return;
+    const chipId = bulkyChipId(openAsk.field);
+    if (chipId) {
+      // 물성 질문 — 칩에 답을 남긴다. 좁히기(narrowStop)와 다른 값이라 다른 자리에 쓴다
+      setChipLoad(chipId, option === BULKY_YES ? 'hard' : 'none');
+      flow.reset(); // 추천 순서가 바뀔 수 있다 — 계산은 사용자가 다시 들어갈 때
+      const asks = narrowAsks.filter(a => a.field !== openAsk.field);
+      setNarrowAsks(asks);
+      // 답한 질문은 닫음 목록에 남겨 둘 이유가 없다 — 큐에서 이미 빠졌고, 같은 field 가
+      // 나중에 다시 생기면 그건 새 질문이다
+      setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev.filter(f => f !== openAsk.field) : prev));
+      // 답한 뒤 다음 질문으로 넘어가되 닫아 둔 것은 건너뛴다 — 다른 질문에 답했다는
+      // 이유로 사용자가 물리친 질문이 되살아나면 안 된다
+      setAskField(nextAskField(asks, dismissedAsks));
+      return;
+    }
     const { narrowTo, asks } = answerAsk(narrowAsks, openAsk, option);
     if (narrowTo) {
-      const target = state.chips.find(c => askForChip([openAsk], c));
+      const target = state.chips.find(c => asksForChip([openAsk], c).length > 0);
       if (target) {
         narrowStop(target.id, narrowTo);
         flow.reset(); // 검색어가 바뀌면 계산은 사용자가 다시 들어갈 때 — 자동 재계산 금지
       }
     }
     setNarrowAsks(asks);
-    // 남은 질문이 있으면 시트를 닫지 않고 다음 질문으로 넘어간다
-    setAskField(asks[0]?.field ?? null);
+    // 위 분기와 같은 이유 — 답한 질문은 닫음 목록에서 빼고, 다음 질문은 닫아 둔 것을 건너뛴다
+    setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev.filter(f => f !== openAsk.field) : prev));
+    setAskField(nextAskField(asks, dismissedAsks));
   };
 
   return (
@@ -568,8 +620,11 @@ export function PlanScreen({ navigation }: Props) {
                       ? ` · ${SLOT_STATUS_TEXT[statusOf(chip.id)!]}`
                       : ''}
                     {/* 아직 답 안 한 되묻기가 있다는 표식. 시트를 닫아도 질문이 어디 있는지
-                        알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다 */}
-                    {askForChip(narrowAsks, chip) ? ' ▾' : ''}
+                        알 수 있어야 한다 — 표식이 없으면 닫는 순간 질문이 사라진 것처럼 보인다.
+                        `asksForChip` 은 이 칩에 달린 되묻기를 전부 본다 — 좁히기(`stop:`)뿐
+                        아니라 물성(`load:<chipId>`)도. 물성만 접두사가 달라 표식이 안 뜨면
+                        큐에 있는데 재오픈할 길이 없는 질문이 생긴다 */}
+                    {asksForChip(narrowAsks, chip).length > 0 ? ' ▾' : ''}
                   </Text>
                   <Text
                     style={{
@@ -637,20 +692,24 @@ export function PlanScreen({ navigation }: Props) {
           {chipMenu && statusOf(chipMenu) && statusOf(chipMenu) !== 'ok' && (
             <Text style={[type.body, { color: color.muted }]}>{SLOT_STATUS_HELP[statusOf(chipMenu)!]}</Text>
           )}
-          {/* 되묻기를 닫아도 여기서 되살릴 수 있다. 시트를 닫는 순간 질문이 영영
-              사라지면, 표식(▾)만 남고 누를 곳이 없다 */}
-          {menuAsk && (
+          {/* 되묻기를 닫아도 여기서 되살린다. 한 칩에 좁히기·물성이 둘 다 달릴 수
+              있으므로 **전부** 낸다 — 하나만 내면 나머지는 큐에 있는데 누를 곳이 없다.
+              라벨이 질문 문장 그대로라, 무엇이 열릴지 눌러 보기 전에 안다 */}
+          {menuAsks.map(ask => (
             <Pressable
+              key={ask.field}
               onPress={() => {
                 haptic();
                 setChipMenu(null);
-                setAskField(menuAsk.field);
+                // 명시적으로 여는 자리다 — 닫음 기록에서 빼야 다음 병합이 다시 닫지 않는다
+                setDismissedAsks(prev => (prev.includes(ask.field) ? prev.filter(f => f !== ask.field) : prev));
+                setAskField(ask.field);
               }}
-              style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
+              style={{ minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={[type.btn, { color: color.primary }]}>{menuAsk.question}</Text>
+              <Text style={[type.btn, { color: color.primary }]}>{ask.question}</Text>
             </Pressable>
-          )}
+          ))}
           <PrimaryButton
             label="이 경유지 빼기"
             height={52}
@@ -674,7 +733,15 @@ export function PlanScreen({ navigation }: Props) {
       </Sheet>
 
       {/* 업종 되묻기 — 닫아도 질문은 큐에 남는다. 칩의 ▾ 를 눌러 다시 연다 */}
-      <NarrowAskSheet ask={openAsk} onPick={pickAnswer} onClose={() => setAskField(null)} />
+      <NarrowAskSheet
+        ask={openAsk}
+        onPick={pickAnswer}
+        onClose={() => {
+          // 닫은 질문을 기억해 둔다 — 안 그러면 큐가 바뀔 때마다 이게 다시 떠오른다
+          if (openAsk) setDismissedAsks(prev => (prev.includes(openAsk.field) ? prev : [...prev, openAsk.field]));
+          setAskField(null);
+        }}
+      />
     </View>
   );
 }

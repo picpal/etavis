@@ -358,3 +358,25 @@ test("짧은 라벨이 긴 말을 삼키지 않는다 — '포장마차집'은 �
   const byName = planReducer(fresh(), { type: 'APPLY_INTENT', intent: intent('여의도자이') });
   assert.equal(byName.destinationName, '여의도 자이', '상호로도, 띄어쓰기가 달라도 걸린다');
 });
+
+/** 마트 칩 하나를 얹은 상태 — 물성 질문이 향할 자리 */
+const withMart = (): PlanState => ({
+  ...fresh(),
+  chips: [{
+    id: 's-1', kind: 'stop', label: '마트', queries: ['마트'],
+    stopKind: 'category', openNow: false, flexible: true, near: 'any',
+  }],
+});
+
+test('물성 답을 칩에 기록한다 — 이 값이 슬롯을 지나 추천 순서를 정한다', () => {
+  const after = planReducer(withMart(), { type: 'SET_CHIP_LOAD', chipId: 's-1', loadAfter: 'hard' });
+
+  const chip = after.chips.find(c => c.id === 's-1');
+  assert.equal(chip?.kind === 'stop' && chip.loadAfter, 'hard');
+});
+
+test('없는 칩 id 면 상태를 바꾸지 않는다 — 같은 참조를 돌려준다', () => {
+  const before = withMart();
+
+  assert.equal(planReducer(before, { type: 'SET_CHIP_LOAD', chipId: 'nope', loadAfter: 'hard' }), before);
+});

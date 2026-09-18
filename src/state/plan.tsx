@@ -55,6 +55,15 @@ export type IntentChip =
       /** 추출이 낸 물성·시점. 방향(near)은 코드가 이걸로 정한다 */
       loadBefore?: Load;
       loadAfter?: Load;
+      /** 사용자가 물성 질문에 답했다.
+       *
+       *  `loadAfter` 와 따로 두는 이유: `loadAfter` 는 **추출이 늘 채워 넣는 값**이다
+       *  (`server/src/schema.ts` 는 `hard` 가 아니면 `none` 으로 굳히고, 로컬 목
+       *  `lib/intent.ts` 도 `'none'` 을 박는다). 그러니 "값이 있다"는 사실은
+       *  LLM 이 찍어 봤다는 뜻일 뿐, 사람이 확인해 줬다는 뜻이 아니다 —
+       *  같은 문장에도 `hard/none` 이 갈렸다(2026-09-18 실측).
+       *  되묻기가 봐야 하는 건 값이 아니라 **누가 정했나**라서 표식을 따로 든다. */
+      loadAsked?: boolean;
       needWhen?: NeedWhen;
     }
   | { id: string; kind: 'arriveBy'; label: string; value: number };
@@ -436,6 +445,8 @@ export type PlanAction =
   | { type: 'APPLY_INTENT'; intent: Intent; source?: ExtractSource }
   | { type: 'REMOVE_CHIP'; id: string }
   | { type: 'NARROW_STOP'; chipId: string; query: string }
+  /** 물성 되묻기의 답. `planRequest.ts` 가 이 값을 슬롯으로 내리고 거기서 추천 순서가 갈린다 */
+  | { type: 'SET_CHIP_LOAD'; chipId: string; loadAfter: 'none' | 'hard' }
   | { type: 'PUSH_CHAT'; text: string }
   /** A2에서 뒤로 나갈 때 — 대화와 대화가 만든 것을 전부 버리고 진입 시점 조건으로 되돌린다 */
   /* `committed` — 이 대화가 이미 확정 계획이 됐는가. 스토어가 아니라 **액션이 나른다.**
@@ -724,6 +735,21 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         ...computeChain(stops, state.dataset, state.departMin),
       };
     }
+    case 'SET_CHIP_LOAD': {
+      // 없는 칩이면 그대로 둔다 — 답을 적을 자리가 없는데 새 상태를 만들 이유가 없다
+      const hit = state.chips.find(c => c.kind === 'stop' && c.id === action.chipId);
+      if (!hit) return state;
+      return {
+        ...state,
+        chips: state.chips.map(c =>
+          /* 값과 함께 `loadAsked` 를 세운다 — 되묻기는 값이 아니라 이 표식을 보고
+             다시 물을지 정한다. 값만 적으면 추출의 추측과 구별이 안 된다 */
+          c.kind === 'stop' && c.id === action.chipId
+            ? { ...c, loadAfter: action.loadAfter, loadAsked: true }
+            : c,
+        ),
+      };
+    }
     case 'REMOVE_CHIP': {
       const chip = state.chips.find(c => c.id === action.id);
       if (!chip) return state;
@@ -833,6 +859,8 @@ type PlanApi = {
   removeChip: (id: string) => void;
   /** 되묻기 선택지를 골랐을 때 — 그 경유지의 검색어를 고른 값 하나로 좁힌다 */
   narrowStop: (chipId: string, query: string) => void;
+  /** 물성 되묻기의 답을 칩에 남긴다 */
+  setChipLoad: (chipId: string, loadAfter: 'none' | 'hard') => void;
   pushChat: (text: string) => void;
   /** A2를 대화 전으로 되돌린다. `entry`는 A2에 들어온 시점의 조건 — 화면이 잡아서 넘긴다 */
   resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }) => void;
@@ -951,6 +979,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       applyIntent: (intent, source) => dispatch({ type: 'APPLY_INTENT', intent, source }),
       removeChip: id => dispatch({ type: 'REMOVE_CHIP', id }),
       narrowStop: (chipId, query) => dispatch({ type: 'NARROW_STOP', chipId, query }),
+      setChipLoad: (chipId, loadAfter) => dispatch({ type: 'SET_CHIP_LOAD', chipId, loadAfter }),
       pushChat: text => {
         // 새 말이 들어오면 다시 '버릴 것'이 생긴다 — 안 내리면 "확정 → 새 대화 → 중간에
         // 나감"에서 버려야 할 경유지 칩이 남는다

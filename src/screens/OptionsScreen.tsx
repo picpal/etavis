@@ -1,7 +1,8 @@
 /** A5 — 추천. 답(제시간 도착 여부)이 맨 위, 3안은 그 아래. "최적"이 아니라 "검증한 안 중 최선" */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { LayoutAnimation, Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Constants from 'expo-constants';
 import { color, type } from '../theme/tokens';
 import { usePlan, toHHMM } from '../state/plan';
 import { nowMin } from '../lib/clock';
@@ -14,6 +15,8 @@ import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { StopList } from '../components/StopList';
 import { timingCopy } from '../lib/timingCopy';
+import { recommendTabState } from '../lib/routePlan/recommendTab';
+import { makeReasonClient } from '../lib/reasonClient';
 import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Options'>;
@@ -94,7 +97,9 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated, showVe
 export function OptionsScreen({ navigation }: Props) {
   const flow = usePlanFlow();
   const request = usePlanRequest();
-  const { applyLive, removeChip } = usePlan();
+  /* `state` 는 아래에서 flow 의 것을 쓰므로 이름을 갈라 둔다 — 여기서 필요한 건
+     사용자가 실제로 한 말(`chat`)이고, 그건 계획 요청(`PlanRequest`)에는 없다 */
+  const { applyLive, removeChip, state: planState } = usePlan();
   const { state } = flow;
   const result = state.result;
   const [pickSlot, setPickSlot] = useState<string | null>(null);
@@ -120,6 +125,50 @@ export function OptionsScreen({ navigation }: Props) {
     [result, current, pickIdx, state.slots],
   );
 
+  /** 짐을 덜 드는 안의 옵션 인덱스. 계획이 없거나 짐을 재지 않았으면 null */
+  const comfortIdx = result?.comfortIdx ?? null;
+  /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
+  const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
+  /* 두 기준이 같은 안을 가리킬 때(`sameAsFast`) 켜진 자리를 화면이 직접 든다.
+     그때는 어느 쪽을 눌러도 고를 안이 0 하나뿐이라 `selectedOptionIdx` 가 안 움직이고,
+     그 값으로 켜진 자리를 정하면 썸이 손가락을 안 따라온다 — 눌러도 아무 일도 없는
+     버튼은 앱이 멈춘 것처럼 보인다. 고르는 안은 그대로 두고 '어디를 눌렀나'만 기억한다 */
+  const [sameSeg, setSameSeg] = useState<0 | 1>(0);
+  /* 아래 얼리 리턴(`if (!result || ...)`)보다 위에 둔다 — 그 리턴은 조건부라
+     result 가 있다가 없어지는 렌더가 있을 수 있는데(`recalculate` 가 flow.reset 뒤
+     아직 이 화면에 머무는 순간), 훅은 매 렌더 같은 순서로 불려야 한다(Rules of
+     Hooks). "값이 없으면 아무 것도 안 한다"는 일은 얼리 리턴 대신 이제 effect
+     안의 `!result` 가드가 맡는다 */
+  /* 서버가 준 설명 한 줄. 없으면 고정 문구로 떨어진다 — 설명은 장식이다 */
+  const [whyLine, setWhyLine] = useState<string | null>(null);
+  /* 계획당 한 번만 부른다(`server/src/guard.ts:80` 도 같은 상한을 건다).
+     추천안이 최단안과 같으면 보낼 두 번째 안이 없어 아예 부르지 않는다 */
+  const askedRef = useRef(false);
+  useEffect(() => {
+    if (tab.sameAsFast || askedRef.current || !result || !state.request) return;
+    const req = state.request;
+    const comfort = result.options[tab.target];
+    const fast = result.options[0];
+    if (!comfort || !fast) return;
+    askedRef.current = true;
+    const extra = (Constants.expoConfig?.extra ?? {}) as { serverUrl?: string; appToken?: string };
+    const baseUrl = extra.serverUrl?.trim();
+    const appToken = extra.appToken?.trim();
+    if (!baseUrl || !appToken) return;
+    const client = makeReasonClient({ baseUrl, appToken, deviceId: Constants.sessionId ?? 'unknown' });
+    void client({
+      /* 서버 프롬프트가 하는 일은 "사용자 문장을 읽고, 거기 없는 사실은 지어내지
+         않는다"이다. 빈 문자열을 보내면 읽을 문장이 없어 가게 이름만 보고 문장을
+         지어낸다 — 금지하려던 바로 그 짓이다. 사용자가 한 말은 `PlanRequest` 가
+         아니라 대화 스토어에 있다. 마지막 발화가 지금 화면을 만든 말이라 그걸 보낸다 */
+      text: planState.chat[planState.chat.length - 1] ?? '',
+      mode: req.mode,
+      fast: { stops: fast.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(fast.visits).totalMin) },
+      comfort: { stops: comfort.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(comfort.visits).totalMin) },
+    }).then(setWhyLine);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab.sameAsFast, tab.target, result]);
+
   if (!result || !current || !state.request) {
     return (
       <View style={{ flex: 1, backgroundColor: color.bg }}>
@@ -134,8 +183,6 @@ export function OptionsScreen({ navigation }: Props) {
   }
 
   const req = state.request;
-  /** `편한 순서` 가 가리킬 자리. null 이거나 0 이면 보여줄 차이가 없어 토글이 안 뜬다 */
-  const comfortIdx = result.comfortIdx;
   const arriveMin = req.departAtMin + current.timing.totalMin;
   // 반올림 후에 늦음을 판정한다 — 그래야 "0분 늦어요"가 뜨지 않는다
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
@@ -195,33 +242,38 @@ export function OptionsScreen({ navigation }: Props) {
           </View>
         )}
 
-        {/* 0. 기준 고르기 — 짐을 덜 드는 순서가 따로 있을 때만 뜬다.
-            아래 숫자가 전부 이 선택을 따라 바뀌므로 판정보다 위에 둔다.
-            기본은 최단 시간이다 — 누르지 않으면 지금까지와 똑같이 동작한다 */}
-        {comfortIdx != null && comfortIdx !== 0 && (
-          <View style={{ gap: 6 }}>
-            <SegmentControl
-              options={['편한 순서', '최단 시간']}
-              value={state.selectedOptionIdx === comfortIdx ? 0 : 1}
-              onChange={i => {
-                haptic();
-                flow.select(i === 0 ? comfortIdx : 0);
-              }}
-              fontSize={14}
-              padV={9}
-            />
-            {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
-                설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
-            <Text
-              numberOfLines={1}
-              style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
-            >
-              {state.selectedOptionIdx === comfortIdx
-                ? '짐을 들고 이동하는 시간을 줄였어요'
+        {/* 0. 기준 고르기 — **늘 보인다.** 아래 숫자가 전부 이 선택을 따라 바뀌므로
+            판정보다 위에 둔다. 가리킬 추천안이 따로 없을 때도 자리를 비우지 않는다:
+            탭이 있다 없다 하면 사용자는 자기가 뭘 잘못 눌렀는지 의심한다 */}
+        <View style={{ gap: 6 }}>
+          <SegmentControl
+            options={['추천 순서', '최단 시간']}
+            value={tab.sameAsFast ? sameSeg : tab.value}
+            onChange={i => {
+              haptic();
+              setSameSeg(i === 0 ? 0 : 1);
+              flow.select(i === 0 ? tab.target : 0);
+            }}
+            fontSize={14}
+            padV={9}
+          />
+          {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
+              설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
+          <Text
+            numberOfLines={1}
+            style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
+          >
+            {/* `가장 편해요` 라고 쓰던 자리다. 무엇과 견줘 '가장'인지 코드가 모른다 —
+                `sameAsFast` 에는 짐을 아예 안 잰 경우(자동차는 늘 그렇다)가 섞여 있다.
+                서버가 LLM 에게 금지한 말이기도 하다(`server/src/reason.ts` FORBIDDEN).
+                그래서 등수 대신 사실만 말한다: 지금은 두 기준의 답이 같다 */}
+            {tab.sameAsFast
+              ? '두 기준이 지금은 같은 순서를 가리켜요'
+              : tab.value === 0
+                ? whyLine ?? '짐을 들고 이동하는 시간을 줄였어요'
                 : '총 이동 시간이 가장 짧아요'}
-            </Text>
-          </View>
-        )}
+          </Text>
+        </View>
 
         {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로.
             조건이 달라졌으면 흐리게 — 지우지는 않는다. 무엇과 견줘 뺐는지가 이 숫자라

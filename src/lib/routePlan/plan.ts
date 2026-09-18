@@ -11,8 +11,8 @@ import { polylineLengthM } from '../geo';
 import { destinationPoint, estimateA, estimateB, estimateC, originPoint, projectOnCorridor, type CorridorPoint } from './corridor';
 import { enumeratePlans, totalVisits } from './enumerate';
 import { DEST_ID, LegStore, learnLegs, ORIGIN_ID } from './legs';
-import { allClosedAtArrival, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
-import { pickOptions, pickSeeds, round2Plan, type Ranked } from './select';
+import { allClosedAtArrival, comfortMin, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
+import { pickOptions, pickSeeds, planKey, round2Plan, type Ranked } from './select';
 import { TRANSIT_SEED_BUDGET, transitCallCost } from './transitBudget';
 import type { Alternative, LatLng, PlanInput, PlanOption, PlanResult, Rescored, RouteProvider, RouteResult, SlotStatus, Visit } from './types';
 
@@ -75,10 +75,22 @@ export async function plan(
   const L = polylineLengthM(poly);
   const corridor = new Map<string, CorridorPoint>();
   for (const s of input.slots) for (const c of s.candidates) if (!corridor.has(c.id)) corridor.set(c.id, projectOnCorridor(poly, c.coord));
+  /**
+   * 짐을 재야 할 계획인가. 태그가 없거나 자동차면 **계산을 통째로 건너뛴다** —
+   * `burdenMin` 이 0 이라 순위가 지금과 같고, 계획마다 scorePlan 을 한 번 더
+   * 도는 비용도 안 낸다. 실사용 대부분이 이쪽이다.
+   */
+  const burdened = input.mode !== 'car'
+    && input.slots.some(s => s.loadBefore === 'hard' || s.loadAfter === 'hard');
+  const tags = new Map(input.slots.map(s => [s.id, {
+    loadBefore: s.loadBefore ?? 'none', loadAfter: s.loadAfter ?? 'none', needWhen: s.needWhen ?? 'unknown',
+  }]));
+
   const ctx: ScoreContext = {
     origin: input.origin, destination: input.destination, corridorLengthM: L,
     rhoMinPerKm: directMin / Math.max(directKm, 0.1), mode: input.mode, departAtMin: input.departAtMin, legs,
     corridorOf: id => corridor.get(id)!,
+    tagsOf: burdened ? id => tags.get(id) : undefined,
   };
 
   // 1·2. 열거 + 추정
@@ -92,7 +104,10 @@ export async function plan(
     const dwell = visits.reduce((s, v) => s + v.dwellMin, 0);
     const a = (estimateA(cps) / 1000) * ctx.rhoMinPerKm + dwell;
     const b = (estimateB(coords) / 1000) * ctx.rhoMinPerKm + dwell;
-    return { visits, estA: a, estB: b, estC: estimateC(a, b) };
+    // 추정 단계에서도 scorePlan 이 legsMin 을 낸다(없는 leg 는 추정으로 채운다).
+    // 그래서 실측 전에도 짐 시간을 알 수 있고, 시드가 그걸 보고 고를 수 있다.
+    const burdenMin = burdened ? scorePlan(visits, ctx).burdenMin : 0;
+    return { visits, estA: a, estB: b, estC: estimateC(a, b), burdenMin };
   });
 
   // 3. 1라운드 실측
@@ -164,6 +179,18 @@ export async function plan(
   const chosen = pickOptions(finalMeasured, directMin, 3);
   const options = chosen.map(toOption);
   const best = chosen[0];
+
+  /**
+   * `편한 순서` 토글이 가리킬 자리. 짐을 안 재는 계획이면 `null` 이고 토글이 안 뜬다.
+   * `0` 이면 최단안이 곧 편한 안이라 보여줄 차이가 없다 — 그 판정은 화면이 한다.
+   */
+  const comfortBest = burdened
+    ? [...finalMeasured].sort((a, b) => comfortMin(a) - comfortMin(b))[0]
+    : undefined;
+  const ci = comfortBest
+    ? chosen.findIndex(s => planKey(s.visits) === planKey(comfortBest.visits))
+    : -1;
+  const comfortIdx = ci >= 0 ? ci : null;
 
   // 대안 — 1안에서 슬롯 하나만 바꿔 채점
   const alternatives: Alternative[] = [];
@@ -238,5 +265,5 @@ export async function plan(
     direct.source !== 'provider' ? 'estimate'
       : seedEstimated ? 'provider_direct_only'
         : seedLegJoined ? 'provider_legs' : 'provider';
-  return { directMin, directKm, options, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
+  return { directMin, directKm, options, comfortIdx, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
 }

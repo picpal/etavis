@@ -2,10 +2,23 @@
  * 시드 선택(3단계), 2라운드 트리거(5단계), Q=3 선택(6단계).
  */
 import { DEST_ID, ORIGIN_ID } from './legs';
-import type { Scored } from './score';
+import { BURDEN_WEIGHT, comfortMin, type Scored } from './score';
 import type { Visit } from './types';
 
-export type Ranked = { visits: Visit[]; estA: number; estB: number; estC: number };
+export type Ranked = {
+  visits: Visit[];
+  estA: number;
+  estB: number;
+  estC: number;
+  /** 추정 단계의 짐 시간. 없으면 0 — 짐 태그가 없거나 자동차다 */
+  burdenMin?: number;
+};
+
+/**
+ * 편의 최선이 최단안보다 이만큼 넘게 느리면 옵션에 안 넣는다.
+ * 그 정도면 편의가 아니라 다른 여행이다.
+ */
+export const COMFORT_MAX_EXTRA_MIN = 30;
 
 export const planKey = (visits: Visit[]): string => visits.map(v => v.candidate.id).join('>');
 
@@ -46,6 +59,19 @@ export function pickSeeds(ranked: Ranked[], R: number): Visit[][] {
     seen.add(k);
     chosen.push(r.visits);
   };
+  /**
+   * 짐을 감안한 최선을 **맨 앞에** 하나 넣는다 — 그래야 `편한 순서` 토글이
+   * 실측된 안을 갖는다. 시드 수(R)는 안 늘린다: 대중교통은 계획 1건이 10콜이고
+   * V=2 에서 이미 8~9콜을 쓴다(`transitBudget.ts`). 늘릴 자리가 없다.
+   *
+   * 짐이 없으면 이 안이 `byC[0]` 과 같아 **아무 일도 일어나지 않는다** —
+   * 지금 동작이 한 글자도 안 바뀐다. 짐이 있을 때만 마지막 축(`byB[0]`)이 밀린다.
+   */
+  const byComfort = [...ranked].sort(
+    (a, b) => (a.estC + BURDEN_WEIGHT * (a.burdenMin ?? 0)) - (b.estC + BURDEN_WEIGHT * (b.burdenMin ?? 0)),
+  );
+  if (byComfort[0] && byC[0] && planKey(byComfort[0].visits) !== planKey(byC[0].visits)) push(byComfort[0]);
+
   push(byC[0]);
   push(byC[1]);
   push(byA[0]);
@@ -78,6 +104,23 @@ export function pickOptions(measured: Scored[], directMin: number, q: number): S
   while (out.length < q && rest.length) {
     rest.sort((a, b) => score(a) - score(b));
     out.push(rest.shift()!);
+  }
+
+  /**
+   * 짐을 감안한 최선이 빠졌으면 **마지막 자리를 내준다.**
+   *
+   * `+dmax` 컷(최대 8분)이 이 안을 거의 항상 버린다 — 짐을 덜 드는 순서는 대개
+   * 더 돌아가기 때문이다. 그래서 컷과 무관하게 한 자리를 준다.
+   *
+   * 퇴출 대상은 **마지막 하나**다. `out` 은 점수 좋은 순으로 쌓이므로 마지막이 최하다.
+   * `1안 = 최단` 불변식은 깨지 않는다 — `out[0]` 은 건드리지 않는다.
+   */
+  const comfortBest = [...measured].sort((a, b) => comfortMin(a) - comfortMin(b))[0];
+  const already = out.some(s => planKey(s.visits) === planKey(comfortBest.visits));
+  const tooFar = comfortBest.totalMin > sorted[0].totalMin + COMFORT_MAX_EXTRA_MIN;
+  if (!already && !tooFar) {
+    if (out.length >= q) out.pop();
+    out.push(comfortBest);
   }
   return out;
 }

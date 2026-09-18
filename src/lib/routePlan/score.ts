@@ -59,6 +59,18 @@ export type Scored = {
  * 자동차는 0 이다 — 트렁크에 실으면 그만이고, 차의 지배 축은 정차 용이성이다
  * (`nearSide.ts` 의 `decideNear` 가 차를 일찍 빼는 것과 같은 이유).
  */
+/**
+ * 짐 1분을 이동 몇 분으로 칠까.
+ *
+ * 임의의 상수가 아니라 제품 문장이다 — **"짐을 든 1분을 이동 1.5분으로 친다."**
+ * 바꾸려면 이 값과 테스트를 같이 고친다. 측정값이 아니므로 근거를 여기 남긴다:
+ * 1.0 이면 짐이 순위를 못 뒤집고(같은 1분), 2.0 이면 조금만 무거워도 크게 돌아간다.
+ */
+export const BURDEN_WEIGHT = 1.5;
+
+/** 순위용 점수. `totalMin` 은 화면용이라 안 건드린다 */
+export const comfortMin = (s: Scored): number => s.totalMin + BURDEN_WEIGHT * s.burdenMin;
+
 function burdenOf(visits: Visit[], legsMin: number[], ctx: ScoreContext): number {
   if (ctx.mode === 'car' || !ctx.tagsOf) return 0;
   const sum = (a: number[]) => a.reduce((s, n) => s + n, 0);

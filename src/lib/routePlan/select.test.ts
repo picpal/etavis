@@ -4,7 +4,7 @@ import {
   candidateSet, deltaMaxMin, jaccard, legSet, marginMin, pickOptions, pickSeeds, planKey, round2Plan, type Ranked,
 } from './select';
 import type { PlaceCandidate, Visit } from './types';
-import type { Scored } from './score';
+import { comfortMin, type Scored } from './score';
 
 const c = (id: string): PlaceCandidate => ({ id, name: id, coord: { latitude: 0, longitude: 0 } });
 const vs = (...ids: string[]): Visit[] => ids.map(id => ({ slotId: id[0], candidate: c(id), dwellMin: 5 }));
@@ -108,4 +108,72 @@ test('round2Plan — 유효 실측 < 3이면 탐색안(미실측 leg 최다) 하
   const r = round2Plan({ measured, rescored, directMin: 30, legErrors: [] });
   assert.equal(r.extra.length, 2);
   assert.deepEqual(r.extra.map(planKey), ['a1>b2', 'a2>b2']);
+});
+
+/* 편한 순서 — 짐을 진 시간이 순위에 들어오는 자리.
+   시간만 보는 지금 동작은 짐이 없을 때 **한 글자도 안 바뀌어야** 한다. */
+
+test('pickSeeds — 짐이 없으면 지금과 똑같다', () => {
+  const r = [
+    ranked(['a1', 'b1'], 30, 30, 30),
+    ranked(['a1', 'b2'], 31, 31, 31),
+    ranked(['a2', 'b1'], 10, 50, 36),
+    ranked(['a2', 'b2'], 50, 10, 36),
+  ];
+  assert.deepEqual(pickSeeds(r, 4).map(planKey), ['a1>b1', 'a1>b2', 'a2>b1', 'a2>b2']);
+});
+
+test('pickSeeds — 짐이 있으면 편의 최선이 1번 자리에 온다', () => {
+  const r: Ranked[] = [
+    { ...ranked(['a1', 'b1'], 30, 30, 30), burdenMin: 20 }, // 거리 최선인데 짐이 많다
+    { ...ranked(['a1', 'b2'], 31, 31, 31), burdenMin: 20 },
+    { ...ranked(['a2', 'b1'], 10, 50, 36), burdenMin: 20 },
+    { ...ranked(['b1', 'a1'], 40, 40, 40), burdenMin: 0 },  // 좀 느려도 짐이 없다
+  ];
+  const seeds = pickSeeds(r, 4).map(planKey);
+  // 40 + 1.5×0 = 40  <  30 + 1.5×20 = 60
+  assert.equal(seeds[0], 'b1>a1', '짐을 감안한 최선이 먼저 실측된다');
+  assert.equal(seeds[1], 'a1>b1', '순수 최선도 남는다 — 두 토글 다 실측된 안을 가져야 한다');
+  assert.equal(seeds.length, 4, '시드 수는 안 는다 — 대중교통 예산이 10콜이다');
+});
+
+test('pickOptions — 편의 최선이 컷 밖이면 마지막 자리를 내준다', () => {
+  const m = [
+    scored(['a1', 'b1'], 40, { burdenMin: 12 }),
+    scored(['a2', 'b2'], 44, { burdenMin: 12 }),
+    scored(['a3', 'b3'], 47, { burdenMin: 12 }),
+    scored(['b1', 'a1'], 52, { burdenMin: 0 }),  // 컷(+8) 밖이지만 짐이 없다
+  ];
+  const out = pickOptions(m, 60, 3).map(s => planKey(s.visits));
+  assert.equal(out.length, 3);
+  assert.equal(out[0], 'a1>b1', '1안은 여전히 최단이다 — 이 불변식은 안 깬다');
+  assert.ok(out.includes('b1>a1'), '편의 최선이 들어온다');
+  assert.ok(!out.includes('a3>b3'), '점수 최하가 밀려난다');
+});
+
+test('pickOptions — 편의 최선이 이미 있으면 아무것도 안 바꾼다', () => {
+  const m = [
+    scored(['a1', 'b1'], 40, { burdenMin: 0 }),
+    scored(['a2', 'b2'], 44, { burdenMin: 12 }),
+    scored(['a3', 'b3'], 47, { burdenMin: 12 }),
+  ];
+  const out = pickOptions(m, 60, 3).map(s => planKey(s.visits));
+  assert.deepEqual(out, ['a1>b1', 'a2>b2', 'a3>b3']);
+});
+
+test('pickOptions — 편의 최선이 너무 멀면 안 넣는다 — 그건 다른 여행이다', () => {
+  const m = [
+    scored(['a1', 'b1'], 40, { burdenMin: 12 }),
+    scored(['a2', 'b2'], 44, { burdenMin: 12 }),
+    scored(['a3', 'b3'], 47, { burdenMin: 12 }),
+    scored(['b1', 'a1'], 75, { burdenMin: 0 }),  // 최단 +35분
+  ];
+  const out = pickOptions(m, 60, 3).map(s => planKey(s.visits));
+  assert.ok(!out.includes('b1>a1'));
+  assert.deepEqual(out, ['a1>b1', 'a2>b2', 'a3>b3']);
+});
+
+test('comfortMin — 짐 1분을 이동 1.5분으로 친다', () => {
+  assert.equal(comfortMin(scored(['a1'], 40, { burdenMin: 0 })), 40);
+  assert.equal(comfortMin(scored(['a1'], 40, { burdenMin: 12 })), 58);
 });

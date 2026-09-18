@@ -135,7 +135,7 @@ export function OptionsScreen({ navigation }: Props) {
   }
 
   const req = state.request;
-  /** `편한 순서` 가 가리킬 자리. null 이거나 0 이면 보여줄 차이가 없어 토글이 안 뜬다 */
+  /** 짐을 덜 드는 안의 옵션 인덱스. 짐을 재지 않은 계획이면 null */
   const comfortIdx = result.comfortIdx;
   /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
   const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);

@@ -685,20 +685,24 @@ export function PlanScreen({ navigation }: Props) {
           {chipMenu && statusOf(chipMenu) && statusOf(chipMenu) !== 'ok' && (
             <Text style={[type.body, { color: color.muted }]}>{SLOT_STATUS_HELP[statusOf(chipMenu)!]}</Text>
           )}
-          {/* 되묻기를 닫아도 여기서 되살릴 수 있다. 시트를 닫는 순간 질문이 영영
-              사라지면, 표식(▾)만 남고 누를 곳이 없다 */}
-          {menuAsks.length > 0 && (
+          {/* 되묻기를 닫아도 여기서 되살린다. 한 칩에 좁히기·물성이 둘 다 달릴 수
+              있으므로 **전부** 낸다 — 하나만 내면 나머지는 큐에 있는데 누를 곳이 없다.
+              라벨이 질문 문장 그대로라, 무엇이 열릴지 눌러 보기 전에 안다 */}
+          {menuAsks.map(ask => (
             <Pressable
+              key={ask.field}
               onPress={() => {
                 haptic();
                 setChipMenu(null);
-                setAskField(menuAsks[0].field);
+                // 명시적으로 여는 자리다 — 닫음 기록에서 빼야 다음 병합이 다시 닫지 않는다
+                setDismissedAsks(prev => prev.filter(f => f !== ask.field));
+                setAskField(ask.field);
               }}
               style={{ minHeight: 52, borderRadius: 16, backgroundColor: color.primaryTint, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={[type.btn, { color: color.primary }]}>{menuAsks[0].question}</Text>
+              <Text style={[type.btn, { color: color.primary }]}>{ask.question}</Text>
             </Pressable>
-          )}
+          ))}
           <PrimaryButton
             label="이 경유지 빼기"
             height={52}

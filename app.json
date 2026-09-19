@@ -28,7 +28,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "말로 경유 조건을 넣을 때 마이크로 목소리를 들어요.",
+          "speechRecognitionPermission": "들은 목소리를 글자로 바꿔 입력창에 채워요."
+        }
+      ]
     ],
     "extra": {
       "eas": {

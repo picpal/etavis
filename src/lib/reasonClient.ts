@@ -46,7 +46,9 @@ export function makeReasonClient(opts: {
       const body = (await res.json()) as unknown;
       // 서버 응답도 믿지 않는다 — 화면에 그대로 나가는 문자열이다
       const why = (body as { why?: unknown } | null)?.why;
-      return typeof why === 'string' && why.trim() ? why : null;
+      // trim 은 빈 문자열을 걸러내는 판정에만 쓰던 걸 반환값에도 적용한다 — 앞뒤 공백이
+      // 남은 채로 그대로 나가면 화면에 눈에 띄는 여백이 생긴다
+      return typeof why === 'string' && why.trim() ? why.trim() : null;
     } catch {
       return null;
     } finally {

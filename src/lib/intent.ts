@@ -322,26 +322,9 @@ export function extractIntent(text: string, ctx: IntentContext): Intent {
     });
   }
 
-  /* 아무것도 못 뽑았는데 문장이 '부탁'처럼 보이면 침묵하지 않는다.
-     오타·줄임말·영문·다국어가 여기로 떨어진다 — 조용히 비면 인사와 구별이 안 된다 */
-  const looksLikeRequest =
-    /들르|들러|들렀|들를|갔다|가야|가자|사야|사고|해야|필요|급해|뽑아|넣어|추가|있는 ?데|좀|줘|래|하고 싶|寄り|去|stop by|want/i.test(
-      text,
-    );
-  /* 이미 있어서 뺀 것은 '못 알아들었다'가 아니다 — 알아들었고, 바꿀 게 없었을 뿐이다.
-     여기를 빼먹으면 정확히 알아들은 문장에 '어디를 들르실지 다시 말씀해 주세요'가 붙는다 */
-  const nothingFound =
-    stops.length === 0 &&
-    !droppedAsPlanned &&
-    base.arriveBy == null &&
-    base.mode == null &&
-    !base.resetStops &&
-    base.ambiguous.length === 0;
-  if (nothingFound && looksLikeRequest) {
-    base.ambiguous.push({ field: 'text', question: '어디를 들르실지 다시 말씀해 주세요.', options: [] });
-  }
-
-  return { ...base, stops };
+  /* 판정은 `askWhenNothingFound` 한 곳이 한다 — 서버 응답도 같은 걸 쓴다.
+     `base.stops` 가 아니라 최종 `stops` 를 넘겨야 한다 — 둘은 다르다 */
+  return askWhenNothingFound(text, { ...base, stops }, { droppedAsPlanned });
 }
 
 /** 문장에서 브랜드·카테고리를 뽑아 add 경유지로 만든다 */
@@ -377,4 +360,45 @@ function extractStops(text: string, openNow: boolean, count: number, near: 'star
     found.push({ op: 'add', queries: cat.queries, kind: 'category', why: cat.why, count, flexible: true, openNow, prefers: [], near, loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown' });
   }
   return found;
+}
+
+/**
+ * 아무것도 못 알아들었는데 문장이 '부탁'처럼 보이면 **침묵하지 않는다.**
+ * 오타·줄임말·영문·다국어가 여기로 떨어진다 — 조용히 비면 인사와 구별이 안 된다.
+ *
+ * 왜 순수 함수인가: 이 판정은 원래 이 목(mock) 안에만 있었는데, 정작 비는 쪽은
+ * **서버다.** `intentClient.ts` 가 서버 응답을 모양만 보고 그대로 통과시켜서,
+ * LLM 이 경유지를 0건으로 내면 화면에 "알아들었어요"만 뜨고 칩도 질문도 없었다
+ * (2026-09-19 측정: 45 케이스-회차 중 2회). 목과 서버가 같은 판정을 쓰게 한다.
+ *
+ * `droppedAsPlanned` — 이미 있어서 뺀 것은 '못 알아들었다'가 아니다. 알아들었고
+ * 바꿀 게 없었을 뿐이다. 빼먹으면 정확히 알아들은 문장에 되묻기가 붙는다.
+ * 서버는 이 상태를 응답으로 알려주지 않으므로 넘기지 않는다(기본 false).
+ */
+export function askWhenNothingFound(
+  text: string,
+  intent: Intent,
+  opts: { droppedAsPlanned?: boolean } = {},
+): Intent {
+  const understoodNothing =
+    intent.stops.length === 0 &&
+    !opts.droppedAsPlanned &&
+    intent.arriveBy == null &&
+    intent.mode == null &&
+    !intent.resetStops &&
+    intent.ambiguous.length === 0;
+  if (!understoodNothing || !looksLikeRequest(text)) return intent;
+  // 입력을 건드리지 않는다 — 서버 응답에도 쓴다
+  return { ...intent, ambiguous: [...intent.ambiguous, { field: 'text', question: '어디를 들르실지 다시 말씀해 주세요.', options: [] }] };
+}
+
+/**
+ * 문장이 '부탁'처럼 보이나.
+ *
+ * `사자`·`하자` 같은 **청유형이 빠져 있었다** — "걸어가면서 먹을 아이스크림 하나 사자"가
+ * 부탁이 아닌 것으로 판정돼 침묵했다. `자` 하나만 보면 혼자·의자·감자가 걸리므로
+ * 동사를 붙여 좁힌다.
+ */
+function looksLikeRequest(text: string): boolean {
+  return /들르|들러|들렀|들를|갔다|가야|가자|사야|사고|사자|하자|먹자|찾자|들르자|해야|필요|급해|뽑아|넣어|추가|있는 ?데|좀|줘|래|하고 싶|寄り|去|stop by|want/i.test(text);
 }

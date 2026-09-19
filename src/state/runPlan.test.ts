@@ -82,6 +82,51 @@ test('검색 0건 슬롯은 none으로 남고 계획은 진행된다', async () 
   assert.equal(actions[actions.length - 1].type, 'RESULT');
 });
 
+/* ── 슬롯 하나가 죽어도 나머지는 살린다 ──────────────────────────
+   2026-09-19 프로덕션: /places 가 503(KV PUT 429)을 내면 corridorSearch 의
+   settleSamples 가 한 라운드 표본이 전부 거절될 때 던진다. 여기가 Promise.all 이라
+   그 슬롯 하나가 계획 전체를 FAIL('search')로 죽였고, 멀줦히 후보를 찾은 다른
+   슬롯까지 같이 버렸다. 경유지 하나를 잃는 게 계획 전체를 잃는 것보다 낫다. */
+
+/** 그 검색어만 늘 던진다 — 표본이 전부 거절돼 슬롯이 통째로 reject 된다 */
+const failingQuerySearch = (failQuery: string): SearchFn => async (q, near, r) => {
+  if (q === failQuery) throw new Error('KV PUT failed: 429 Too Many Requests');
+  return search(q, near, r);
+};
+
+const twoStops: PlanRequest['stops'] = [
+  { id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false, stopKind: 'brand' },
+  { id: 's-2', queries: ['파리바게뜨'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+];
+
+test('슬롯 하나가 던져도 나머지 슬롯의 후보는 살아남는다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(req(twoStops), { provider: mockRouteProvider(), search: failingQuerySearch('올리브영'), dispatch });
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { id: string; candidates: unknown[] }[] }).slots;
+  // 거절된 슬롯도 자리를 지킨다 — 자리를 뺀 채 접으면 인덱스가 밀려 다른 슬롯의 후보가 된다
+  assert.deepEqual(slots.map(s => s.id), ['s-1', 's-2']);
+  assert.equal(slots[0].candidates.length, 0);
+  assert.equal(slots[1].candidates.length, 1); // pb1 은 멀줦히 찾았다
+  assert.equal(actions[actions.length - 1].type, 'RESULT');
+});
+
+test("눈으로 보지 못한 슬롯은 'none' 이 아니라 'unchecked' 다 — 없는 것과 못 본 것은 다른 사실이다", async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(req(twoStops), { provider: mockRouteProvider(), search: failingQuerySearch('올리브영'), dispatch });
+  const slots = (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: { searchStatus?: string }[] }).slots;
+  assert.equal(slots[0].searchStatus, 'unchecked');
+  assert.equal(slots[1].searchStatus, 'ok');
+});
+
+test("슬롯이 전부 던지면 FAIL(search) — 할 말이 아무것도 없다", async () => {
+  const { actions, dispatch } = collect();
+  const allFail: SearchFn = async () => { throw new Error('KV PUT failed: 429 Too Many Requests'); };
+  await runPlan(req(twoStops), { provider: mockRouteProvider(), search: allFail, dispatch });
+  const last = actions[actions.length - 1];
+  assert.equal(last.type, 'FAIL');
+  assert.equal((last as { type: 'FAIL'; error: { kind: string } }).error.kind, 'search');
+});
+
 test('직행 실패 → FAIL(direct)', async () => {
   const { actions, dispatch } = collect();
   await runPlan(req([]), { provider: { route: () => Promise.reject(new Error('down')) }, search, dispatch });

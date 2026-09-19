@@ -84,6 +84,13 @@ test('빈 슬롯 — none, 나머지로 계획', async () => {
   assert.equal(r.options[0].visits.length, 1);
 });
 
+test("못 본 슬롯은 후보가 0건이어도 none 이 아니라 unchecked — 둘을 섞으면 찾아본 적 없는 곳을 '못 찾았다'고 말하게 된다", async () => {
+  const r = await plan(base([slot('a', [], { searchStatus: 'unchecked' }), slot('b', [on])]), mockRouteProvider());
+  assert.equal(r.slotStatus.a, 'unchecked');
+  assert.equal(r.slotStatus.b, 'ok');
+  assert.equal(r.options[0].visits.length, 1);
+});
+
 test('검색 status far/short는 그대로 승격', async () => {
   const r = await plan(base([slot('a', [far], { searchStatus: 'far' }), slot('b', [on], { searchStatus: 'short', count: 2 })]), mockRouteProvider());
   assert.equal(r.slotStatus.a, 'far');

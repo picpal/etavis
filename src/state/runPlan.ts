@@ -138,7 +138,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         if (d.near === 'any') continue;
         byNear.set(d.near, (byNear.get(d.near) ?? 0) + Math.max(1, d.st.count));
       }
-      slots = await race(Promise.all(decided.map(async ({ st, near }) => {
+      const settled = await race(Promise.allSettled(decided.map(async ({ st, near }) => {
         const nearSource: 'stated' | 'inferred' | 'none' =
           near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred';
         const need = Math.max(1, st.count);
@@ -250,6 +250,42 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           searchRadiusM: found.radiusM, searchCalls: found.calls,
         } satisfies Slot;
       })));
+      /* 슬롯 하나는 슬롯 하나만큼만 잃는다 — corridorSearch.settleSamples 와 같은 원칙을
+         한 층 위에서 다시 올린다.
+
+         왜: 2026-09-19 프로덕션에서 /places 가 503(KV PUT 429)을 내면 settleSamples 가
+         한 라운드 표본이 전부 거절될 때 던지는데, 여기가 Promise.all 이라 그 슬롯
+         하나가 계획 전체를 FAIL('search')로 죽였다. 멀쩡히 후보를 찾은 다른 슬롯까지
+         같이 버렸다. 이 파일이 이미 적어 둔 원칙이다 — 경유지 하나를 잃는 게 계획
+         전체를 잃는 것보다 낫다.
+
+         거절된 슬롯은 후보 0개로 **자리를 지킨다.** 자리를 빼면 뒤의 슬롯이 앞으로
+         밀려 decided[i] 와 짝이 어긋난다 — settleSamples 가 used[i] 때문에 빈 배열로
+         자리를 지키는 것과 같은 함정이다. */
+      if (decided.length > 0 && settled.every(r => r.status === 'rejected')) {
+        // 전부 거절이면 할 말이 아무것도 없다 — 지금처럼 FAIL('search')로 간다
+        throw (settled[0] as PromiseRejectedResult).reason;
+      }
+      slots = settled.map((r, i) => {
+        if (r.status === 'fulfilled') return r.value;
+        const { st, near } = decided[i];
+        const query = st.queries[0] ?? '';
+        return {
+          id: st.id, query, stopKind: st.stopKind, why: st.why,
+          candidates: [], dwellMin: dwellFor(query),
+          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          near, nearRelaxed: false,
+          nearSource: near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred',
+          nearBefore: 0, nearAfter: 0, nearRadiusM: null, nearRelaxedRaw: false,
+          loadBefore: st.loadBefore, loadAfter: st.loadAfter, needWhen: st.needWhen,
+          // 찾아봤는데 없는 게 아니라 아예 보지 못했다. 'none' 으로 적으면 화면이
+          // "경로 근처에서 못 찾아 뺐어요"라고 없는 사실을 말한다
+          searchStatus: 'unchecked',
+          // 몇 번이 나갔는지는 던진 클로저와 함께 잃었다. 감사 로그가 사용량을
+          // 축소해 말하게 되지만, 모르는 수를 지어내는 것보다는 낫다
+          searchRadiusM: 0, searchCalls: 0,
+        } satisfies Slot;
+      });
     } catch (e) {
       if (e instanceof Timeout) throw e;
       dispatch({ type: 'FAIL', error: { kind: 'search', message: String(e) } });

@@ -26,8 +26,14 @@ export type PlaceCandidate = {
   signals?: import('../enrich/types').PlaceSignals;
 };
 
-/** 검색 단계가 붙이는 상태. 플래너는 이걸 슬롯 status로 승격한다 */
-export type SearchStatus = 'ok' | 'far' | 'none' | 'short';
+/**
+ * 검색 단계가 붙이는 상태. 플래너는 이걸 슬롯 status로 승격한다
+ *
+ * 'none' 과 'unchecked' 를 섞지 않는다: 'none' 은 찾아봤는데 없는 것,
+ * 'unchecked' 는 검색이 죽어 아예 보지 못한 것이다. 둘을 같은 말로 묶으면
+ * 사용자에게 없는 사실을 말하게 된다.
+ */
+export type SearchStatus = 'ok' | 'far' | 'none' | 'short' | 'unchecked';
 
 export type Slot = {
   id: string;
@@ -133,7 +139,7 @@ export type Visit = { slotId: string; candidate: PlaceCandidate; dwellMin: numbe
 /** 경유지가 경로의 어느 쪽 끝에 붙어야 하나. 'any'면 제약 없음 — 규칙은 src/lib/nearSide.ts */
 export type NearSide = 'start' | 'end' | 'any';
 
-export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short';
+export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short' | 'unchecked';
 
 export type PlanOption = {
   visits: Visit[];

@@ -21,6 +21,7 @@ export const SLOT_STATUS_TEXT: Partial<Record<SlotStatus, string>> = {
   none: '못 찾음',
   closed: '마감',
   short: '일부만',
+  unchecked: '확인 못 함',
 };
 
 export const SLOT_STATUS_HELP: Partial<Record<SlotStatus, string>> = {
@@ -28,6 +29,7 @@ export const SLOT_STATUS_HELP: Partial<Record<SlotStatus, string>> = {
   none: '경로 15km 안에서 못 찾았어요. 다른 말로 적어 보세요.',
   closed: '도착할 때쯤 문을 닫아요.',
   short: '말한 개수만큼 못 찾았어요.',
+  unchecked: '검색이 실패해서 이 경유지는 못 봤어요. 다시 계산하면 다시 찾아볼게요.',
 };
 
 const round1 = (n: number) => Math.round(n * 10) / 10;

@@ -18,6 +18,7 @@ import { parsePlacesRequest } from './placesSchema';
 import { corsHeaders, dailyBucket, overDailyCap, rateLimited, routeCacheKey, ROUTE_TTL_S } from './guard';
 import { handleReason } from './reason';
 import { upstreamDetail } from './upstream';
+import { kvPut } from './kvWrite';
 
 export interface Env {
   OPENAI_API_KEY: string;
@@ -137,7 +138,7 @@ async function handleRoute(body: unknown, env: Env): Promise<Response> {
   // result_code≠0(예: 104 출발·도착 5m 이내)은 앱이 사용자에게 설명할 수 있게 코드를 넘긴다
   if (!norm.ok) return json({ error: 'route', code: norm.code, msg: norm.msg }, 422);
   // 성공만 캐시한다. 실패를 캐시하면 일시적 장애가 TTL 내내 굳는다
-  await env.CACHE.put(cacheKey, JSON.stringify(norm.route), { expirationTtl: ROUTE_TTL_S });
+  await kvPut(env.CACHE, 'route:cache', cacheKey, JSON.stringify(norm.route), { expirationTtl: ROUTE_TTL_S }, 'best-effort');
   return json(norm.route);
 }
 

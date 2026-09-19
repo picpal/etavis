@@ -22,6 +22,7 @@ import { fetchGooglePlace } from './googlePlaces';
 import { prescore } from '../../src/lib/trendScore';
 import { normalizeName } from '../../src/lib/placeMatch';
 import type { BlogSignal, GoogleSignal, PlaceSignals } from './enrichTypes';
+import { kvPut } from './kvWrite';
 
 export type KVLike = {
   get(key: string): Promise<string | null>;
@@ -134,7 +135,7 @@ async function cached<T>(
   }
   const made = await make();
   // null 도 캐시한다 — 없는 걸 매번 다시 묻지 않는다
-  await kv.put(key, JSON.stringify({ v: made }), { expirationTtl: ttlS });
+  await kvPut(kv, 'enrich:cache', key, JSON.stringify({ v: made }), { expirationTtl: ttlS }, 'best-effort');
   return made;
 }
 
@@ -234,7 +235,9 @@ export async function handleEnrich(
     // 지출을 잊어버리지는 않는다.
     if (attempting.length > 0) {
       finalUsed = used + attempting.length;
-      await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
+      /* 예약은 구글 호출 **전에** 성공해야 뜻이 있다 — 못 적으면 지출을 잊는다.
+         지금은 던져서 503 으로 남긴다(로깅 단계). 어느 쓰기가 터지는지 보고 정한다 */
+      await kvPut(env.CACHE, 'enrich:budget-reserve', budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S }, 'required');
     }
 
     // 구글 호출은 서로 독립이라 병렬로 보낸다. 예산 예약이 이미 호출 전에 끝나 있으므로
@@ -267,8 +270,13 @@ export async function handleEnrich(
       const currentRaw = await env.CACHE.get(budgetKey);
       const current = Number(currentRaw ?? 0);
       if (Number.isFinite(current) && current === reserved && spent !== attempting.length) {
-        finalUsed = used + spent;
-        await env.CACHE.put(budgetKey, String(finalUsed), { expirationTtl: BUDGET_TTL_S });
+        /* 정정은 예약을 **낮추는** 쓰기다. 못 낮추면 예약값이 그대로 남는데 그건
+           보수적인 쪽(과다집계)이라 요청을 죽일 이유가 없다 — 대신 응답에는 실제로
+           남아 있는 예약값을 보고한다 */
+        const corrected = used + spent;
+        finalUsed = (await kvPut(env.CACHE, 'enrich:budget-correct', budgetKey, String(corrected), { expirationTtl: BUDGET_TTL_S }, 'best-effort'))
+          ? corrected
+          : reserved;
       } else if (Number.isFinite(current)) {
         // 정정이 필요 없거나(캐시 미스가 없어 reserved가 이미 실제 지출과 같다) 다른
         // 요청이 이미 더 최신 값을 써 놨다 — 카운터는 손대지 않고 응답엔 방금 읽은

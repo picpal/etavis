@@ -11,6 +11,7 @@
  * KAKAO_LOCAL_KEY 는 developers.kakao.com 키다. KAKAO_MOBILITY_KEY(길찾기)와 다르다.
  */
 import type { PlacesRequest } from './placesSchema';
+import { kvPut } from './kvWrite';
 
 export const KAKAO_LOCAL_BASE = 'https://dapi.kakao.com';
 
@@ -93,6 +94,6 @@ export async function handlePlaces(
   const documents = (raw as { documents?: unknown[] })?.documents ?? [];
   const body = JSON.stringify({ documents });
   // 성공만 캐시한다. 실패를 캐시하면 일시적 장애가 TTL 내내 굳는다
-  await env.CACHE.put(key, body, { expirationTtl: PLACES_TTL_S });
+  await kvPut(env.CACHE, 'places:cache', key, body, { expirationTtl: PLACES_TTL_S }, 'best-effort');
   return new Response(body, { headers: JSON_HEADERS });
 }

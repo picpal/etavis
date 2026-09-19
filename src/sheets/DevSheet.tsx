@@ -1,4 +1,4 @@
-/** 개발 메뉴 — 목 데이터셋 전환 + 계산 실패 토글 + 위치 추적 + 추적 로그 내보내기 (A1 타이틀 길게 눌러 진입) */
+/** 개발 메뉴 — 목 데이터셋 전환 + 계산 타임아웃 토글 + 위치 추적 + 추적 로그 내보내기 (A1 타이틀 길게 눌러 진입) */
 import React, { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -111,10 +111,10 @@ export function DevSheet({ visible, onClose }: { visible: boolean; onClose: () =
         <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={{ flex: 1, gap: 3 }}>
             <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 19, color: color.ink }}>
-              다음 계산 실패 (A8)
+              계산 타임아웃 (A8)
             </Text>
             <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}>
-              켜면 다음 경로 계산이 오류 화면으로 이어져요
+              켜 두면 경로 계산이 매번 타임아웃 화면으로 이어져요
             </Text>
           </View>
           <Pressable

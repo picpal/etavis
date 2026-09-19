@@ -52,7 +52,9 @@ export function CalculatingScreen({ navigation }: Props) {
           coord: plan.destinationCoord,
         });
       }
-      start(request);
+      // 개발 메뉴(A8) 토글 — 예산을 1ms로 줘서 진짜 경로가 진짜 타임아웃을 내게 한다.
+      // 가짜 오류를 분기로 만들지 않는다 — 그러면 실제 사용자가 안 타는 코드를 유지보수하게 된다
+      start(request, plan.failNext ? { timeoutMs: 1 } : undefined);
     }
     // 배열을 좁힌 이유는 재실행 방지가 아니다 — 그건 startedRef 가 이미 막는다.
     // 여기서 쓰는 plan 은 반드시 request 를 만들어 낸 그 렌더의 plan 이어야 해서,

@@ -64,6 +64,26 @@ export function maxRadiusM(mode: Mode, slackMin: number | null, rhoMinPerKm: num
   return Math.min(abs, Math.round(bySlack));
 }
 
+/**
+ * 표본 검색을 **한 건씩 독립으로** 본다.
+ *
+ * 왜: 2026-09-19 프로덕션에서 `/places` 30건 중 1건이 503(KV PUT 429)으로 죽었는데
+ * `Promise.all` 이라 그 하나가 검색 전체를 reject 시켰고, 계획이 통째로 실패해
+ * 사용자에겐 "연결이 불안정해요"만 보였다. 표본 하나는 표본 하나만큼만 잃어야 한다.
+ *
+ * 실패한 표본은 **빈 결과로 자리를 지킨다.** 자리를 빼면 `attach` 가 후보를 엉뚱한
+ * 앵커에 붙인다 — 거긴 `used[i]` 로 인덱스를 되짚기 때문이다.
+ *
+ * 다만 **전부 실패하면 던진다.** 빈 배열로 돌려주면 "그 근처엔 그런 곳이 없다"가
+ * 되는데 사실은 "보지 못했다"이다. 둘을 섞으면 사용자에게 없는 사실을 말하게 된다.
+ */
+async function settleSamples(tasks: Promise<PlaceCandidate[]>[]): Promise<PlaceCandidate[][]> {
+  if (tasks.length === 0) return [];
+  const settled = await Promise.allSettled(tasks);
+  if (settled.every(r => r.status === 'rejected')) throw (settled[0] as PromiseRejectedResult).reason;
+  return settled.map(r => (r.status === 'fulfilled' ? r.value : []));
+}
+
 export async function searchAlong(
   poly: LatLng[],
   query: string,
@@ -118,7 +138,7 @@ export async function searchAlong(
   let found: PlaceCandidate[] = [];
   while (true) {
     const r = radiusM;
-    found = merge(await Promise.all(points.map(p => countedSearch(query, p, r))));
+    found = merge(await settleSamples(points.map(p => countedSearch(query, p, r))));
     if (countForTarget(found) >= target) return { candidates: byCorridor(found), status: 'ok', radiusM: r, calls };
     if (r >= opts.maxRadiusM) break;
     radiusM = Math.min(opts.maxRadiusM, r * 2);
@@ -129,7 +149,7 @@ export async function searchAlong(
   // 상한까지 0건 — 더 멀리 한 번만 보고 가장 가까운 3곳
   const farR = opts.farRadiusM ?? 20_000;
   if (farR > opts.maxRadiusM) {
-    const far = merge(await Promise.all(points.map(p => countedSearch(query, p, farR))));
+    const far = merge(await settleSamples(points.map(p => countedSearch(query, p, farR))));
     if (far.length > 0) return { candidates: byCorridor(far).slice(0, 3), status: 'far', radiusM: farR, calls };
   }
   return { candidates: [], status: 'none', radiusM, calls };
@@ -217,7 +237,7 @@ export async function searchAtAnchors(
   let found: PlaceCandidate[] = [];
   while (true) {
     const r = radiusM;
-    found = attach(await Promise.all(used.map(a => { calls++; return search(query, a.coord, r); })));
+    found = attach(await settleSamples(used.map(a => { calls++; return search(query, a.coord, r); })));
     if (found.length >= target) return { candidates: found, status: 'ok', radiusM: r, calls };
     if (r >= maxR) break;
     radiusM = Math.min(maxR, r * 2);

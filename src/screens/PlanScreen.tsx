@@ -12,7 +12,7 @@ import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
 import { chipLabel } from '../state/chips';
-import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
+import { Chevron, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
 import { answerAsk, askTarget, asksForChip, asksForSheet, type NarrowAsk } from '../state/narrowAsk';
@@ -31,75 +31,95 @@ import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
-/** 항공권 스타일 출발–도착 커넥터. `directMin` 이 `null` 이면 시간을 말하지 않는다 */
-function ConnectorCard({ directMin, from, to }: { directMin: number | null; from: string; to: string }) {
+/** 출발–도착 카드. 승차권처럼 좌우에 지명을 크게, 가운데 화살표 아래에 이동수단 선택.
+ *  상단 배지는 도착 시각. `directMin` 이 `null` 이면 직행 시간을 말하지 않는다 */
+function ConnectorCard({
+  directMin,
+  from,
+  to,
+  mode,
+  arriveText,
+  onPressMode,
+}: {
+  directMin: number | null;
+  from: string;
+  to: string;
+  mode: 'car' | 'walk' | 'transit';
+  arriveText: string;
+  onPressMode: () => void;
+}) {
   return (
-    <View
-      style={{
-        backgroundColor: color.bg,
-        borderRadius: 16,
-        padding: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-      }}
-    >
-      <View style={{ flex: 1, gap: 3 }}>
-        <Text style={[type.micro, { color: color.muted }]}>출발</Text>
-        <Text
-          style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: color.ink }}
-          numberOfLines={1}
-        >
-          {from}
-        </Text>
-      </View>
-      <View style={{ flex: 1.2, alignItems: 'center', gap: 5 }}>
-        {/* 아직 안 잰 여정이면 줄째로 비운다 — 점선은 가운데 정렬로 내려앉는다.
-            목 숫자를 채워 넣던 자리다(planFlow.measuredDirectMin 의 주석) */}
+    <View style={{ backgroundColor: color.bg, borderRadius: 16, paddingTop: 12, paddingBottom: 14, paddingHorizontal: 16, gap: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ paddingVertical: 4, paddingHorizontal: 9, borderRadius: 8, backgroundColor: color.primaryTint }}>
+          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 15, color: color.primary }} numberOfLines={1}>
+            {arriveText}
+          </Text>
+        </View>
         {directMin != null && (
-          <Text style={[type.micro, { color: color.muted }]}>직행 {directMin}분</Text>
+          <Text style={{ marginLeft: 'auto', fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 15, color: color.muted }}>
+            직행 {directMin}분
+          </Text>
         )}
-        <DottedLineH style={{ alignSelf: 'stretch', flex: 0 }} />
       </View>
-      <View style={{ flex: 1, gap: 3, alignItems: 'flex-end' }}>
-        <Text style={[type.micro, { color: color.muted }]}>도착</Text>
-        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 15, lineHeight: 18, color: color.ink }} numberOfLines={1}>
-          {to}
-        </Text>
+
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        <Endpoint name={from} label="출발" />
+        <View style={{ alignItems: 'center', gap: 8, paddingTop: 10 }}>
+          <ArrowDotted />
+          <Pressable
+            onPress={() => {
+              haptic();
+              onPressMode();
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 5,
+              paddingVertical: 5,
+              paddingHorizontal: 10,
+              borderRadius: 10,
+              backgroundColor: color.surface,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>
+              {MODE_TEXT[mode]}
+            </Text>
+            <Chevron size={6} thickness={1.6} color={color.primary} dir="down" style={{ marginTop: -3 }} />
+          </Pressable>
+        </View>
+        <Endpoint name={to} label="도착" />
       </View>
     </View>
   );
 }
 
-/** 헤더 조건 줄 — 이동수단은 눌러서 바꾼다, 도착 시각은 A1에서 받은 값 그대로 */
-function ConditionBar({ mode, arriveText, onPressMode }: { mode: 'car' | 'walk' | 'transit'; arriveText: string; onPressMode: () => void }) {
+function Endpoint({ name, label }: { name: string; label: string }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-      <Pressable
-        onPress={() => {
-          haptic();
-          onPressMode();
-        }}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        style={({ pressed }) => ({
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 6,
-          paddingVertical: 6,
-          paddingHorizontal: 11,
-          borderRadius: 11,
-          backgroundColor: color.bg,
-          opacity: pressed ? 0.6 : 1,
-        })}
+    <View style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+      <Text
+        style={{ fontFamily: 'Pretendard-Bold', fontSize: 22, lineHeight: 28, color: color.ink, textAlign: 'center' }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
       >
-        <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 14, color: color.primary }}>
-          {MODE_TEXT[mode]}
-        </Text>
-        <Chevron size={6} thickness={1.6} color={color.primary} dir="down" style={{ marginTop: -3 }} />
-      </Pressable>
-      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 14, color: color.muted }} numberOfLines={1}>
-        {arriveText}
+        {name}
       </Text>
+      <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 16, color: color.muted }}>{label}</Text>
+    </View>
+  );
+}
+
+/** 점 세 개 + 화살촉 — 승차권의 '→' */
+function ArrowDotted() {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: 12 }}>
+      {[0, 1, 2].map(i => (
+        <View key={i} style={{ width: 3, height: 3, borderRadius: 1.5, backgroundColor: color.stroke }} />
+      ))}
+      <Chevron size={7} thickness={1.8} color={color.stroke} dir="right" />
     </View>
   );
 }
@@ -541,14 +561,19 @@ export function PlanScreen({ navigation }: Props) {
       <NavHeader title="계획 만들기" onBack={() => navigation.goBack()}>
         {/* 이름을 첫 단어로 자르지 않는다 — '내 위치'가 '내'가 되고
             'CGV 용산아이파크몰'이 'CGV'가 된다. 넘치면 말줄임으로 처리 */}
-        <ConnectorCard directMin={measuredDirectMin(flow.state, planRequest)} from={originDisplay} to={destinationDisplay} />
-        {/* 조건 요약 — 이동수단은 여기서 바로 바꾼다. 계산은 '경로 찾기'부터라 되돌아갈 이유가 없다 */}
-        <ConditionBar
+        <ConnectorCard
+          directMin={measuredDirectMin(flow.state, planRequest)}
+          from={originDisplay}
+          to={destinationDisplay}
           mode={state.mode}
           /* 표기는 arriveByText 하나로 — 여기서 '오늘'을 직접 붙이던 때는 A1 시트가
              '내일 03:00까지'라고 고른 마감을 이 헤더가 '오늘 03:00까지'라고 했다
              (2026-09-15 시뮬레이터). 자정을 넘긴 값은 1440 이상으로 들어온다 */
-          arriveText={state.arriveByMin == null ? '도착 시각 상관없음' : `${arriveByText(state.arriveByMin)} 도착`}
+          arriveText={
+            state.arriveByMin == null
+              ? '도착 시각 상관없음'
+              : `도착 목표 시각 ${arriveByText(state.arriveByMin).replace('오늘 ', '').replace('까지', '')}`
+          }
           onPressMode={() => setModeOpen(true)}
         />
       </NavHeader>

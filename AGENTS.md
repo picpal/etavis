@@ -60,3 +60,30 @@ node server/run-cases.mjs --json > server/results.json && python3 server/make-xl
 | `server/run-server-cases.mjs` | 서버 실측 러너 (과금) |
 | `server/push-secrets.sh` | `.env` → 워커 secret 동기화. 워커가 갈아끼워지면 여기서 복구한다 |
 | `docs/채팅-추출-시뮬레이션.xlsx` | 케이스 시트는 스크립트가 만든다. **개선 이력만 손으로** |
+
+# 시뮬레이터 — 세션마다 기기를 하나씩 띄운다
+
+**남의 기기를 쓰지 않는다.** 사람이 Claude Desktop 에서 한 대를 보고 있는데 다른 세션이
+같은 기기를 만지면 서로의 화면을 뒤엎는다. **서브 에이전트도 각자 하나씩 만들어 쓴다** —
+디스패치할 때 그가 쓸 UDID 를 프롬프트에 적어 넘긴다. 놀고 있는 기기는
+`xcrun simctl list devices available | grep iPhone` 에 여럿 있다.
+
+```bash
+xcrun simctl boot <UDID>
+xcrun simctl install <UDID> "$(xcrun simctl get_app_container <이미쓰는UDID> com.etavia.app app)"
+xcrun simctl location <UDID> set 37.5285,126.9245   # 기본값은 샌프란시스코다. 안 바꾸면
+xcrun simctl launch <UDID> com.etavia.app           # 9,000km 경로를 요청해 /route 가 죽는다
+```
+
+Metro 는 나눌 필요 없다 — 코드가 같으면 여러 기기가 8081 하나를 같이 쓴다.
+
+**조작은 `maestro --device <UDID>` 로 한다.** `scripts/sim/tap.py` 는 Apple `Simulator.app`
+**창**에 마우스를 쏘는 방식이라 창이 없으면 죽고, `window 1` 을 두고 세션끼리 경합하고,
+포커스가 전역이라 동시에 못 쓴다. maestro 는 창 없이 기기 안으로 이벤트를 넣는다.
+
+- 선택자는 **정규식이고 전체 일치**다. RN 이 접근성 라벨을 묶어 내놓아서
+  (`"최종 목적지, 최종 목적지를 입력하세요"`) 눈에 보이는 문구로는 못 잡는다.
+  `.*…*.` 로 감싼다. 모르겠으면 `maestro --device <UDID> hierarchy`.
+- 한글은 `inputText` 한 줄이면 된다. 클립보드 우회는 이제 필요 없다.
+- `inputText` 전에 입력란을 `tapOn` 한다. 포커스가 없으면 **COMPLETED 를 찍고 아무 데도
+  안 들어간다** — 조용히 실패하는 자리다.

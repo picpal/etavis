@@ -23,6 +23,15 @@ test('서버가 준 한 줄을 그대로 돌려준다', async () => {
   assert.equal(await client(REQ), '장 본 걸 들고 약국에 들어가지 않아도 돼요');
 });
 
+test('앞뒤 공백은 잘라내고 돌려준다 — 화면에 그대로 나가는 문자열이다', async () => {
+  const client = makeReasonClient({
+    baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',
+    fetchFn: async () => jsonRes({ why: '  장 본 걸 들고 약국에 들어가지 않아도 돼요  ' }),
+  });
+
+  assert.equal(await client(REQ), '장 본 걸 들고 약국에 들어가지 않아도 돼요');
+});
+
 test('why 가 null 이면 null 이다 — 설명은 장식이라 없어도 경로는 나온다', async () => {
   const client = makeReasonClient({
     baseUrl: 'https://x.test', appToken: 't', deviceId: 'd',

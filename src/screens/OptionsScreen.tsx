@@ -156,6 +156,11 @@ export function OptionsScreen({ navigation }: Props) {
     const appToken = extra.appToken?.trim();
     if (!baseUrl || !appToken) return;
     const client = makeReasonClient({ baseUrl, appToken, deviceId: Constants.sessionId ?? 'unknown' });
+    /* 화면을 나가도 요청은 날아가 있을 수 있다 — 응답이 늦게 와서 죽은 화면에
+       setState 하지 않도록 막는다. reasonClient 는 타임아웃용 AbortController 를
+       자체로 들고 있어 밖에서 취소 신호를 얹을 자리가 없다(그 API를 넓히는 건 이
+       수정 범위 밖이다) — 그래서 더 가벼운 ignore 플래그로 막는다 */
+    let ignore = false;
     void client({
       /* 서버 프롬프트가 하는 일은 "사용자 문장을 읽고, 거기 없는 사실은 지어내지
          않는다"이다. 빈 문자열을 보내면 읽을 문장이 없어 가게 이름만 보고 문장을
@@ -165,7 +170,8 @@ export function OptionsScreen({ navigation }: Props) {
       mode: req.mode,
       fast: { stops: fast.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(fast.visits).totalMin) },
       comfort: { stops: comfort.visits.map(v => v.candidate.name), totalMin: Math.round(result.rescore(comfort.visits).totalMin) },
-    }).then(setWhyLine);
+    }).then(why => { if (!ignore) setWhyLine(why); });
+    return () => { ignore = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.sameAsFast, tab.target, result]);
 

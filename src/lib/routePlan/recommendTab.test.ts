@@ -22,10 +22,17 @@ test('짐을 안 잰 계획이면 가리킬 다른 안이 없다 — 최단안�
 
   assert.equal(s.sameAsFast, true);
   assert.equal(s.target, 0);
+  assert.equal(s.value, 0);
 });
 
 test('최단안이 곧 추천안이어도 같은 취급이다 — 원인은 달라도 화면이 할 일은 같다', () => {
-  assert.equal(recommendTabState(0, 0).sameAsFast, true);
+  // comfortIdx === 0 은 null 과 원인이 다르다(최단안이 곧 편한 안 vs 아예 안 쟀다) — target·value 까지
+  // 확인해야 둘을 분리하는 리팩터가 생겨도 여기서 걸린다
+  const s = recommendTabState(0, 0);
+
+  assert.equal(s.sameAsFast, true);
+  assert.equal(s.target, 0);
+  assert.equal(s.value, 0);
 });
 
 test('두 안이 같으면 추천 탭이 켜진 것으로 본다 — 지금 순서가 추천이기 때문이다', () => {

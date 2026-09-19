@@ -313,10 +313,17 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         if (r.status === 'fulfilled') return r.value;
         const { st, near } = decided[i];
         const query = st.queries[0] ?? '';
+        /* **여기서도 고정은 남긴다.** 검색이 죽은 슬롯이야말로 고정이 가장 필요한
+           자리다 — 사용자는 이미 그 가게를 골랐는데, 카카오가 503 을 준다고 후보 0곳으로
+           두면 경유지가 계획에서 통째로 빠진다. 검색 결과가 없으니 `source` 는 늘
+           `request` 가 되고(영업시간·신호 없음), `searchStatus` 는 아래에서 `unchecked` 로
+           **못 봤다고 사실대로** 적는다 */
+        const pinned = pinFixed([], [], st.fixed);
         return {
           id: st.id, query, stopKind: st.stopKind, why: st.why,
-          candidates: [], dwellMin: dwellFor(query),
-          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          candidates: pinned.candidates, dwellMin: dwellFor(query),
+          fixed: pinned.fixed,
+          count: Math.max(1, st.count), flexible: pinned.fixed ? false : st.flexible, openNow: st.openNow,
           near, nearRelaxed: false,
           nearSource: near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred',
           nearBefore: 0, nearAfter: 0, nearRadiusM: null, nearRelaxedRaw: false,

@@ -1191,3 +1191,25 @@ test('트렌드 스왑이 고정된 가게를 뒤집지 않는다', async () => 
   assert.ok(without.some(a => a.type === 'SET_OVERRIDE' && a.candidateId === 'far'),
     '전제: 고정이 없으면 이 시나리오는 트렌드 1위로 바뀐다');
 });
+
+/* 검색이 **죽은** 슬롯이야말로 고정이 가장 필요한 자리다. 사용자는 이미 그 가게를
+   골랐는데, 카카오가 503 을 준다고 그 선택을 지우면 계획에서 경유지가 통째로 빠진다
+   (2026-09-19 실측: 워커가 `/places` 에 503 → `plan.fail`). 검색 결과가 없어도
+   고정은 남아야 하고, `searchStatus` 는 `unchecked` 로 **못 봤다고 사실대로** 적는다. */
+test('검색이 죽어도 정해진 가게는 살아남는다 — 고정이 가장 필요한 자리다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(
+    req([
+      { id: 's-1', queries: ['올리브영'], count: 1, flexible: true, openNow: false, stopKind: 'brand',
+        fixed: { placeId: 'oy2', name: '올리브영 B', coord: at(37.505, 127.07) } },
+      { id: 's-2', queries: ['파리바게뜨'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+    ]),
+    { provider: mockRouteProvider(), search: failingQuerySearch('올리브영'), dispatch },
+  );
+  const [dead] = fixedSlots(actions);
+  assert.equal(dead.candidates.length, 1, '고정 한 곳은 남아야 한다');
+  assert.equal(dead.candidates[0].id, 'oy2');
+  assert.equal(dead.flexible, false);
+  assert.equal(dead.fixed?.source, 'request', '검색이 아무것도 못 줬으니 요청에서 세운 것이다');
+  assert.equal((dead as { searchStatus?: string }).searchStatus, 'unchecked', '못 본 건 못 봤다고 적는다');
+});

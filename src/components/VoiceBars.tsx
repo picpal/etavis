@@ -1,6 +1,6 @@
 /** 음량 파형 막대 — 듣는 중일 때 입력 바 안에서 움직인다.
- *  음량은 아직 가짜 신호(타이머). 실제 마이크 미터링이 들어오면 useFakeLevel 만 갈아끼운다. */
-import React, { useEffect, useRef, useState } from 'react';
+ *  level 은 0~1(useSpeechInput 이 volumechange 를 정규화해 준다). */
+import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, View } from 'react-native';
 import { color } from '../theme/tokens';
 
@@ -10,17 +10,7 @@ const BAR_MAX = 22;
 // 가운데가 가장 크고 바깥으로 갈수록 작다 — 한 값으로 다섯 막대를 움직인다
 const WEIGHTS = [0.45, 0.8, 1, 0.8, 0.45];
 
-function useFakeLevel() {
-  const [level, setLevel] = useState(0.2);
-  useEffect(() => {
-    const id = setInterval(() => setLevel(0.15 + Math.random() * 0.85), 120);
-    return () => clearInterval(id);
-  }, []);
-  return level;
-}
-
-export function VoiceBars({ tint = color.green }: { tint?: string }) {
-  const level = useFakeLevel();
+export function VoiceBars({ level, tint = color.green }: { level: number; tint?: string }) {
   const anims = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(BAR_MIN))).current;
 
   useEffect(() => {

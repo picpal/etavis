@@ -7,6 +7,7 @@ import { parseTransitRequest } from './transitSchema';
 import { googleAdapter } from './transitGoogle';
 import { upstreamDetail } from './upstream';
 import type { TransitAdapter, TransitEnv, TransitResponse } from './transitTypes';
+import { kvPut } from './kvWrite';
 
 export type TransitHandlerEnv = TransitEnv & { CACHE: KVLike; RATE: KVLike; TRANSIT_PROVIDER?: string };
 
@@ -49,6 +50,6 @@ export async function handleTransit(body: unknown, env: TransitHandlerEnv, deps:
   if (!norm.ok) return json({ error: 'transit', code: norm.code, msg: norm.msg }, 422);
 
   const out: TransitResponse = { provider: adapter.id, source: 'provider', itineraries: norm.itineraries };
-  await env.CACHE.put(cacheKey, JSON.stringify(out), { expirationTtl: TRANSIT_TTL_S });
+  await kvPut(env.CACHE, 'transit:cache', cacheKey, JSON.stringify(out), { expirationTtl: TRANSIT_TTL_S }, 'best-effort');
   return json({ ...out, itineraries: out.itineraries.slice(0, req.alternatives) });
 }

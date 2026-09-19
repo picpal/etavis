@@ -17,6 +17,7 @@
  */
 import type { RouteRequest } from './routeSchema';
 import type { TransitRequest } from './transitTypes';
+import { kvPut } from './kvWrite';
 
 export type KVLike = {
   get(key: string): Promise<string | null>;
@@ -130,7 +131,7 @@ export async function overDailyCap(kv: KVLike, bucket: string, now: Date): Promi
   const key = dayKey(bucket, now);
   const used = Number((await kv.get(key)) ?? 0) + 1;
   if (used > cap) return true;
-  await kv.put(key, String(used), { expirationTtl: DAY_TTL_S });
+  await kvPut(kv, `guard:daily:${bucket}`, key, String(used), { expirationTtl: DAY_TTL_S }, 'required');
   return false;
 }
 
@@ -155,18 +156,18 @@ export async function rateLimited(
      이 엔드포인트의 분당 KV 쓰기가 절반이 된다.
      IP 헤더가 없을 때(로컬·테스트)만 기기 카운터로 돌아간다 — 분당 상한이
      통째로 사라지는 자리를 만들지 않는다. */
-  const checks: [string, number][] = [];
-  if (path !== '/places' || !ip) checks.push([`rl:${path}:${deviceId}:${minute}`, PER_MIN[path] ?? 10]);
-  if (ip) checks.push([`rlip:${path}:${ip}:${minute}`, PER_MIN_IP[path] ?? 30]);
+  const checks: [string, number, string][] = [];
+  if (path !== '/places' || !ip) checks.push([`rl:${path}:${deviceId}:${minute}`, PER_MIN[path] ?? 10, `guard:rl:device:${path}`]);
+  if (ip) checks.push([`rlip:${path}:${ip}:${minute}`, PER_MIN_IP[path] ?? 30, `guard:rl:ip:${path}`]);
 
   let over = false;
-  for (const [key, cap] of checks) {
+  for (const [key, cap, site] of checks) {
     const hit = Number((await kv.get(key)) ?? 0) + 1;
     if (hit > cap) {
       over = true;
       continue; // 상한에 닿은 카운터에는 더 쓰지 않는다 — 막느라 쓰는 쓰기가 예산을 태운다
     }
-    await kv.put(key, String(hit), { expirationTtl: MIN_TTL_S });
+    await kvPut(kv, site, key, String(hit), { expirationTtl: MIN_TTL_S }, 'required');
   }
   return over;
 }

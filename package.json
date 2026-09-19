@@ -39,7 +39,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "release": "node scripts/release.mjs",
-    "test": "tsx --test 'src/**/*.test.ts' 'server/src/*.test.ts' 'scripts/*.test.mjs'"
+    "test": "tsx --test 'src/**/*.test.ts' 'server/src/*.test.ts' 'server/*.test.mjs' 'scripts/*.test.mjs'"
   },
   "private": true
 }

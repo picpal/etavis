@@ -85,7 +85,7 @@ chip.id ── baseId ── slotId        planFlowBridge.ts:257, plan.tsx:171
 
 | 파일 | 역할 |
 |---|---|
-| `src/state/planFlowBridge.ts` | 스톱에 진짜 장소 id 를 싣는다 |
+| `src/state/planFlowBridge.ts` | 스톱이 진짜 장소 id 를 든다 — **이미 그렇다**. 계약만 못 박는다(과제 1) |
 | `src/state/plan.tsx` | `APPLY_INTENT` 가 해결된 스톱을 보존. 채팅 제거가 가게 이름으로도 걸린다 |
 | `src/state/usePlanRequest.ts` | `state.stops` 에서 고정을 끌어온다 |
 | `src/state/planRequest.ts` | 고정을 슬롯 입력으로 |
@@ -95,23 +95,34 @@ chip.id ── baseId ── slotId        planFlowBridge.ts:257, plan.tsx:171
 
 ---
 
-## 과제 1: 스톱이 자기가 어느 가게인지 기억한다
+## 과제 1: 스톱이 자기가 어느 가게인지 기억한다 — **이미 기억하고 있었다**
 
-합성 id 를 쓰지 않으려면 진짜 장소 id 가 있어야 한다. 지금은 다리에서 버려진다 —
-`id: v.slotId, baseId: v.slotId` 만 싣고 `v.candidate.id` 를 안 싣는다(`planFlowBridge.ts:257`).
+**계획이 틀렸다(2026-09-19 실측).** 이 과제는 `StopState.placeId` 라는 새 필드를 만들라고
+했는데, 전제가 사실이 아니었다. 다리는 진짜 장소 id 를 **이미 싣는다** —
+`selectedCandidateId: v.candidate.id`(`planFlowBridge.ts:260`). `id`·`baseId` 만 본 것이
+오독이었다.
 
-**파일**: 수정 `src/state/plan.tsx`(`StopState`), `src/state/planFlowBridge.ts` · 테스트 `src/state/planFlowBridge.test.ts`
+**그래서 필드를 만들지 않는다.** 만들면 `placeId` 와 `selectedCandidateId` 가 같은 값을
+가리키는 **두 번째 사본**이 되고, `applyCandidate`(`plan.tsx:336`)·`REPLACE_LOCAL`·다리
+세 곳이 영원히 동기화해야 한다. **그건 v1 이 반려된 바로 그 이유다**(위 표 첫 줄).
+`selectedCandidateId` 가 곧 장소 id 다 — 아래 과제 3·4 는 이걸 읽는다.
 
-**인터페이스**
-```ts
-/** 이 경유지로 정해진 **장소**의 id. slotId(=baseId)와 다르다 — 그건 '자리'의 id다.
- *  합성하지 않고 공급자 id 를 그대로 든다: enumerate 가 후보 id 로 중복 방문을
- *  막으므로(enumerate.ts:37), 같은 가게가 어느 슬롯에서 와도 같은 id 여야 한다. */
-placeId?: string;
-```
+> 왜 `selectedCandidateId` 라는 이름에 장소 id 가 들어 있나: 목 시절의 `Candidate.id` 와
+> 라이브의 `PlaceCandidate.id` 가 같은 값이다. `slotCandidates` 가 후보 목록을
+> `cand.id` 그대로 만들기 때문에(`planFlowBridge.ts:165-170`), 교체 시트가 고르는 id 와
+> 플래너가 방문한 후보의 id 가 같은 공간에 있다.
 
-- [ ] **1.** 실패 테스트: `toLegacyPlan` 이 만든 stop 의 `placeId` 가 `visit.candidate.id` 와 같다
-- [ ] **2.** 실패 확인 → **3.** `placeId: v.candidate.id` 추가 → **4.** 초록 → 커밋
+**남는 일은 계약을 못 박는 것뿐이다.** 과제 3·4 가 이 값 위에 올라가므로, 다리가
+장소 id 대신 자리 id 를 싣게 바뀌면 거기서 걸려야 한다.
+
+**파일**: 테스트만 — `src/state/planFlowBridge.test.ts`. 제품 코드는 안 바뀐다.
+
+- [x] **1.** 계약 테스트: `toLegacyPlan` 이 만든 stop 의 `selectedCandidateId` 가
+      `visit.candidate.id` 와 같고, `baseId` 와는 다르다
+- [x] **2.** 초록(제품 코드 변경 없이) → 계획의 이 절을 고쳐 적음 → 커밋
+
+**이 테스트는 실패한 적이 없다 — 알고 쓴 것이다.** 회귀 방지용 계약이지 TDD 의 빨강이
+아니다. 계획이 틀렸다는 사실 자체를 여기 남긴다.
 
 ## 과제 2: `APPLY_INTENT` 가 해결된 스톱을 보존한다
 
@@ -158,6 +169,11 @@ const stops = keep.flatMap(c => c.kind !== 'stop' ? []
 · 테스트 `src/state/planRequest.test.ts`, `src/state/planFlow.test.ts`
 
 **인터페이스**: `PlanRequest['stops'][n].fixed?: { placeId?: string; name: string; coord: LatLng }`
+
+`placeId` 는 **`stop.selectedCandidateId` 를 그대로 옮긴 것**이다(과제 1). 요청은 상태가
+아니라 스냅샷이라 여기선 사본이 문제가 안 된다 — 매 렌더 다시 조립되고 아무도 갱신하지
+않는다. `placeId` 가 `?` 인 이유: 목 데이터셋에서 온 스톱(`asStopState`)은 이 값이 없다.
+그런 스톱은 이름·좌표로만 맞춘다.
 
 - [ ] **1.** 실패 테스트
 ```ts

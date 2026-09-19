@@ -75,6 +75,14 @@ export type Slot = {
   searchRadiusM?: number;
   /** 이 슬롯이 부른 장소 검색 횟수. 로그 판정용 */
   searchCalls?: number;
+  /** 사용자가 이미 정한 가게로 닫힌 슬롯. `candidates[0]` 가 이 가게고 `flexible` 은 false 다.
+   *
+   *  `source` 는 **그 가게가 어디서 왔는지 사실대로** 적는다 — 검색·near 메타데이터를
+   *  빌려 쓰지 않는다(`nearRelaxedRaw` 는 `applyNear` 가 완화했을 때만 true 다).
+   *  - `search`   검색 결과 안에 있었다. 영업시간·신호가 다른 후보와 같은 수준이다
+   *  - `filtered` 검색은 찾았는데 주차 정책·near·상한에서 떨어진 것을 되살렸다
+   *  - `request`  검색이 못 찾아 요청에 실린 이름·좌표로 세웠다. **신호도 영업시간도 없다** */
+  fixed?: { placeId: string; source: 'search' | 'filtered' | 'request' };
 };
 
 export type PlanInput = {

@@ -85,7 +85,7 @@ chip.id ── baseId ── slotId        planFlowBridge.ts:257, plan.tsx:171
 
 | 파일 | 역할 |
 |---|---|
-| `src/state/planFlowBridge.ts` | 스톱에 진짜 장소 id 를 싣는다 |
+| `src/state/planFlowBridge.ts` | 스톱이 진짜 장소 id 를 든다 — **이미 그렇다**. 계약만 못 박는다(과제 1) |
 | `src/state/plan.tsx` | `APPLY_INTENT` 가 해결된 스톱을 보존. 채팅 제거가 가게 이름으로도 걸린다 |
 | `src/state/usePlanRequest.ts` | `state.stops` 에서 고정을 끌어온다 |
 | `src/state/planRequest.ts` | 고정을 슬롯 입력으로 |
@@ -95,23 +95,34 @@ chip.id ── baseId ── slotId        planFlowBridge.ts:257, plan.tsx:171
 
 ---
 
-## 과제 1: 스톱이 자기가 어느 가게인지 기억한다
+## 과제 1: 스톱이 자기가 어느 가게인지 기억한다 — **이미 기억하고 있었다**
 
-합성 id 를 쓰지 않으려면 진짜 장소 id 가 있어야 한다. 지금은 다리에서 버려진다 —
-`id: v.slotId, baseId: v.slotId` 만 싣고 `v.candidate.id` 를 안 싣는다(`planFlowBridge.ts:257`).
+**계획이 틀렸다(2026-09-19 실측).** 이 과제는 `StopState.placeId` 라는 새 필드를 만들라고
+했는데, 전제가 사실이 아니었다. 다리는 진짜 장소 id 를 **이미 싣는다** —
+`selectedCandidateId: v.candidate.id`(`planFlowBridge.ts:260`). `id`·`baseId` 만 본 것이
+오독이었다.
 
-**파일**: 수정 `src/state/plan.tsx`(`StopState`), `src/state/planFlowBridge.ts` · 테스트 `src/state/planFlowBridge.test.ts`
+**그래서 필드를 만들지 않는다.** 만들면 `placeId` 와 `selectedCandidateId` 가 같은 값을
+가리키는 **두 번째 사본**이 되고, `applyCandidate`(`plan.tsx:336`)·`REPLACE_LOCAL`·다리
+세 곳이 영원히 동기화해야 한다. **그건 v1 이 반려된 바로 그 이유다**(위 표 첫 줄).
+`selectedCandidateId` 가 곧 장소 id 다 — 아래 과제 3·4 는 이걸 읽는다.
 
-**인터페이스**
-```ts
-/** 이 경유지로 정해진 **장소**의 id. slotId(=baseId)와 다르다 — 그건 '자리'의 id다.
- *  합성하지 않고 공급자 id 를 그대로 든다: enumerate 가 후보 id 로 중복 방문을
- *  막으므로(enumerate.ts:37), 같은 가게가 어느 슬롯에서 와도 같은 id 여야 한다. */
-placeId?: string;
-```
+> 왜 `selectedCandidateId` 라는 이름에 장소 id 가 들어 있나: 목 시절의 `Candidate.id` 와
+> 라이브의 `PlaceCandidate.id` 가 같은 값이다. `slotCandidates` 가 후보 목록을
+> `cand.id` 그대로 만들기 때문에(`planFlowBridge.ts:165-170`), 교체 시트가 고르는 id 와
+> 플래너가 방문한 후보의 id 가 같은 공간에 있다.
 
-- [ ] **1.** 실패 테스트: `toLegacyPlan` 이 만든 stop 의 `placeId` 가 `visit.candidate.id` 와 같다
-- [ ] **2.** 실패 확인 → **3.** `placeId: v.candidate.id` 추가 → **4.** 초록 → 커밋
+**남는 일은 계약을 못 박는 것뿐이다.** 과제 3·4 가 이 값 위에 올라가므로, 다리가
+장소 id 대신 자리 id 를 싣게 바뀌면 거기서 걸려야 한다.
+
+**파일**: 테스트만 — `src/state/planFlowBridge.test.ts`. 제품 코드는 안 바뀐다.
+
+- [x] **1.** 계약 테스트: `toLegacyPlan` 이 만든 stop 의 `selectedCandidateId` 가
+      `visit.candidate.id` 와 같고, `baseId` 와는 다르다
+- [x] **2.** 초록(제품 코드 변경 없이) → 계획의 이 절을 고쳐 적음 → 커밋
+
+**이 테스트는 실패한 적이 없다 — 알고 쓴 것이다.** 회귀 방지용 계약이지 TDD 의 빨강이
+아니다. 계획이 틀렸다는 사실 자체를 여기 남긴다.
 
 ## 과제 2: `APPLY_INTENT` 가 해결된 스톱을 보존한다
 
@@ -119,7 +130,7 @@ placeId?: string;
 
 **파일**: 수정 `src/state/plan.tsx` · 테스트 `src/state/plan.test.ts`
 
-- [ ] **1.** 실패 테스트
+- [x] **1.** 실패 테스트
 ```ts
 test('대화로 경유지를 추가해도 이미 정해진 가게는 그대로다', () => {
   const before = { ...base, chips: [stopChip('c1', ['약국'])], stops: [resolved('c1', '봄빛온누리약국')] };
@@ -139,15 +150,40 @@ test('사용자가 교체한 매장이 대화 편집에서 살아남는다 — a
 test('지운 경유지의 스톱은 안 남는다', () => { /* remove 뒤 stops 에서 사라진다 */ });
 test('새로 추가한 칩은 스톱이 없다 — 검색해서 채울 자리다', () => { /* 빵집은 stops 에 없음 */ });
 ```
-- [ ] **2.** 실패 확인
-- [ ] **3.** 구현 — `stopsForChips` 를 부르기 전에 기존 스톱을 `baseId` 로 집어 그대로 쓴다
+- [x] **2.** 실패 확인 — 앞의 셋이 빨강(넷째는 원래 초록. 고침이 과하게 보존하는지를 재는 가드다)
+- [x] **3.** 구현 — **계획의 스케치는 쓰지 않았다. 중복 제거를 깨뜨린다.**
+
+> **계획이 틀린 두 번째 지점(2026-09-19).** 아래 스케치대로 칩마다 `stopsForChips` 를
+> 부르면 함수 안의 `used` 집합이 매 호출 새로 생긴다. 풀에 은행이 하나뿐인데
+> `은행` 칩이 셋이면(`count: 3`) **같은 스톱이 세 번 들어간다** — id 가 겹쳐 LEGS 체인
+> 키와 화면 키가 같이 무너진다. 이 계획의 전역 제약("같은 가게는 어디서 와도 같은
+> id")이 막으려던 바로 그 결함을 구현 스케치가 도로 만든 것이다.
+>
+> ```ts
+> // 쓰지 않음 — 중복 제거가 호출마다 초기화된다
+> const byBase = new Map(state.stops.map(s => [s.baseId, s]));
+> const stops = keep.flatMap(c => c.kind !== 'stop' ? []
+>   : byBase.has(c.id) ? [byBase.get(c.id)!]
+>   : stopsForChips(state.dataset, [c]));
+> ```
+
+대신 **보존을 `stopsForChips` 안으로 넣었다.** 중복 제거와 보존이 한 루프에 있어야 한다.
+
 ```ts
-const byBase = new Map(state.stops.map(s => [s.baseId, s]));
-const stops = keep.flatMap(c => c.kind !== 'stop' ? []
-  : byBase.has(c.id) ? [byBase.get(c.id)!]          // 정해진 것은 건드리지 않는다
-  : stopsForChips(state.dataset, [c]));             // 새 칩만 데이터셋에서 찾는다
+function stopsForChips(ds: Dataset, chips: IntentChip[], held?: ReadonlyMap<string, StopState>) {
+  // …루프 안에서
+  const kept = held?.get(chip.id);
+  if (kept) { used.add(kept.baseId); out.push(kept); continue; }
+  // 없으면 종전대로 풀에서 찾는다
+}
+
+// APPLY_INTENT
+const held = new Map(state.stops.map(s => [s.baseId, s]));
+const stops = stopsForChips(state.dataset, keep, held);
 ```
-- [ ] **4.** 초록 → 커밋
+
+- [x] **4.** 초록 → 커밋. 회귀 테스트를 하나 더 달았다 —
+      `같은 곳을 두 번 들르는 계획을 만들지 않는다`
 
 **주의:** 같은 보존을 `NARROW_STOP` 에는 넣지 않는다. 거기선 질의가 바뀌었으니
 정해진 가게를 버리는 게 맞다 — 과제 5 의 해제 경로 중 하나다.
@@ -157,9 +193,22 @@ const stops = keep.flatMap(c => c.kind !== 'stop' ? []
 **파일**: 수정 `src/state/usePlanRequest.ts`, `src/state/planRequest.ts`, `src/state/planFlow.ts`
 · 테스트 `src/state/planRequest.test.ts`, `src/state/planFlow.test.ts`
 
-**인터페이스**: `PlanRequest['stops'][n].fixed?: { placeId?: string; name: string; coord: LatLng }`
+**인터페이스**: `PlanRequest['stops'][n].fixed?: { placeId: string; name: string; coord: LatLng }`
 
-- [ ] **1.** 실패 테스트
+> **계획을 고쳐 적음(2026-09-19): `placeId` 는 선택이 아니라 필수다.**
+> 계획은 `placeId?` 로 두고 "목에서 온 스톱은 이름·좌표로만 맞춘다"고 했는데, 그러면
+> 과제 4 가 **검색 결과에 없는 고정을 후보로 끼워 넣을 때 id 를 지어내야 한다** —
+> 이 계획의 전역 제약("후보 id 는 합성하지 않는다")을 정면으로 어긴다. 그래서
+> **장소 id 가 없는 스톱은 아예 고정하지 않는다.** 그 대상은 목 데이터셋에서 온
+> 스톱뿐이고(`asStopState`), 고정해서도 안 되는 것들이다 — 개발 메뉴의 가짜 가게가
+> 진짜 경로에 눌러앉는다. (실제로는 목 스톱의 `baseId` 가 풀 id 라 칩 id 와 애초에
+> 안 맞지만, 그 우연에 기대지 않고 `selectedCandidateId` 유무로 명시한다.)
+
+`placeId` 는 **`stop.selectedCandidateId` 를 그대로 옮긴 것**이다(과제 1). 요청은 상태가
+아니라 스냅샷이라 여기선 사본이 문제가 안 된다 — 매 렌더 다시 조립되고 아무도 갱신하지
+않는다.
+
+- [x] **1.** 실패 테스트
 ```ts
 test('정해진 스톱이 있는 칩은 그 가게를 요청에 싣는다', () => { /* fixed.name === '봄빛온누리약국' */ });
 test('스톱이 없는 칩에는 fixed 가 없다', () => { /* undefined */ });
@@ -171,10 +220,16 @@ test('requestKey 가 고정을 본다 — 안 그러면 바꿔도 재계산을 �
 });
 test('고정된 가게가 다른 곳으로 바뀌면 키도 바뀐다', () => { /* 두 fixed 의 키가 다르다 */ });
 ```
-- [ ] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
+- [x] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
 
-`requestKey` 의 스톱 조각에 `+fixed?.placeId ?? coord` 를 잇는다. 이름은 표시용이라 안 넣는다
-(그 파일의 기존 원칙).
+`requestKey` 의 스톱 조각에 `=${fixed.placeId}` 를 잇는다. 이름은 표시용이라 안 넣고
+(그 파일의 기존 원칙), **좌표도 안 넣는다** — 같은 가게인데도 공급자가 좌표를 몇 미터
+흔들면 아무도 안 바꾼 요청이 매번 새 요청이 된다. 테스트로 묶었다
+(`고정된 가게의 표시 이름만 달라지면 같은 요청이다`).
+
+`usePlanRequest` 의 의존 배열에 `state.stops` 를 더했다. **재계산 루프는 안 생긴다** —
+`isStale` 은 배너와 '다시 계산' 버튼만 켜고(`OptionsScreen.tsx:198,215`) 스스로 계산을
+걸지 않는다.
 
 ## 과제 4: 고정된 가게가 이긴다 — **검색은 그대로 돈다**
 
@@ -187,7 +242,7 @@ test('고정된 가게가 다른 곳으로 바뀌면 키도 바뀐다', () => { 
 - `/enrich` 가 돌아 `hours` 가 신선하다 — "영업 중"이 근거를 갖는다
 - `near`·`searchStatus` 가 **실제로 일어난 일**을 적는다
 
-- [ ] **1.** 실패 테스트
+- [x] **1.** 실패 테스트
 ```ts
 test('고정된 슬롯도 검색을 돈다 — 교체 시트에 보여줄 대안이 있어야 한다', async () => {
   const slots = await capturedSlots(fixedReq);
@@ -206,23 +261,47 @@ test('near 로 걸러졌어도 고정은 살아남고, 로그가 그 사실을 �
 });
 test('고정이 없는 형제 슬롯은 아무것도 달라지지 않는다', async () => { /* … */ });
 ```
-- [ ] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
+- [x] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
 
 **하지 않는 것:** 검색 호출을 아끼지 않는다. v1 은 그걸 노렸다가 위 네 가지를 깼다.
 사용자가 신고한 것은 속도가 아니라 **가게가 바뀐다**는 것이다.
 
+> **계획이 빠뜨린 것 ①: 트렌드 스왑이 고정을 덮어쓴다.**
+> `RESULT` 를 보낸 뒤 업종 슬롯마다 트렌드 1위로 `SET_OVERRIDE` 를 날리는 블록이 있다
+> (`runPlan.ts` 의 트렌드 스왑). v1 은 "후보가 하나면 스왑이 자동으로 안 돈다"고 봤는데,
+> v2 는 검색을 그대로 돌리므로 **고정된 슬롯에도 후보가 30곳 있다** — 막지 않으면
+> 사용자가 고른 가게가 조용히 트렌드 1위로 바뀐다. 고정의 의미가 사라지는 자리다.
+> `if (!slot.flexible) continue;` 로 가른다 — `flexible:false` 가 곧
+> "candidates[0] 한 곳"이라는 계약이다(`enumerate.ts:7`).
+
+> **계획이 빠뜨린 것 ②: 되살렸다는 사실을 적을 칸이 없다.**
+> 계획의 테스트는 `nearRelaxedRaw: true` 로 그걸 재라고 했는데, 그 칸은
+> `applyNear` 가 완화했을 때만 true 다. 되살렸다고 거기에 적으면 **로그가 거짓말한다**
+> — 이 계획의 전역 제약("상태 메타데이터를 지어내지 않는다")에 걸린다.
+> `Slot.fixed?: { placeId, source: 'search' | 'filtered' | 'request' }` 를 새로 뒀다.
+> `request` 는 검색이 그 가게를 못 줘서 요청의 이름·좌표만으로 세운 것 —
+> **영업시간도 신호도 없다**는 뜻이라 화면·로그가 구분할 수 있어야 한다.
+> 트랙 로그의 `plan.slots.search` 에 `fix=<id>(source)` 로 찍는다.
+
 ## 과제 5: 푸는 길 — **과제 4와 같이 올린다**
 
-| 경로 | 무엇이 일어나야 하나 | 지금 |
-|---|---|---|
-| 칩 `✕`(`REMOVE_CHIP`) | 칩도 스톱도 사라진다 | 자동 |
-| `resetStops` · 새 계획 | 칩이 통째로 비워진다 | 자동 |
-| 되묻기(`NARROW_STOP`) | 질의가 바뀌었으니 스톱을 버린다 | 과제 2 에서 제외 |
-| 매장 교체(`REPLACE_LOCAL`) | 스톱이 갱신된다 | 이미 그렇다 |
-| **"약국 다른 데로 바꿔줘"** | 고정이 풀려야 한다 | **깨져 있다 — 아래** |
-| **편집에서 삭제(`REMOVE_LOCAL`)** | 그 경유지가 없어져야 한다 | **깨져 있다 — 아래** |
+| 경로 | 무엇이 일어나야 하나 | 계획이 본 것 | 실제 |
+|---|---|---|---|
+| 칩 `✕`(`REMOVE_CHIP`) | 지운 칩의 스톱만 사라진다 | 자동 | **아니었다 — 아래 ③** |
+| `resetStops` · 새 계획 | 칩이 통째로 비워진다 | 자동 | 맞다 |
+| 되묻기(`NARROW_STOP`) | **그 칩의** 스톱만 버린다 | 과제 2 에서 제외 | **부족했다 — 아래 ③** |
+| 매장 교체(`REPLACE_LOCAL`) | 스톱이 갱신된다 | 이미 그렇다 | 맞다 |
+| **"약국 다른 데로 바꿔줘"** | 고정이 풀려야 한다 | 깨져 있다 | 맞다 |
+| **편집에서 삭제(`REMOVE_LOCAL`)** | 그 경유지가 없어져야 한다 | 깨져 있다 | 맞다 |
 
-- [ ] **1.** 실패 테스트
+> **계획이 빠뜨린 것 ③: `REMOVE_CHIP`·`NARROW_STOP` 도 스톱을 통째로 다시 매칭한다.**
+> 계획은 이 둘을 "자동"·"제외"로 적고 넘어갔는데, 둘 다 `stopsForChips(dataset, chips)` 를
+> **맨손으로** 부른다(`APPLY_INTENT` 와 같은 결함이 두 곳 더 있었던 것이다). 그대로
+> 두면 칩 하나를 ✕ 하거나 되묻기에 한 번 답하는 것만으로 **정해진 가게가 전부 풀린다**
+> — 고정이 "가끔 풀리는" 기능이 되고, 그건 안 풀리는 것만큼 나쁘다.
+> `REMOVE_CHIP` 은 남은 칩의 가게를 지키고, `NARROW_STOP` 은 **좁힌 칩의 것만** 버린다.
+
+- [x] **1.** 실패 테스트
 ```ts
 test('가게 이름으로 지워도 그 칩이 걸린다 — 추출은 가게명을 주고 칩은 업종을 든다', () => {
   // '봄빛온누리약국 말고 다른 데' → remove(queries:['봄빛온누리약국'])
@@ -237,12 +316,15 @@ test('편집에서 경유지를 지우면 대화로 돌아가도 안 살아난�
   assert.equal(afterRemove.chips.filter(c => c.kind === 'stop' && c.id === 'c1').length, 0);
 });
 ```
-- [ ] **2.** 실패 확인
-- [ ] **3.** 구현
-  - `APPLY_INTENT` 의 `remove` 매칭에 **해결된 스톱 이름**을 더한다 — 질의 겹침이 없어도
-    `state.stops` 에서 그 이름을 가진 스톱의 `baseId` 칩을 지운다
+- [x] **2.** 실패 확인 — 넷 다 빨강
+- [x] **3.** 구현
+  - `APPLY_INTENT` 의 `remove` 매칭에 **해결된 스톱 이름**을 더한다. 규칙은
+    `stopsForChips` 의 매칭과 **대칭**으로 뒀다(`name.includes(q)`) — 붙일 때 이름으로
+    걸렸으면 뗄 때도 같은 규칙으로 걸린다
   - `REMOVE_LOCAL` 이 칩도 함께 지운다(`baseId` → 칩 id)
-- [ ] **4.** 초록 → 커밋
+  - `REMOVE_CHIP` 은 남은 칩의 스톱을 `held` 로 지킨다
+  - `NARROW_STOP` 은 좁힌 칩만 `held` 에서 빼고 나머지를 지킨다
+- [x] **4.** 초록 → 커밋
 
 **`REMOVE_LOCAL` 은 이미 있던 결함이다.** v1 이 그것을 "지워도 되살아나는" 필수 경로로
 승격시킬 뻔했다. 지금 같이 고친다.
@@ -254,13 +336,46 @@ test('편집에서 경유지를 지우면 대화로 돌아가도 안 살아난�
 
 **파일**: 수정 `src/state/chips.ts`, `src/screens/PlanScreen.tsx` · 테스트 `src/state/chips.test.ts`
 
-- [ ] **1.** 실패 테스트 — 정해진 스톱이 있으면 칩 라벨이 그 가게 이름
-- [ ] **2~4.** 실패 확인 → 구현 → 초록
-- [ ] **5.** **시뮬레이터** — 세션 전용 기기(`AGENTS.md`)로 재현 절차를 그대로 밟아
-      **약국이 봄빛온누리약국 그대로인지** 본다. 트랙 로그의 `plan.slots` 에서
-      그 슬롯의 `calls` 가 **0 이 아닌 것**(검색은 돌아야 한다)과,
-      `plan.result` 의 `picked` 가 고정된 가게를 담는지 함께 본다.
-- [ ] **6.** 커밋
+- [x] **1.** 실패 테스트 — 정해진 스톱이 있으면 칩 라벨이 그 가게 이름
+- [x] **2~4.** 실패 확인 → 구현 → 초록
+- [x] **5.** **시뮬레이터 — 봤다(2026-09-19 22:53, iPhone 17 `8BFC6D3C`).**
+
+      여의도→용왕산 대중교통, `마트 들러서 장 보고 약국 갔다 집에 갈게` 확정
+      → 편집 → AI와 대화로 수정하기 → `빵집도 들러줘` → 되묻기 `상관없어요`
+      → 재계산. 한 세션 안에서 끊지 않고 갔다.
+
+      | 확인 | 근거 |
+      |---|---|
+      | 확정 상태 | 편집 화면에 봄빛온누리약국 22:57 · 한청할인마트 23:19 |
+      | **칩이 가게 이름을 말한다**(과제 6) | 칩이 `마트`·`약국` 이 아니라 `한청할인마트`·`봄빛온누리약국` |
+      | 새 칩은 라벨 fallback | 방금 더한 빵집만 `빵집 ▾` — 없는 사실을 안 지어낸다 |
+      | **약국이 안 바뀐다**(본체) | 재계산 결과 베커라이마리 · **봄빛온누리약국** · 한청할인마트 |
+      | 되묻기가 고정을 안 푼다(과제 5) | 빵집을 좁힌 뒤에도 약국·마트가 그대로 |
+      | **고정이 실제로 걸렸다**(우연 아님) | `fix=kakao-1865911084(search)` · `fix=kakao-193452720(search)` |
+      | 검색은 그대로 돈다(과제 4 전제) | 세 슬롯 모두 `calls=4`, `12→12`·`21→21` |
+
+      **우연이 아니라는 결정적 증거**는 후보 목록이다.
+      `약국: 봄빛온누리약국(a1 228m), 희망약국(a1 66m), 다온약국(a0 139m), … 은하약국(a1 255m)`
+      — **66m 짜리 희망약국을 제치고 228m 짜리 봄빛온누리약국이 1등**이고,
+      원래 버그에서 갈아치웠던 **은하약국이 후보에 그대로 있는데 안 뽑혔다**.
+      순서를 만든 건 거리가 아니라 고정이다.
+
+      빵집 슬롯에는 `fix=` 가 없다 — 새로 더한 스톱이라 지킬 선택이 없다. 설계대로다.
+
+      **막았던 것은 maestro 였고, 원인을 찾았다.** 드라이버가 `127.0.0.1:7001` 하나를
+      공유해서 `--device` 가 무시되고, 먼저 포트를 잡은 세션의 기기로 명령이 조용히 간다.
+      앞선 9회는 전부 **남의 기기(iPhone 17 Pro)를 보고 있었다** — 실패가 아니라 거짓말이었다.
+      1시간 45분 묵은 고아 드라이버(`ppid=1`)를 걷어내니 한 번에 통과했다.
+      `AGENTS.md` 시뮬레이터 절에 고쳐 적었다.
+
+      **목 데이터셋으로는 대신 못 잰다.** 목 스톱(`asStopState`)은 `baseId` 가 풀 id 라
+      칩 id 와 안 맞고, 이 기능 전체가 그 매칭 위에 서 있다 — 목에서는 고정도 칩 라벨도
+      아예 켜지지 않는다.
+
+      > 계산을 막고 있던 워커 503 은 **고쳐서 배포했다**(`0896fd6`). 무료 KV 하루 쓰기
+      > 1,000회 소진이었다. 다만 **총량은 그대로**라 곧 또 난다 — 계획 한 건이 `/places` 를
+      > 수백 번 부르고 그때마다 분당 카운터를 쓴다. 별도 과제.
+- [x] **6.** 커밋
 
 ---
 

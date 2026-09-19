@@ -5,7 +5,7 @@
  */
 import { initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, ANCHOR_MAX_M, type SearchFn } from '../lib/corridorSearch';
 import { plan } from '../lib/routePlan/plan';
-import type { NearSide, RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
+import type { NearSide, PlaceCandidate, RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
 import { applyParkingPolicy } from '../lib/parkingPolicy';
@@ -76,6 +76,46 @@ const DWELL: [RegExp, number][] = [
 export function dwellFor(query: string): number {
   for (const [re, min] of DWELL) if (re.test(query)) return min;
   return 10;
+}
+
+/**
+ * 사용자가 이미 정한 가게를 후보 맨 앞으로 올린다. **검색을 막지 않는다 — 고르기만 막는다.**
+ *
+ * 검색·`applyNear`·`/enrich` 를 전부 그대로 태운 **뒤에** 부른다. 그래야
+ * 매장 교체 시트에 대안이 남고(`KC=8`), 보강이 돌아 "영업 중"이 근거를 갖고,
+ * `near`·`searchStatus` 가 실제로 일어난 일을 적는다. 검색을 건너뛰면 이 셋이 전부 깨진다.
+ *
+ * **id 를 지어내지 않는다.** `enumerate` 가 후보 id 로 중복 방문을 막으므로
+ * (`enumerate.ts:37`), 같은 가게는 어디서 와도 같은 id 여야 한다. 그래서 `fixed.placeId`
+ * 는 필수고, 검색이 못 찾았을 때도 그 id 를 그대로 쓴다.
+ *
+ * @param ranked 이 슬롯이 실제로 쓸 후보(주차·near·상한을 다 통과한 것)
+ * @param searched 필터 전 검색 결과. 걸러진 고정을 **원본 그대로** 되살리려고 본다 —
+ *                 요청에 실린 이름·좌표로 다시 세우면 영업시간·주소를 잃는다
+ */
+function pinFixed(
+  ranked: PlaceCandidate[],
+  searched: PlaceCandidate[],
+  fixed: PlanRequest['stops'][number]['fixed'],
+): { candidates: PlaceCandidate[]; fixed?: Slot['fixed'] } {
+  if (!fixed) return { candidates: ranked };
+  const inRanked = ranked.find(c => c.id === fixed.placeId);
+  if (inRanked) {
+    return {
+      candidates: [inRanked, ...ranked.filter(c => c !== inRanked)],
+      fixed: { placeId: fixed.placeId, source: 'search' },
+    };
+  }
+  const filtered = searched.find(c => c.id === fixed.placeId);
+  if (filtered) {
+    return { candidates: [filtered, ...ranked], fixed: { placeId: fixed.placeId, source: 'filtered' } };
+  }
+  // 검색이 못 줬다 — 요청에 실린 것만으로 세운다. hours·signals 가 없으니 화면은
+  // 영업 여부를 모른다고 말하고(`score.ts` 의 hours 없음 경로), 트렌드 점수도 안 붙는다
+  return {
+    candidates: [{ id: fixed.placeId, name: fixed.name, coord: fixed.coord }, ...ranked],
+    fixed: { placeId: fixed.placeId, source: 'request' },
+  };
 }
 
 class Timeout extends Error {}
@@ -232,11 +272,14 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         const sameNear = near === 'any' ? 1 : byNear.get(near) ?? 1;
         const nearNeed = Math.max(sameQuery, sameNear);
         const sided = applyNear(parked, near, request.origin, request.destination, nearNeed);
+        const pinned = pinFixed(sided.candidates.slice(0, MAX_CANDIDATES), found.candidates, st.fixed);
 
         return {
           id: st.id, query: used, stopKind: st.stopKind, why: st.why,
-          candidates: sided.candidates.slice(0, MAX_CANDIDATES), dwellMin: dwellFor(used),
-          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          candidates: pinned.candidates, dwellMin: dwellFor(used),
+          // 고정이 있으면 고르기를 닫는다 — enumerate 가 candidates[0] 한 곳만 본다
+          count: Math.max(1, st.count), flexible: pinned.fixed ? false : st.flexible, openNow: st.openNow,
+          fixed: pinned.fixed,
           near, nearSource,
           // 사용자가 말한 제약이 안 먹었을 때만 사과한다 — 코드가 물성으로 추론한 제약까지
           // 사과하면, 목적지 얘기를 꺼낸 적 없는 사용자에게 "목적지 쪽엔 없어서"라고 말하게 된다
@@ -270,10 +313,17 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         if (r.status === 'fulfilled') return r.value;
         const { st, near } = decided[i];
         const query = st.queries[0] ?? '';
+        /* **여기서도 고정은 남긴다.** 검색이 죽은 슬롯이야말로 고정이 가장 필요한
+           자리다 — 사용자는 이미 그 가게를 골랐는데, 카카오가 503 을 준다고 후보 0곳으로
+           두면 경유지가 계획에서 통째로 빠진다. 검색 결과가 없으니 `source` 는 늘
+           `request` 가 되고(영업시간·신호 없음), `searchStatus` 는 아래에서 `unchecked` 로
+           **못 봤다고 사실대로** 적는다 */
+        const pinned = pinFixed([], [], st.fixed);
         return {
           id: st.id, query, stopKind: st.stopKind, why: st.why,
-          candidates: [], dwellMin: dwellFor(query),
-          count: Math.max(1, st.count), flexible: st.flexible, openNow: st.openNow,
+          candidates: pinned.candidates, dwellMin: dwellFor(query),
+          fixed: pinned.fixed,
+          count: Math.max(1, st.count), flexible: pinned.fixed ? false : st.flexible, openNow: st.openNow,
           near, nearRelaxed: false,
           nearSource: near === 'any' ? 'none' : st.near === 'start' || st.near === 'end' ? 'stated' : 'inferred',
           nearBefore: 0, nearAfter: 0, nearRadiusM: null, nearRelaxedRaw: false,
@@ -383,6 +433,10 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         let runningVisits = base.visits;
         for (const slot of slots) {
           if (slot.stopKind !== 'category') continue;
+          // 고정된 슬롯은 건너뛴다. flexible:false 는 곧 "candidates[0] 한 곳"이라는
+          // 계약인데(enumerate.ts:7), 여기서 덮어쓰면 사용자가 고른 가게가 트렌드 1위로
+          // 조용히 바뀐다 — 고정을 만든 이유가 그것이다
+          if (!slot.flexible) continue;
           const idx = runningVisits.findIndex(v => v.slotId === slot.id);
           if (idx < 0) continue;
           const current = runningVisits[idx].candidate.id;

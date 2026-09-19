@@ -11,6 +11,7 @@ import { knownPlacesSnapshot } from '../lib/placesStore';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { calcPromptVisible } from '../state/chatPrompt';
+import { chipLabel } from '../state/chips';
 import { Chevron, DottedLineH, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
@@ -622,7 +623,7 @@ export function PlanScreen({ navigation }: Props) {
                       color: chip.kind === 'stop' ? color.primary : color.body,
                     }}
                   >
-                    {chip.label}
+                    {chipLabel(chip, state.stops)}
                     {chip.kind === 'stop' && statusOf(chip.id) && statusOf(chip.id) !== 'ok'
                       ? ` · ${SLOT_STATUS_TEXT[statusOf(chip.id)!]}`
                       : ''}
@@ -695,7 +696,7 @@ export function PlanScreen({ navigation }: Props) {
       {/* 정거장 칩 액션 시트 — 뺄지 그대로 둘지. 판정(마감 초과 등)은 A5가 실측으로 한다 */}
       <Sheet visible={!!chipMenu} onClose={() => setChipMenu(null)}>
         <View style={{ padding: 20, gap: 10 }}>
-          <Text style={[type.titleL, { color: color.ink }]}>{state.chips.find(c => c.id === chipMenu)?.label}</Text>
+          <Text style={[type.titleL, { color: color.ink }]}>{(() => { const c = state.chips.find(x => x.id === chipMenu); return c ? chipLabel(c, state.stops) : ''; })()}</Text>
           {chipMenu && statusOf(chipMenu) && statusOf(chipMenu) !== 'ok' && (
             <Text style={[type.body, { color: color.muted }]}>{SLOT_STATUS_HELP[statusOf(chipMenu)!]}</Text>
           )}

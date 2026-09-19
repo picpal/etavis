@@ -182,10 +182,13 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
           found: action.slots.map(s => `${s.query} ${s.candidates.length}곳`).join(' · '),
           // near=end(inf)! 는 '추론한 목적지 쪽인데 그쪽에 없어서 풀었다'는 뜻이다.
           // 8→3 은 applyNear 전후 후보 수, nr= 는 멈춘 완화 단계(m)
+          // fix=<id>(source) 는 사용자가 정해 둔 가게로 닫힌 슬롯이다. source 가 request 면
+          // 검색이 그 가게를 못 줘서 이름·좌표만으로 세운 것 — 영업시간도 신호도 없다
           search: action.slots.map(s =>
             `${s.query} near=${s.near ?? 'any'}(${s.nearSource ?? 'none'})${s.nearRelaxedRaw ? '!' : ''}`
             + ` ${s.nearBefore ?? 0}→${s.nearAfter ?? 0} nr=${s.nearRadiusM ?? '-'}`
-            + ` r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`).join(' · '),
+            + ` r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`
+            + (s.fixed ? ` fix=${s.fixed.placeId}(${s.fixed.source})` : '')).join(' · '),
           // 슬롯마다 따로 자른다 — 전체를 한 번에 자르면 슬롯이 둘만 돼도 뒤쪽 슬롯의
           // 이름이 통째로 사라진다. 이름을 읽으려고 넣은 로그가 이름을 지우면 안 된다
           picks: action.slots.map(s => `${s.query}: ${cut(s.candidates.map(c =>

@@ -278,13 +278,24 @@ function initState(ds: Dataset, seed = false): PlanState {
 }
 
 /** 칩의 검색어를 데이터셋 풀의 경유지에 맞춘다.
-    실제 서버에서는 이 자리가 카카오 로컬 검색 결과가 된다 */
-function stopsForChips(ds: Dataset, chips: IntentChip[]): StopState[] {
+    실제 서버에서는 이 자리가 카카오 로컬 검색 결과가 된다.
+
+    `held` 가 있으면 **그 칩은 찾지 않고 이미 정해진 스톱을 그대로 쓴다.** 보존을 이 함수
+    밖에서 하면(칩마다 한 번씩 부르면) `used` 가 매번 새로 생겨 같은 풀 항목이 여러
+    슬롯에 붙는다 — 같은 가게를 두 번 들르는 계획이 된다. 중복 제거와 보존은 한 루프에
+    있어야 한다. */
+function stopsForChips(ds: Dataset, chips: IntentChip[], held?: ReadonlyMap<string, StopState>): StopState[] {
   const pool = [...ds.stops, ...(ds.extraStops ?? [])];
   const used = new Set<string>();
   const out: StopState[] = [];
   for (const chip of chips) {
     if (chip.kind !== 'stop') continue;
+    const kept = held?.get(chip.id);
+    if (kept) {
+      used.add(kept.baseId); // 목에서 온 스톱이면 풀 id 다 — 다른 칩이 같은 곳을 또 집지 않게
+      out.push(kept);
+      continue;
+    }
     const hit = pool.find(p => !used.has(p.id) && chip.queries.some(q => p.name.includes(q) || p.category === q));
     if (!hit) continue; // 못 찾은 건 칩만 남는다 — 사용자가 보고 지울 수 있다
     used.add(hit.id);
@@ -581,8 +592,20 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     }
     case 'REORDER_LOCAL':
       return { ...state, stops: action.stops, recalcPending: true };
-    case 'REMOVE_LOCAL':
-      return { ...state, stops: state.stops.filter(s => s.id !== action.stopId), recalcPending: true };
+    case 'REMOVE_LOCAL': {
+      /* **칩도 같이 지운다.** stops 만 지우면 칩이 남아 다음 요청이 그 경유지를
+         되살린다 — 편집 화면에서 지웠는데 대화로 돌아가면 그대로 서 있었다.
+         고정이 붙은 뒤로는 "지워도 지워지지 않는" 경로가 되므로 여기서 같이 고친다.
+         칩 id 는 스톱의 `baseId` 다(라이브 확정). 목에서 온 스톱은 baseId 가 풀 id 라
+         걸리는 칩이 없고, 그건 종전 동작 그대로다. */
+      const gone = state.stops.find(s => s.id === action.stopId);
+      return {
+        ...state,
+        stops: state.stops.filter(s => s.id !== action.stopId),
+        chips: gone ? state.chips.filter(c => c.id !== gone.baseId) : state.chips,
+        recalcPending: true,
+      };
+    }
     case 'REPLACE_LOCAL': {
       const stops = state.stops.map(s => {
         if (s.id !== action.stopId) return s;
@@ -662,9 +685,21 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       /* v3 — 제거와 추가가 한 문장에 섞일 수 있다.
          '올리브영 대신 이마트'가 remove + add 두 항목으로 온다 */
       let chips: IntentChip[] = it.resetStops ? [] : state.chips.filter(c => c.kind === 'stop');
+      /* 제거는 **정해진 가게 이름으로도** 걸려야 한다. "봄빛온누리약국 말고 다른 데로"는
+         remove(['봄빛온누리약국']) + add(['약국']) 로 온다. 질의 겹침만 보면 칩의
+         queries 는 `['약국']` 이라 안 걸리고, 이어지는 add 는 중복으로 걸러진다 —
+         과제 2 의 보존이 붙은 뒤로는 **정해진 가게가 영영 안 풀린다**.
+         규칙은 `stopsForChips` 의 매칭과 대칭이다: 칩을 붙일 때 이름 포함으로 걸렸으면
+         뗄 때도 같은 규칙으로 걸린다. */
+      const nameOfChip = new Map(state.stops.map(s => [s.baseId, s.name]));
       for (const st of it.stops) {
         if (st.op === 'remove') {
-          chips = chips.filter(c => !(c.kind === 'stop' && c.queries.some(q => st.queries.includes(q))));
+          chips = chips.filter(c => {
+            if (c.kind !== 'stop') return true;
+            if (c.queries.some(q => st.queries.includes(q))) return false;
+            const name = nameOfChip.get(c.id);
+            return !(name && st.queries.some(q => name.includes(q)));
+          });
           continue;
         }
         /* 이미 계획에 있는 질의는 다시 세우지 않는다.
@@ -687,7 +722,21 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       if (arriveBy != null) {
         keep.push({ id: `a-${chipSeq++}`, kind: 'arriveBy', label: `${toHHMM(arriveBy).padStart(5, '0')}까지`, value: arriveBy });
       }
-      const stops = stopsForChips(state.dataset, keep);
+      /* **이미 정해진 가게는 건드리지 않는다.**
+         예전엔 `stopsForChips(state.dataset, keep)` 한 줄로 스톱 전체를 목 데이터셋에서
+         다시 매칭했다. 확정된 가게는 `state.stops` 에 있는데 쳐다보지도 않으니,
+         "빵집도 들러줘" 한 마디에 손도 안 댄 약국이 봄빛온누리 → 은하로 바뀌었다
+         (2026-09-19 실측). `asStopState` 가 `selectedCandidateId`·`replaceDeltaMin` 을
+         0 으로 지워서 사용자가 교체 시트에서 고른 매장까지 같이 날아갔다.
+
+         `baseId` 로 집는 이유: 라이브 확정에서 `baseId` 가 곧 칩 id 다
+         (`planFlowBridge.ts` 의 `baseId: v.slotId`, 슬롯 id 는 `planRequest.ts` 에서 `c.id`).
+         목 데이터셋에서 온 스톱은 `baseId` 가 데이터셋 stop id 라 여기 안 걸리고
+         종전대로 다시 매칭된다 — 목에는 지킬 '사용자 결정'이 없으니 그게 맞다.
+
+         지운 칩은 `keep` 에 없으니 스톱도 같이 사라진다. 보존이 삭제를 이기지 않는다. */
+      const held = new Map(state.stops.map(s => [s.baseId, s]));
+      const stops = stopsForChips(state.dataset, keep, held);
       /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
          이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다).
          아는 곳 = 내가 등록한 장소(별칭·상호)와 최근에 다녀온 곳. LLM 이 좌표를 짓지 않는다 */
@@ -727,7 +776,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       // chip.queries 로 데이터셋 경유지를 다시 매칭하므로, queries 를 좁히면 매칭되는
       // 경유지 자체가 바뀐다. REMOVE_CHIP 과 같은 모양으로 stops·체인을 다시 계산한다.
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      const stops = stopsForChips(state.dataset, chips);
+      /* **좁힌 칩의 가게만 버린다.** 질의가 바뀌었으니 그 자리는 다시 찾는 게 맞지만,
+         손대지 않은 칩의 가게까지 날리면 되묻기 한 번에 계획 전체가 흔들린다.
+         맨손으로 `stopsForChips` 를 부르던 시절이 그랬다 */
+      const held = new Map(state.stops.flatMap(s => (s.baseId === action.chipId ? [] : [[s.baseId, s] as const])));
+      const stops = stopsForChips(state.dataset, chips, held);
       return {
         ...state,
         chips,
@@ -756,7 +809,9 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       const chips = state.chips.filter(c => c.id !== action.id);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       const patch = chip.kind === 'arriveBy' ? { arriveByMin: null } : {};
-      const stops = stopsForChips(state.dataset, chips);
+      /* 지운 칩은 `chips` 에 없으니 그 가게도 같이 사라진다. 남은 칩의 가게는 지킨다 —
+         경유지 하나를 빼려고 ✕ 를 눌렀을 뿐인데 나머지가 전부 다시 검색되면 안 된다 */
+      const stops = stopsForChips(state.dataset, chips, new Map(state.stops.map(s => [s.baseId, s])));
       return {
         ...state,
         ...patch,

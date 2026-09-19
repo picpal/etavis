@@ -228,6 +228,68 @@ test('expandQueries — 복합명사는 업종어로 넓히지 않는다(끝 단
   assert.deepEqual(expandQueries(['키즈카페']), ['키즈카페']);
 });
 
+/* ── 치킨·닭강정 ────────────────────────────────────────────────
+   실측 2026-09-19(운영 키, /places 프록시 경유):
+
+   관련도순(좌표 없음, size 15)
+     '닭강정'   15/15 "음식점 > 간식 > 닭강정"
+     '닭강정집' 15/15 "음식점 > 간식 > 닭강정"  ← '집'이 붙어도 같은 15건
+     '치킨'     15/15 "음식점 > 치킨"
+
+   거리순(시청 x=126.9770 y=37.5665, radius 500)
+     '닭강정집' 9건에 닭강정은 **0건** — 메가MGC커피 4, 맘스터치, 제일제면소,
+                북창치킨, 치킨매니아, 본도시락
+     '치킨'    15건에 "음식점 > 치킨"이 **0건** — 풀앤빵(제과), 맥도날드,
+                달빛야장(라이브카페), 중국요리, 삼계탕, 호아빈(동남아음식)
+
+   두 번째 묶음이 이 태스크의 진짜 원인이다. 카카오 거리순 검색은 반경 안에 이름이
+   맞는 곳이 없으면 관련도를 버리고 근처 음식점을 아무거나 채워 준다 — '치킨'처럼
+   흔하고 자기 카테고리까지 있는 말도 그렇다. 회랑 검색이 늘 거리순이라 앱은 이
+   폴백만 본다. 경로 조건이 없으면 그게 전부 후보가 된다. */
+
+test('닭강정 — 집이 붙어도 같은 업종 경로다', () => {
+  for (const q of ['닭강정', '닭강정집', '동네 닭강정집']) {
+    assert.deepEqual(planSearch(q).pathAny, ['닭강정'], q);
+  }
+});
+
+test('치킨·통닭 — 같은 경로 하나로 덮인다', () => {
+  assert.deepEqual(planSearch('치킨').pathAny, ['치킨']);
+  assert.deepEqual(planSearch('치킨집').pathAny, ['치킨']);
+  assert.deepEqual(planSearch('통닭').pathAny, ['치킨']);
+});
+
+test('거리순 폴백이 데려온 것들을 경로 조건이 떨어뜨린다 — 실측 9건', () => {
+  const plan = planSearch('닭강정집');
+  // 실측 그대로. 이 여섯이 '닭강정집' 자리에 올라왔던 후보다
+  for (const cat of [
+    '음식점 > 카페 > 커피전문점 > 메가MGC커피',
+    '음식점 > 패스트푸드 > 맘스터치',
+    '음식점 > 한식 > 국수 > 제일제면소',
+    '음식점 > 도시락 > 본도시락',
+    '음식점 > 치킨',
+    '음식점 > 치킨 > 치킨매니아',
+  ]) {
+    assert.equal(keepByCategoryName(cat, plan), false, cat);
+  }
+  assert.equal(keepByCategoryName('음식점 > 간식 > 닭강정', plan), true, '진짜 닭강정집은 남는다');
+});
+
+test('치킨을 물으면 치킨집만 남는다 — 삼계탕·제과는 닭강정과 다른 말이다', () => {
+  const plan = planSearch('치킨');
+  assert.equal(keepByCategoryName('음식점 > 치킨', plan), true);
+  assert.equal(keepByCategoryName('음식점 > 치킨 > 치킨매니아', plan), true);
+  assert.equal(keepByCategoryName('음식점 > 한식 > 육류,고기 > 닭요리 > 삼계탕', plan), false);
+  assert.equal(keepByCategoryName('음식점 > 간식 > 제과,베이커리', plan), false);
+  assert.equal(keepByCategoryName('음식점 > 양식 > 햄버거', plan), false);
+});
+
+test('닭강정은 치킨 행에 먹히지 않는다 — 더 좁은 쪽이 먼저 걸려야 한다', () => {
+  // '닭강정'에 '치킨'이 들어 있지 않아 지금은 순서에 안 묶이지만, 치킨 행의
+  // 정규식을 넓히는 날 이 테스트가 먼저 깨진다
+  assert.deepEqual(planSearch('닭강정').pathAny, ['닭강정']);
+});
+
 /* ── 이 장소가 질의에 답하나 ─────────────────────────────────────
    실측 2026-09-19 기기 트랙로그: '닭강정집' 질의에 카카오가 21건을 줬는데
    메가MGC커피·맘스터치·본도시락이 섞여 있었다. 이 업종은 표에 없어서 `pathAny`가
@@ -243,11 +305,12 @@ test('업종으로 확인된 검색은 이름이 달라도 조용하다 — 마�
   assert.ok(isVerifiedCategory(planSearch('마트')));
 });
 
-test('표에 없는 업종이 이름까지 어긋나면 말해야 한다 — 닭강정집', () => {
-  // 실측 2026-09-19 기기: 이 둘이 실제로 1순위·후보로 올라왔다
-  assert.equal(answersQuery('메가MGC커피 명동한진빌딩점', '닭강정집'), false);
-  assert.equal(answersQuery('맘스터치 마포공덕역점', '닭강정집'), false);
-  assert.equal(isVerifiedCategory(planSearch('닭강정집')), false, '거를 근거가 아예 없다');
+test('표가 모르는 업종이 이름까지 어긋나면 말해야 한다', () => {
+  /* 표가 모르면 pathAny 가 비어 경로 조건이 통째로 없다 — 거리순 폴백이 데려온 것을
+     걸러 낼 근거가 없다(닭강정 행이 생기기 전의 '닭강정집'이 정확히 그랬다).
+     마지막 근거인 이름마저 어긋나면 말해 준다. 표를 아무리 채워도 이 바닥은 남는다 */
+  assert.equal(isVerifiedCategory(planSearch('반찬가게')), false, '표가 모르는 업종');
+  assert.equal(answersQuery('메가MGC커피 명동한진빌딩점', '반찬가게'), false);
 });
 
 test('이름이 검색어를 품으면 굳이 다시 말하지 않는다 — 읽는 사람 시간만 쓴다', () => {
@@ -263,9 +326,9 @@ test("'동네 X' 는 실제로 보낸 검색어로 잰다 — 접두사까지 �
 });
 
 test('공백은 무시한다 — 띄어쓰기로 판정이 갈리면 안 된다', () => {
-  // 닭강정집은 표에 없어서 이름 매칭까지 내려온다 — 공백 처리가 실제로 걸리는 자리다
-  assert.equal(answersQuery('명동 닭강정 집', '닭강정집'), true);
-  assert.equal(answersQuery('명동닭강정집', '닭강정 집'), true);
+  // 표가 모르는 업종이라야 이름 매칭까지 내려온다 — 공백 처리가 실제로 걸리는 자리다
+  assert.equal(answersQuery('동네 반찬 가게', '반찬가게'), true);
+  assert.equal(answersQuery('동네반찬가게', '반찬 가게'), true);
 });
 
 test('브랜드·특정 장소는 저절로 조용하다 — 이름이 곧 질의다', () => {
@@ -276,8 +339,9 @@ test('브랜드·특정 장소는 저절로 조용하다 — 이름이 곧 질�
   assert.equal(answersQuery('서울시청', '서울시청'), true);
 });
 
-test('진짜 닭강정집이어도 이름이 안 겹치면 말한다 — 과소 표기보다 과대 표기', () => {
-  // '북창치킨'은 실제로 닭을 파는 집이다. 그래도 '닭강정집'을 품지 않으니 말해 준다.
-  // 이 라벨은 고발이 아니라 맥락이다 — 틀린 걸 숨기는 쪽이 훨씬 비싸다
-  assert.equal(answersQuery('북창치킨 서울시청본점', '닭강정집'), false);
+test('업종이 맞는 곳이어도 이름이 안 겹치면 말한다 — 과소 표기보다 과대 표기', () => {
+  // '시장반찬전문점'은 실제로 반찬을 파는 집이다. 그래도 표가 모르는 업종이라
+  // 확인할 길이 없고 이름도 안 겹치니 말해 준다. 이 라벨은 고발이 아니라 맥락이다 —
+  // 틀린 걸 숨기는 쪽이 훨씬 비싸다
+  assert.equal(answersQuery('시장반찬전문점', '반찬가게'), false);
 });

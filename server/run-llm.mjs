@@ -17,7 +17,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { scoreCase, summarize, CHECKED_KEYS } from './case-score.mjs';
+import { scoreCase, summarize, CHECKED_KEYS, analyzeCaseRuns } from './case-score.mjs';
 
 const argv = process.argv.slice(2);
 const gi = argv.indexOf('--group');
@@ -209,48 +209,47 @@ for (const [g, v] of Object.entries(sum.byGroup)) {
 
 if (REPEAT > 1) {
   const TAGS = ['near', 'loadBefore', 'loadAfter', 'needWhen'];
-  const unstable = {};
-  for (const t of TAGS) unstable[t] = 0;
-  let counted = 0;
-  for (const cs of all) {
-    const vals = runs.map(r => {
-      const o = r[cs.__i];
-      if (!o) return null;
-      const s = (o.stops ?? [])[0] ?? {};
-      return TAGS.map(t => s[t] ?? '-').join('|');
-    });
-    if (vals.some(v => v === null)) continue;
-    counted++;
-    const perTag = TAGS.map((_, k) => new Set(vals.map(v => v.split('|')[k])).size);
-    perTag.forEach((n, k) => { if (n > 1) unstable[TAGS[k]]++; });
-  }
-  console.log(`\n흔들림 (${REPEAT}회 반복 · ${counted}건)`);
-  for (const t of TAGS) {
-    const pct = counted ? Math.round((unstable[t] / counted) * 100) : 0;
-    console.log(`  ${t.padEnd(11)} 불일치 ${unstable[t]}/${counted} (${pct}%)`);
-  }
-  console.log('  판정: 20% 를 넘으면 설계 §13 의 후퇴(needWhen 제거)를 검토한다');
+  /* 회차 전부를 남긴다 — 예전엔 마지막 회차만 저장해서, 어느 회차가 경유지를 못 뽑았는지
+     나중에 들여다볼 방법이 없었다. 흔들림은 정의상 회차 사이의 차이라 한 장으로는 못 본다 */
+  const runsFile = outFile.replace(/\.json$/, '-runs.json');
+  writeFileSync(runsFile, JSON.stringify(runs, null, 2));
 
-  // 위 비율은 "어느 태그가 흔들리는지"만 말한다. 실행 가능한 건 "어느 문장이,
-  // 어떤 값 사이에서 갈렸는지"다 — "택배 부치기"의 loadBefore 가 갈리면 심각하고,
-  // "밀폐 텀블러 커피"처럼 문장 자체가 애매한 게 갈리면 성격이 다르다. 흔들림이
-  // 실제로 방향(near)까지 바꾸는지는 이 출력을 손으로 decideNear(src/lib/nearSide.ts)
-  // 에 넣어 가린다 — 그 흡수 판정까지는 이 스크립트가 하지 않는다.
-  console.log('\n흔들림 케이스별 상세');
-  for (const cs of all) {
-    const raw = runs.map(r => {
-      const o = r[cs.__i];
-      if (!o) return null;
-      return (o.stops ?? [])[0] ?? {};
-    });
-    if (raw.some(v => v === null)) continue;
-    const flips = TAGS.filter(t => new Set(raw.map(s => s[t] ?? '-')).size > 1);
-    if (flips.length === 0) continue;
-    console.log(`  "${cs.text}"`);
-    for (const t of flips) {
-      console.log(`    ${t}: ${raw.map(s => s[t] ?? '-').join(' → ')}`);
-    }
+  const per = all
+    .map(cs => ({ cs, a: analyzeCaseRuns(runs.map(r => r[cs.__i] ?? null), TAGS) }))
+    // 무응답이 섞인 케이스는 판정에서 뺀다 — 못 물어본 것과 못 뽑은 것은 다르다
+    .filter(p => p.a.answered === REPEAT);
+  const counted = per.length;
+
+  console.log(`\n흔들림 (${REPEAT}회 반복 · ${counted}건)`);
+  /* 경유지 0건을 태그 흔들림과 **따로** 센다. 예전엔 0건 회차를 `-` 라는 태그 값으로
+     세서, 0건 한 번이 네 태그를 동시에 불안정으로 만들었다(2026-09-19: needWhen 이
+     실제로는 0% 인데 22% 로 보고됐다). 둘은 성격이 다르다 — 태그가 갈리면 방향이
+     조금 달라지고, 경유지 0건이면 사용자가 말한 요청이 통째로 사라진다 */
+  const zeroCases = per.filter(p => p.a.extractionFails > 0);
+  const zeroRuns = zeroCases.reduce((n, p) => n + p.a.extractionFails, 0);
+  const zPct = counted ? Math.round((zeroCases.length / counted) * 100) : 0;
+  console.log(`  경유지 0건    ${zeroCases.length}/${counted} 케이스 (${zPct}%) · 총 ${zeroRuns}회 — 요청이 통째로 사라진다`);
+  for (const t of TAGS) {
+    const n = per.filter(p => p.a.flips[t]).length;
+    const pct = counted ? Math.round((n / counted) * 100) : 0;
+    console.log(`  ${t.padEnd(11)} 불일치 ${n}/${counted} (${pct}%)`);
   }
+  console.log('  판정: needWhen 이 20% 를 넘으면 설계 §13 의 후퇴(needWhen 제거)를 검토한다');
+
+  // 비율은 "어느 태그가 흔들리는지"만 말한다. 실행 가능한 건 "어느 문장이, 어떤 값
+  // 사이에서 갈렸는지"다 — "택배 부치기"의 loadBefore 가 갈리면 심각하고, "밀폐 텀블러
+  // 커피"처럼 문장 자체가 애매한 게 갈리면 성격이 다르다. 흔들림이 실제로 방향(near)까지
+  // 바꾸는지는 이 출력을 손으로 decideNear(src/lib/nearSide.ts) 에 넣어 가린다 —
+  // 그 흡수 판정까지는 이 스크립트가 하지 않는다.
+  console.log('\n케이스별 상세');
+  for (const { cs, a } of per) {
+    const flipped = TAGS.filter(t => a.flips[t]);
+    if (flipped.length === 0 && a.extractionFails === 0) continue;
+    console.log(`  "${cs.text}"`);
+    if (a.extractionFails > 0) console.log(`    경유지 0건: ${REPEAT}회 중 ${a.extractionFails}회`);
+    for (const t of flipped) console.log(`    ${t}: ${a.values[t].join(' → ')}`);
+  }
+  if (zeroCases.length > 0) console.log(`\n  회차별 원본: ${runsFile}`);
 }
 console.log(`\n전체 ${rows.length} · 통과 ${c('통과')} · 실패 ${c('실패')} · 미검증 ${c('미검증')} · 무응답 ${c('무응답')}`);
 console.log('\n--- 실패 ---');

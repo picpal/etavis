@@ -127,3 +127,32 @@ export function summarize(rows) {
     uncheckedRows: unchecked,
   };
 }
+
+/**
+ * 한 케이스를 여러 번 돌린 결과에서 **무엇이 흔들렸는지** 가른다.
+ *
+ * 두 신호를 절대 섞지 않는다:
+ * - `extractionFails` — 그 회차가 경유지를 **하나도 못 뽑았다.** 사용자가 말한 요청이
+ *   통째로 사라진다는 뜻이라, 태그가 갈리는 것보다 훨씬 무겁다.
+ * - `flips` — 경유지를 뽑은 회차들 **사이에서** 태그 값이 갈렸다. 방향이 조금 달라진다.
+ *
+ * 왜 갈라야 하나: 2026-09-19 측정에서 `needWhen` 이 실제로는 한 번도 안 갈렸는데
+ * 22% 로 보고됐다. 경유지 0건인 회차를 `-` 라는 **태그 값**으로 세는 바람에, 0건
+ * 한 번이 네 태그를 동시에 불안정으로 만들었다. 그래서 진짜 신호(추출이 통째로
+ * 실패한다)가 태그 통계에 묻혀 보이지 않았다.
+ *
+ * @param outs 회차별 Intent. 응답이 아예 없던 회차는 `null`
+ * @returns `values[t]` 는 **경유지를 뽑은 회차만** 모은 값들이라 회차 번호와 길이가 다를 수 있다
+ */
+export function analyzeCaseRuns(outs, tags) {
+  const answered = outs.filter(o => o != null);
+  const withStop = answered.filter(o => (o.stops ?? []).length > 0);
+  const values = {};
+  const flips = {};
+  for (const t of tags) {
+    values[t] = withStop.map(o => o.stops[0][t] ?? '-');
+    // 값이 0개나 1개면 "갈렸다"고 말할 수 없다
+    flips[t] = new Set(values[t]).size > 1;
+  }
+  return { answered: answered.length, withStop: withStop.length, extractionFails: answered.length - withStop.length, values, flips };
+}

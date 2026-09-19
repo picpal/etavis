@@ -43,7 +43,9 @@ test('태그로 방향을 암시하지 말라고 못 박는다', () => {
 
 test('문서 원본도 태그 3개를 적고 있다 — 사본만 고치면 다음 사람이 원본을 믿는다', () => {
   const md = readFileSync('server/prompts/extract-intent.md', 'utf8');
-  assert.ok(md.includes('(v11)'), '문서 헤더가 v11 이 아니다');
+  // 번호를 박아두면 올릴 때마다 여기가 깨진다 — 그런데 '문서와 사본이 같은 번호냐'는
+  // 바로 아래 테스트가 이미 동적으로 본다. 여기서는 헤더가 버전을 달고 있는지만 본다.
+  assert.match(md, /^#\s.*\(v\d+\)/m, '문서 헤더에 버전이 없다');
   for (const k of ['loadBefore', 'loadAfter', 'needWhen']) {
     assert.ok(md.includes(k), `${k} 가 문서 원본에 없다`);
   }

@@ -38,7 +38,7 @@ export type TrackEvent =
       mode: string;
       source: 'server' | 'mock';
     }
-  | { k: 'notify'; kind: 'arrival' | 'nextLeg' | 'dest'; id: string }
+  | { k: 'notify'; kind: 'arrival' | 'departure' | 'nextLeg' | 'dest'; id: string }
   /**
    * 사용자 행동. `a` 는 'plan.start' 같은 점 표기라 grep 으로 갈래를 자를 수 있다.
    * 리듀서를 지나는 액션이 전부 여기로 오므로 누락이 구조적으로 안 생긴다.

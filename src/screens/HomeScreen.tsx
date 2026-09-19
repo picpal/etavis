@@ -47,7 +47,8 @@ export function HomeScreen({ navigation }: Props) {
     칩·조건 되돌리기도 그쪽 몫이다.
   */
   const enterChat = () => {
-    resetChat({ mode: state.mode, arriveByMin: state.arriveByMin });
+    // 새 계획을 시작한다 = 이전 대화를 버린다. 확정돼 있어도 지운다
+    resetChat({ mode: state.mode, arriveByMin: state.arriveByMin }, 'startingNewPlan');
     navigation.navigate('Plan');
   };
 

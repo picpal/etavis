@@ -1,5 +1,6 @@
 /** 로컬 알림 헬퍼 — 체류 종료 혼잡도 제보 액션 + 하트 감사 알림 */
 import * as Notifications from 'expo-notifications';
+import { DEPARTURE_LEAD_MIN } from './lib/dwellReminder';
 
 export const CONGESTION_CATEGORY = 'congestion-report';
 /** 도착 알림 — 여기서 할 일을 바로 열 수 있게 */
@@ -50,27 +51,29 @@ export function ensureNotificationsReady(): Promise<boolean> {
 }
 
 /**
- * 출발 5분 전 알림 — 경유지에 도착하면 자동 예약된다.
- * 잠금화면 액션으로 혼잡도까지 바로 제보할 수 있다.
- * 목에서는 실제 5분을 기다릴 수 없어 6초 뒤에 발송한다.
+ * 출발 5분 전 알림 — **실제로 경유지에 도착했을 때** 예약된다(`tracker.tsx` 의
+ * `arrive` 이벤트). 잠금화면 액션으로 혼잡도까지 바로 제보할 수 있다.
+ *
+ * `seconds` 를 밖에서 받는다. 전에는 여기서 6초로 박아 뒀는데, 그러면 체류가 20분이든
+ * 6분이든 같은 시점에 울려 문구('5분 남았어요')가 늘 거짓말이었다. 언제 울릴지는
+ * `dwellReminder.ts` 가 정한다 — 압축 여부까지 거기서 판단한다.
  */
-const MOCK_LEAD_SECONDS = 6;
-
 export async function scheduleDepartureReminder(
   stopName: string,
   departAt: string,
+  seconds: number,
 ): Promise<string | null> {
   const ok = await ensureNotificationsReady();
   if (!ok) return null;
   return Notifications.scheduleNotificationAsync({
     content: {
       title: '곧 출발할 시간이에요',
-      body: `${stopName} 체류가 5분 남았어요 · ${departAt} 출발 예정`,
+      body: `${stopName} 체류가 ${DEPARTURE_LEAD_MIN}분 남았어요 · ${departAt} 출발 예정`,
       categoryIdentifier: CONGESTION_CATEGORY,
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-      seconds: MOCK_LEAD_SECONDS,
+      seconds,
     },
   });
 }

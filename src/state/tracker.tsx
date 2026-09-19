@@ -20,7 +20,9 @@ import * as Location from 'expo-location';
 import { startBackgroundLocation, stopBackgroundLocation, subscribeBackgroundLocation, toFix } from '../lib/backgroundLocation';
 import { LatLng } from '../data/mockData';
 import { formatEta } from '../lib/geo';
-import { notifyArrival, notifyDestinationArrival, notifyNextLeg } from '../notifications';
+import { cancelScheduled, notifyArrival, notifyDestinationArrival, notifyNextLeg, scheduleDepartureReminder } from '../notifications';
+import { departureReminderSeconds } from '../lib/dwellReminder';
+import { nowMin, toHHMM } from '../lib/clock';
 import { buildPolyline, crossTrack, offsetPerpendicular, pointAtProgress, polylineLengthM } from '../lib/geo';
 import { toMin, usePlan } from './plan';
 import { initialArrivalState, profileFor, stepArrival, type ArrivalState, type Fix, type Point } from '../lib/arrival';
@@ -198,6 +200,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
   /** 마지막으로 로그에 남긴 위치·판정 — 소음 필터의 기준점 */
   const lastFixMarkRef = useRef<FixMark | null>(null);
   const lastGeofenceMarkRef = useRef<GeofenceMark | null>(null);
+  /** 예약해 둔 출발 알림. 떠날 때 취소하려면 id 를 들고 있어야 한다 */
+  const departureIdRef = useRef<string | null>(null);
 
   const detectRef = useRef<(fix: Fix, src: 'fg' | 'bg' | 'sim', simStuck?: boolean) => void>(() => {});
   detectRef.current = (fix: Fix, src, simStuck = false) => {
@@ -269,9 +273,25 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           notifiedRef.current.arrived = stop.id;
           logTrack({ k: 'notify', kind: 'arrival', id: stop.id });
           void notifyArrival(stop.id, stop.name, stop.tasks.length);
+          /* 출발 알림은 **여기서** 건다. 도착을 아는 곳이 여기 하나이기 때문이다 —
+             화면(TaskSheet)이 걸던 때는 시트를 열어야만 잡혔고, 안 가본 경유지의
+             카드를 열어도 잡혔다. 체류가 짧으면 seconds 가 null 이고 안 건다 */
+          const seconds = departureReminderSeconds(stop.dwellMin, { compress: isSimMode(mode) });
+          if (seconds != null) {
+            // 예정 시각이 아니라 **실제로 도착한 지금**에서 센다
+            const departAt = toHHMM(nowMin() + stop.dwellMin);
+            logTrack({ k: 'notify', kind: 'departure', id: stop.id });
+            void scheduleDepartureReminder(stop.name, departAt, seconds).then(id => {
+              departureIdRef.current = id;
+            });
+          }
         }
       } else if (ev.kind === 'depart') {
         actionsRef.current.departStop();
+        /* 떠났으면 아직 안 울린 출발 알림은 의미가 없다 — 예정보다 일찍 떠나는 일은
+           흔하고, 그때 '5분 남았어요'가 뒤늦게 울리면 지금 어디 있는지와 어긋난다 */
+        void cancelScheduled(departureIdRef.current);
+        departureIdRef.current = null;
         if (notifiedRef.current.departed !== ev.id) {
           notifiedRef.current.departed = ev.id;
           const idx = stops.findIndex(s => s.id === ev.id);

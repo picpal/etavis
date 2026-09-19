@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { narrowStopChips, resetChatChips, resetConditionChips, syncConditionChips } from './chips';
+import { narrowStopChips, resetChatChips, resetConditionChips, shouldKeepCommittedPlan, syncConditionChips } from './chips';
 import type { IntentChip } from './plan';
 
 let seq = 0;
@@ -134,4 +134,19 @@ test('확정 전이면 그대로 되돌린다 — 경유지 칩은 대화가 만
   const chips = [stop('s-1'), stop('s-2')];
   const out = resetChatChips(chips, { mode: 'car', arriveByMin: null }, nextId, false);
   assert.deepEqual(out.map(c => c.kind), [], '경유지 칩은 전부 버린다');
+});
+
+/* `resetChat` 을 부르는 자리가 둘인데 목적이 다르다. 하나로 뭉뚱그렸더니 확정 뒤
+   '새로 계획하기' 로 들어가도 이전 대화의 경유지 칩('약국'·'닭강정집')이 그대로 남았다 */
+
+test('대화에서 나갈 때는 확정된 계획을 지키지 않는다 — 방금 확정한 것이 지워지면 안 된다', () => {
+  assert.equal(shouldKeepCommittedPlan('leavingChat', true), true);
+});
+
+test('확정한 적 없으면 나갈 때도 대화를 되돌린다', () => {
+  assert.equal(shouldKeepCommittedPlan('leavingChat', false), false);
+});
+
+test('새 계획을 시작할 때는 확정돼 있어도 지운다 — 이전 대화의 칩이 남으면 안 된다', () => {
+  assert.equal(shouldKeepCommittedPlan('startingNewPlan', true), false);
 });

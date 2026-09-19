@@ -445,7 +445,7 @@ export function PlanScreen({ navigation }: Props) {
            조용히 되돌린다 — 화면이 사라지는데 대화만 남겨두면 다음에 들어왔을 때
            남의 대화처럼 보인다 */
         if (!navigation.isFocused()) {
-          resetChat(entryRef.current);
+          resetChat(entryRef.current, 'leavingChat');
           flow.reset();
           return;
         }
@@ -458,7 +458,7 @@ export function PlanScreen({ navigation }: Props) {
   );
 
   const confirmLeave = () => {
-    resetChat(entryRef.current);
+    resetChat(entryRef.current, 'leavingChat');
     flow.reset();
     // 화면이 들고 있던 대화의 부산물도 같이 버린다 — 스토어만 비우면 되묻기·안내가 남는다
     setReply(null);

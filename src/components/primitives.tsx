@@ -205,14 +205,16 @@ export function TabIcon({
   size?: number;
   tint: string;
 }) {
-  const sw = 2;
+  // 얇은 외곽선만 — 채움 없이, 선 굵기 하나로 통일한다
+  const sw = 1.7;
+  const line = { stroke: tint, strokeWidth: sw, fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
   if (name === 'plan') {
     // 출발 → 경유 → 도착이 이어지는 경로
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Circle cx={5} cy={6} r={2.6} stroke={tint} strokeWidth={sw} fill="none" />
-        <Path d="M5 9.4v3.2a3.2 3.2 0 0 0 3.2 3.2h7.4" stroke={tint} strokeWidth={sw} fill="none" strokeLinecap="round" />
-        <Rect x={16.2} y={13.6} width={5.2} height={5.2} rx={1.4} fill={tint} />
+        <Circle cx={5.5} cy={6} r={2.5} {...line} />
+        <Path d="M5.5 8.5v4a3.5 3.5 0 0 0 3.5 3.5h6" {...line} />
+        <Rect x={15} y={13} width={5} height={5} rx={1.4} {...line} />
       </Svg>
     );
   }
@@ -220,8 +222,8 @@ export function TabIcon({
     // 진행 중 = 재생
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Circle cx={12} cy={12} r={8.8} stroke={tint} strokeWidth={sw} fill="none" />
-        <Path d="M10.2 8.8l5.4 3.2-5.4 3.2z" fill={tint} />
+        <Circle cx={12} cy={12} r={9} {...line} />
+        <Path d="M10.3 9l4.6 3-4.6 3z" {...line} />
       </Svg>
     );
   }
@@ -229,8 +231,8 @@ export function TabIcon({
     // 지난 이동 = 시계
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Circle cx={12} cy={12} r={8.8} stroke={tint} strokeWidth={sw} fill="none" />
-        <Path d="M12 7.2V12l3.2 2" stroke={tint} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <Circle cx={12} cy={12} r={9} {...line} />
+        <Path d="M12 7.5V12l3 2" {...line} />
       </Svg>
     );
   }
@@ -238,23 +240,19 @@ export function TabIcon({
     // 더보기 = 점 세 개. 눌러도 화면이 바뀌지 않고 메뉴가 올라온다는 신호
     return (
       <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Circle cx={5.4} cy={12} r={1.9} fill={tint} />
-        <Circle cx={12} cy={12} r={1.9} fill={tint} />
-        <Circle cx={18.6} cy={12} r={1.9} fill={tint} />
+        <Circle cx={5.5} cy={12} r={1.6} {...line} />
+        <Circle cx={12} cy={12} r={1.6} {...line} />
+        <Circle cx={18.5} cy={12} r={1.6} {...line} />
       </Svg>
     );
   }
-  // 주변 = 위치 핀
+  // 주변 = 사람들(커뮤니티). 앞사람 하나 + 뒤로 살짝 겹친 사람 하나
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 21c4.4-4.6 6.6-7.7 6.6-10.6A6.6 6.6 0 0 0 5.4 10.4C5.4 13.3 7.6 16.4 12 21z"
-        stroke={tint}
-        strokeWidth={sw}
-        fill="none"
-        strokeLinejoin="round"
-      />
-      <Circle cx={12} cy={10.2} r={2.4} fill={tint} />
+      <Circle cx={9.5} cy={8} r={3.4} {...line} />
+      <Path d="M3 19.5c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" {...line} />
+      <Path d="M15.5 4.9a3.4 3.4 0 0 1 0 6.2" {...line} />
+      <Path d="M17.2 13.7c2.5.6 3.8 2.6 3.8 5.8" {...line} />
     </Svg>
   );
 }
@@ -458,6 +456,19 @@ export function SparkIcon({ size = 16, tint = color.primary }: { size?: number; 
         d="M10 1.2C10.5 6.6 13.4 9.5 18.8 10C13.4 10.5 10.5 13.4 10 18.8C9.5 13.4 6.6 10.5 1.2 10C6.6 9.5 9.5 6.6 10 1.2Z"
         fill={tint}
       />
+    </Svg>
+  );
+}
+
+/** 마이크 — 탭바 가운데 음식 인식 버튼용 */
+export function MicIcon({ size = 24, tint = '#fff' }: { size?: number; tint?: string }) {
+  const sw = 2;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Rect x={9} y={3} width={6} height={11} rx={3} fill={tint} />
+      <Path d="M6 11a6 6 0 0 0 12 0" stroke={tint} strokeWidth={sw} fill="none" strokeLinecap="round" />
+      <Line x1={12} y1={17} x2={12} y2={20.5} stroke={tint} strokeWidth={sw} strokeLinecap="round" />
+      <Line x1={8.5} y1={20.5} x2={15.5} y2={20.5} stroke={tint} strokeWidth={sw} strokeLinecap="round" />
     </Svg>
   );
 }

@@ -5,13 +5,13 @@
  *
  *  '더보기'만 화면을 바꾸지 않고 시트를 올린다. 자주 쓰지 않는 설정·이동 기록을
  *  거기 모아, 상시 노출되는 탭 자리는 실제로 매일 쓰는 것만 차지하게 했다. */
-import React, { useEffect, useState } from 'react';
-import { Keyboard, LayoutAnimation, Pressable, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Keyboard, LayoutAnimation, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { color, type } from '../theme/tokens';
-import { BookmarkIcon, Chevron, GearIcon, PersonIcon, TabIcon } from './primitives';
+import { color, shadow, type } from '../theme/tokens';
+import { BookmarkIcon, Chevron, GearIcon, MicIcon, PersonIcon, TabIcon } from './primitives';
 import { Card, haptic } from './common';
 import { Sheet } from './Sheet';
 import type { RootStackParamList } from '../../App';
@@ -93,23 +93,33 @@ export function TabBar() {
           backgroundColor: color.surface,
           borderTopWidth: 1,
           borderTopColor: color.hairline,
-          paddingTop: 10,
-          paddingHorizontal: 24,
-          paddingBottom: Math.max(insets.bottom, 10),
+          paddingTop: 6,
+          paddingHorizontal: 20,
+          paddingBottom: Math.max(insets.bottom - 4, 6),
           flexDirection: 'row',
           justifyContent: 'space-between',
+          alignItems: 'flex-start',
         }}
       >
-        {TABS.map(tab => {
+        {TABS.map((tab, i) => {
           const active = tab.key === activeKey;
           return (
+            <React.Fragment key={tab.key}>
+            {i === 2 && <FoodButton />}
             <Pressable
-              key={tab.key}
               onPress={() => onPressTab(tab.key)}
-              hitSlop={{ top: 6, bottom: 6, left: 10, right: 10 }}
-              style={({ pressed }) => ({ width: 64, alignItems: 'center', gap: 5, opacity: pressed ? 0.6 : 1 })}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              style={({ pressed }) => ({
+                width: 64,
+                paddingVertical: 7,
+                borderRadius: 16,
+                backgroundColor: active ? color.primaryTint : 'transparent',
+                alignItems: 'center',
+                gap: 5,
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
-              <TabIcon name={tab.key} size={22} tint={active ? color.primary : color.stroke} />
+              <TabIcon name={tab.key} size={22} tint={active ? color.primary : color.body} />
               <Text
                 style={{
                   fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
@@ -121,6 +131,7 @@ export function TabBar() {
                 {tab.label}
               </Text>
             </Pressable>
+            </React.Fragment>
           );
         })}
       </View>
@@ -137,6 +148,88 @@ export function TabBar() {
         }}
       />
     </>
+  );
+}
+
+/** 가운데 떠 있는 음식 인식 버튼 — 탭바 상단선 위로 솟아 있다. 아직 동작은 없다(디자인만) */
+const FOOD_BTN = 56;
+const FOOD_LIFT = 18;
+
+/** 파형 막대 — 개수·최소/최대 높이. 라벨(11px + 5px 간격) 자리에 들어간다 */
+const BAR_COUNT = 5;
+const BAR_MIN = 3;
+const BAR_MAX = 16;
+
+function FoodButton() {
+  const [listening, setListening] = useState(false);
+  return (
+    <View style={{ width: 64, alignItems: 'center', gap: 5, marginTop: -(FOOD_LIFT + 6) }}>
+      <Pressable
+        onPress={() => {
+          haptic();
+          setListening(v => !v);
+        }}
+        accessibilityLabel={listening ? '음성 인식 중, 누르면 멈춤' : '음식 인식'}
+        hitSlop={6}
+        style={({ pressed }) => ({
+          width: FOOD_BTN,
+          height: FOOD_BTN,
+          borderRadius: FOOD_BTN / 2,
+          backgroundColor: listening ? color.green : color.primary,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderWidth: 4,
+          borderColor: color.surface,
+          ...shadow.cardElevated,
+          elevation: 6,
+          transform: [{ scale: pressed ? 0.94 : 1 }],
+        })}
+      >
+        <MicIcon size={26} />
+      </Pressable>
+      <View style={{ height: BAR_MAX, justifyContent: 'center' }}>
+        {listening && <VolumeBars />}
+      </View>
+    </View>
+  );
+}
+
+/** 음량 신호 — 아직 마이크는 없다. 타이머로 0~1 을 흔들어 모션만 보여준다.
+ *  실제 미터링이 들어오면 이 훅 안의 setLevel 자리에 붙인다. */
+function useFakeLevel() {
+  const [level, setLevel] = useState(0.2);
+  useEffect(() => {
+    const id = setInterval(() => setLevel(0.15 + Math.random() * 0.85), 120);
+    return () => clearInterval(id);
+  }, []);
+  return level;
+}
+
+function VolumeBars() {
+  const level = useFakeLevel();
+  const anims = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(BAR_MIN))).current;
+
+  useEffect(() => {
+    // 가운데가 가장 크고 바깥으로 갈수록 작다 — 한 값으로 다섯 막대를 움직인다
+    const weights = [0.45, 0.8, 1, 0.8, 0.45];
+    Animated.parallel(
+      anims.map((a, i) =>
+        Animated.timing(a, {
+          toValue: BAR_MIN + (BAR_MAX - BAR_MIN) * level * weights[i],
+          duration: 110,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: false,
+        }),
+      ),
+    ).start();
+  }, [level, anims]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, height: BAR_MAX }}>
+      {anims.map((h, i) => (
+        <Animated.View key={i} style={{ width: 3, height: h, borderRadius: 1.5, backgroundColor: color.green }} />
+      ))}
+    </View>
   );
 }
 

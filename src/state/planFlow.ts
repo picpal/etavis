@@ -17,8 +17,11 @@ export type PlanRequest = {
   mode: Mode;
   arriveByMin: number | null;
   departAtMin: number;
-  /** 칩에서. id는 칩 id 그대로 — 슬롯 status를 칩에 되돌릴 때 쓴다 */
-  stops: { id: string; queries: string[]; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string; near?: NearSide; loadBefore?: Load; loadAfter?: Load; needWhen?: NeedWhen }[];
+  /** 칩에서. id는 칩 id 그대로 — 슬롯 status를 칩에 되돌릴 때 쓴다.
+   *  `fixed` 는 **이미 정해진 가게**다(`state.stops`). 있으면 검색은 그대로 돌되
+   *  고르기만 이 가게로 닫는다(`runPlan`). `placeId` 는 필수다 — 진짜 공급자 id 가
+   *  없으면 후보로 끼워 넣을 방법이 없고, 이 계획은 후보 id 합성을 금지한다. */
+  stops: { id: string; queries: string[]; count: number; flexible: boolean; openNow: boolean; stopKind: 'brand' | 'category' | 'specific'; why?: string; near?: NearSide; loadBefore?: Load; loadAfter?: Load; needWhen?: NeedWhen; fixed?: { placeId: string; name: string; coord: LatLng } }[];
   order: 'auto' | 'locked';
 };
 
@@ -124,7 +127,10 @@ export function requestKey(r: PlanRequest): string {
   // mode 는 아래 배열에 이미 있으므로, 이것으로 decideNear 의 입력이 전부 키에 들어간다
   const stops = r.stops.map(s =>
     `${s.queries.join('>')}×${s.count}${s.flexible ? '' : '!'}${s.openNow ? '?' : ''}`
-    + `@${s.near ?? 'any'}/${s.loadBefore ?? 'none'}/${s.loadAfter ?? 'none'}/${s.needWhen ?? 'unknown'}`,
+    + `@${s.near ?? 'any'}/${s.loadBefore ?? 'none'}/${s.loadAfter ?? 'none'}/${s.needWhen ?? 'unknown'}`
+    // 고정도 계산을 바꾼다 — 빼 두면 가게를 바꿔도 같은 키라 재계산을 통째로 건너뛴다.
+    // 장소 id 만 쓴다: 이름은 표시용이고, 좌표는 같은 가게에서도 공급자가 흔든다
+    + (s.fixed ? `=${s.fixed.placeId}` : ''),
   ).join('|');
   return [c(r.origin), c(r.destination), r.mode, r.arriveByMin ?? '-', r.order, stops].join('#');
 }

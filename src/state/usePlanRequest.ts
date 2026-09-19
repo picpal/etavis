@@ -20,12 +20,13 @@ export function usePlanRequest(): PlanRequest | null {
   const destination = state.destinationCoord ?? state.dataset.destination.coord;
   return useMemo(() => {
     if (!origin || !destination) return null;
-    const stops = requestStopsFromChips(state.chips);
+    // state.stops 도 같이 넘긴다 — 이미 정해진 가게가 요청에 실려야 재검색이 그걸 안 뒤엎는다
+    const stops = requestStopsFromChips(state.chips, state.stops);
     return {
       origin, destination, originName: originDisplay, destinationName: destinationDisplay,
       mode: state.mode, arriveByMin: state.arriveByMin, departAtMin: nowMin(), stops, order: 'auto',
     };
     // departAtMin은 렌더마다 바뀌면 안 된다 — 분이 바뀔 때만
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [origin?.latitude, origin?.longitude, destination?.latitude, destination?.longitude, state.chips, state.mode, state.arriveByMin, originDisplay, destinationDisplay, Math.floor(Date.now() / 60000)]);
+  }, [origin?.latitude, origin?.longitude, destination?.latitude, destination?.longitude, state.chips, state.stops, state.mode, state.arriveByMin, originDisplay, destinationDisplay, Math.floor(Date.now() / 60000)]);
 }

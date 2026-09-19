@@ -193,14 +193,22 @@ const stops = stopsForChips(state.dataset, keep, held);
 **파일**: 수정 `src/state/usePlanRequest.ts`, `src/state/planRequest.ts`, `src/state/planFlow.ts`
 · 테스트 `src/state/planRequest.test.ts`, `src/state/planFlow.test.ts`
 
-**인터페이스**: `PlanRequest['stops'][n].fixed?: { placeId?: string; name: string; coord: LatLng }`
+**인터페이스**: `PlanRequest['stops'][n].fixed?: { placeId: string; name: string; coord: LatLng }`
+
+> **계획을 고쳐 적음(2026-09-19): `placeId` 는 선택이 아니라 필수다.**
+> 계획은 `placeId?` 로 두고 "목에서 온 스톱은 이름·좌표로만 맞춘다"고 했는데, 그러면
+> 과제 4 가 **검색 결과에 없는 고정을 후보로 끼워 넣을 때 id 를 지어내야 한다** —
+> 이 계획의 전역 제약("후보 id 는 합성하지 않는다")을 정면으로 어긴다. 그래서
+> **장소 id 가 없는 스톱은 아예 고정하지 않는다.** 그 대상은 목 데이터셋에서 온
+> 스톱뿐이고(`asStopState`), 고정해서도 안 되는 것들이다 — 개발 메뉴의 가짜 가게가
+> 진짜 경로에 눌러앉는다. (실제로는 목 스톱의 `baseId` 가 풀 id 라 칩 id 와 애초에
+> 안 맞지만, 그 우연에 기대지 않고 `selectedCandidateId` 유무로 명시한다.)
 
 `placeId` 는 **`stop.selectedCandidateId` 를 그대로 옮긴 것**이다(과제 1). 요청은 상태가
 아니라 스냅샷이라 여기선 사본이 문제가 안 된다 — 매 렌더 다시 조립되고 아무도 갱신하지
-않는다. `placeId` 가 `?` 인 이유: 목 데이터셋에서 온 스톱(`asStopState`)은 이 값이 없다.
-그런 스톱은 이름·좌표로만 맞춘다.
+않는다.
 
-- [ ] **1.** 실패 테스트
+- [x] **1.** 실패 테스트
 ```ts
 test('정해진 스톱이 있는 칩은 그 가게를 요청에 싣는다', () => { /* fixed.name === '봄빛온누리약국' */ });
 test('스톱이 없는 칩에는 fixed 가 없다', () => { /* undefined */ });
@@ -212,10 +220,16 @@ test('requestKey 가 고정을 본다 — 안 그러면 바꿔도 재계산을 �
 });
 test('고정된 가게가 다른 곳으로 바뀌면 키도 바뀐다', () => { /* 두 fixed 의 키가 다르다 */ });
 ```
-- [ ] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
+- [x] **2~4.** 실패 확인 → 구현 → 초록 → 커밋
 
-`requestKey` 의 스톱 조각에 `+fixed?.placeId ?? coord` 를 잇는다. 이름은 표시용이라 안 넣는다
-(그 파일의 기존 원칙).
+`requestKey` 의 스톱 조각에 `=${fixed.placeId}` 를 잇는다. 이름은 표시용이라 안 넣고
+(그 파일의 기존 원칙), **좌표도 안 넣는다** — 같은 가게인데도 공급자가 좌표를 몇 미터
+흔들면 아무도 안 바꾼 요청이 매번 새 요청이 된다. 테스트로 묶었다
+(`고정된 가게의 표시 이름만 달라지면 같은 요청이다`).
+
+`usePlanRequest` 의 의존 배열에 `state.stops` 를 더했다. **재계산 루프는 안 생긴다** —
+`isStale` 은 배너와 '다시 계산' 버튼만 켜고(`OptionsScreen.tsx:198,215`) 스스로 계산을
+걸지 않는다.
 
 ## 과제 4: 고정된 가게가 이긴다 — **검색은 그대로 돈다**
 

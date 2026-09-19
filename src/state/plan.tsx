@@ -278,13 +278,24 @@ function initState(ds: Dataset, seed = false): PlanState {
 }
 
 /** 칩의 검색어를 데이터셋 풀의 경유지에 맞춘다.
-    실제 서버에서는 이 자리가 카카오 로컬 검색 결과가 된다 */
-function stopsForChips(ds: Dataset, chips: IntentChip[]): StopState[] {
+    실제 서버에서는 이 자리가 카카오 로컬 검색 결과가 된다.
+
+    `held` 가 있으면 **그 칩은 찾지 않고 이미 정해진 스톱을 그대로 쓴다.** 보존을 이 함수
+    밖에서 하면(칩마다 한 번씩 부르면) `used` 가 매번 새로 생겨 같은 풀 항목이 여러
+    슬롯에 붙는다 — 같은 가게를 두 번 들르는 계획이 된다. 중복 제거와 보존은 한 루프에
+    있어야 한다. */
+function stopsForChips(ds: Dataset, chips: IntentChip[], held?: ReadonlyMap<string, StopState>): StopState[] {
   const pool = [...ds.stops, ...(ds.extraStops ?? [])];
   const used = new Set<string>();
   const out: StopState[] = [];
   for (const chip of chips) {
     if (chip.kind !== 'stop') continue;
+    const kept = held?.get(chip.id);
+    if (kept) {
+      used.add(kept.baseId); // 목에서 온 스톱이면 풀 id 다 — 다른 칩이 같은 곳을 또 집지 않게
+      out.push(kept);
+      continue;
+    }
     const hit = pool.find(p => !used.has(p.id) && chip.queries.some(q => p.name.includes(q) || p.category === q));
     if (!hit) continue; // 못 찾은 건 칩만 남는다 — 사용자가 보고 지울 수 있다
     used.add(hit.id);
@@ -687,7 +698,21 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       if (arriveBy != null) {
         keep.push({ id: `a-${chipSeq++}`, kind: 'arriveBy', label: `${toHHMM(arriveBy).padStart(5, '0')}까지`, value: arriveBy });
       }
-      const stops = stopsForChips(state.dataset, keep);
+      /* **이미 정해진 가게는 건드리지 않는다.**
+         예전엔 `stopsForChips(state.dataset, keep)` 한 줄로 스톱 전체를 목 데이터셋에서
+         다시 매칭했다. 확정된 가게는 `state.stops` 에 있는데 쳐다보지도 않으니,
+         "빵집도 들러줘" 한 마디에 손도 안 댄 약국이 봄빛온누리 → 은하로 바뀌었다
+         (2026-09-19 실측). `asStopState` 가 `selectedCandidateId`·`replaceDeltaMin` 을
+         0 으로 지워서 사용자가 교체 시트에서 고른 매장까지 같이 날아갔다.
+
+         `baseId` 로 집는 이유: 라이브 확정에서 `baseId` 가 곧 칩 id 다
+         (`planFlowBridge.ts` 의 `baseId: v.slotId`, 슬롯 id 는 `planRequest.ts` 에서 `c.id`).
+         목 데이터셋에서 온 스톱은 `baseId` 가 데이터셋 stop id 라 여기 안 걸리고
+         종전대로 다시 매칭된다 — 목에는 지킬 '사용자 결정'이 없으니 그게 맞다.
+
+         지운 칩은 `keep` 에 없으니 스톱도 같이 사라진다. 보존이 삭제를 이기지 않는다. */
+      const held = new Map(state.stops.map(s => [s.baseId, s]));
+      const stops = stopsForChips(state.dataset, keep, held);
       /* 출발지·목적지 변경 — 좌표를 아는 곳일 때만 적용한다.
          이름만 바꾸면 경로를 못 그린다(예전 '입력한 대로 설정'이 그래서 빠졌다).
          아는 곳 = 내가 등록한 장소(별칭·상호)와 최근에 다녀온 곳. LLM 이 좌표를 짓지 않는다 */

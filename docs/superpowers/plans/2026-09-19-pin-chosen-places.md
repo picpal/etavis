@@ -130,7 +130,7 @@ chip.id ── baseId ── slotId        planFlowBridge.ts:257, plan.tsx:171
 
 **파일**: 수정 `src/state/plan.tsx` · 테스트 `src/state/plan.test.ts`
 
-- [ ] **1.** 실패 테스트
+- [x] **1.** 실패 테스트
 ```ts
 test('대화로 경유지를 추가해도 이미 정해진 가게는 그대로다', () => {
   const before = { ...base, chips: [stopChip('c1', ['약국'])], stops: [resolved('c1', '봄빛온누리약국')] };
@@ -150,15 +150,40 @@ test('사용자가 교체한 매장이 대화 편집에서 살아남는다 — a
 test('지운 경유지의 스톱은 안 남는다', () => { /* remove 뒤 stops 에서 사라진다 */ });
 test('새로 추가한 칩은 스톱이 없다 — 검색해서 채울 자리다', () => { /* 빵집은 stops 에 없음 */ });
 ```
-- [ ] **2.** 실패 확인
-- [ ] **3.** 구현 — `stopsForChips` 를 부르기 전에 기존 스톱을 `baseId` 로 집어 그대로 쓴다
+- [x] **2.** 실패 확인 — 앞의 셋이 빨강(넷째는 원래 초록. 고침이 과하게 보존하는지를 재는 가드다)
+- [x] **3.** 구현 — **계획의 스케치는 쓰지 않았다. 중복 제거를 깨뜨린다.**
+
+> **계획이 틀린 두 번째 지점(2026-09-19).** 아래 스케치대로 칩마다 `stopsForChips` 를
+> 부르면 함수 안의 `used` 집합이 매 호출 새로 생긴다. 풀에 은행이 하나뿐인데
+> `은행` 칩이 셋이면(`count: 3`) **같은 스톱이 세 번 들어간다** — id 가 겹쳐 LEGS 체인
+> 키와 화면 키가 같이 무너진다. 이 계획의 전역 제약("같은 가게는 어디서 와도 같은
+> id")이 막으려던 바로 그 결함을 구현 스케치가 도로 만든 것이다.
+>
+> ```ts
+> // 쓰지 않음 — 중복 제거가 호출마다 초기화된다
+> const byBase = new Map(state.stops.map(s => [s.baseId, s]));
+> const stops = keep.flatMap(c => c.kind !== 'stop' ? []
+>   : byBase.has(c.id) ? [byBase.get(c.id)!]
+>   : stopsForChips(state.dataset, [c]));
+> ```
+
+대신 **보존을 `stopsForChips` 안으로 넣었다.** 중복 제거와 보존이 한 루프에 있어야 한다.
+
 ```ts
-const byBase = new Map(state.stops.map(s => [s.baseId, s]));
-const stops = keep.flatMap(c => c.kind !== 'stop' ? []
-  : byBase.has(c.id) ? [byBase.get(c.id)!]          // 정해진 것은 건드리지 않는다
-  : stopsForChips(state.dataset, [c]));             // 새 칩만 데이터셋에서 찾는다
+function stopsForChips(ds: Dataset, chips: IntentChip[], held?: ReadonlyMap<string, StopState>) {
+  // …루프 안에서
+  const kept = held?.get(chip.id);
+  if (kept) { used.add(kept.baseId); out.push(kept); continue; }
+  // 없으면 종전대로 풀에서 찾는다
+}
+
+// APPLY_INTENT
+const held = new Map(state.stops.map(s => [s.baseId, s]));
+const stops = stopsForChips(state.dataset, keep, held);
 ```
-- [ ] **4.** 초록 → 커밋
+
+- [x] **4.** 초록 → 커밋. 회귀 테스트를 하나 더 달았다 —
+      `같은 곳을 두 번 들르는 계획을 만들지 않는다`
 
 **주의:** 같은 보존을 `NARROW_STOP` 에는 넣지 않는다. 거기선 질의가 바뀌었으니
 정해진 가게를 버리는 게 맞다 — 과제 5 의 해제 경로 중 하나다.

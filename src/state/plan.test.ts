@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ApplyLivePayload, PlanAction, PlanState } from './plan';
+import type { ApplyLivePayload, PlanAction, PlanState, StopState } from './plan';
 
 (globalThis as Record<string, unknown>).__DEV__ = false;
 
@@ -223,6 +223,103 @@ test('다른 곳은 그대로 더한다 — 중복만 막지, 새 경유지를 �
     addStop(['약국']),
   ]);
   assert.deepEqual(stopQueries(s), ['카페', '약국']);
+});
+
+/* ── 대화 편집이 이미 정해진 가게를 갈아치우면 안 된다 ────────────────────
+   실측(2026-09-19, 여의도→용왕산 대중교통): `마트 들러서 장 보고 약국 갔다 집에 갈게`
+   로 확정한 뒤 "빵집도 들러줘" 한 마디에 약국이 봄빛온누리약국 → 은하약국으로 바뀌었다.
+   사용자는 약국을 건드린 적이 없다.
+
+   원인은 여기다. `APPLY_INTENT` 가 칩을 고친 뒤 `stopsForChips(state.dataset, keep)` 로
+   **스톱 전체를 목 데이터셋에서 다시 매칭**했다. 라이브로 정해진 가게(`state.stops`)는
+   쳐다보지도 않으니 매번 새로 뽑혔고, `asStopState` 가 `selectedCandidateId` 와
+   `replaceDeltaMin` 까지 지워서 사용자가 교체 시트에서 고른 매장도 같이 날아갔다.
+
+   고침: 기존 스톱을 `baseId` 로 집어 **그대로 재사용**하고, 스톱이 없는 새 칩만
+   데이터셋에서 찾는다. 라이브 경로에서 `baseId` 는 곧 칩 id 다
+   (`planFlowBridge.ts:258` 의 `baseId: v.slotId`, 슬롯 id 는 `planRequest.ts:22` 에서 `c.id`). */
+
+/** 라이브 확정이 내려놓은 모양의 스톱 — `baseId` 가 칩 id 이고 장소 id 를 들고 있다 */
+const resolveChips = (s: PlanState, names: string[], extra: Partial<StopState> = {}): PlanState => ({
+  ...s,
+  stops: s.chips
+    .filter(c => c.kind === 'stop')
+    .map((c, i) => ({
+      id: c.id, baseId: c.id, name: names[i], category: c.label,
+      coord: { latitude: 37.52 + i / 1000, longitude: 126.92 },
+      dwellMin: 10, arriveAt: '17:53', legMin: 12, legKm: 3.1,
+      openState: 'open' as const, openNote: '체류 10분 · 영업 중', tasks: [],
+      replaceDeltaMin: 0, selectedCandidateId: `k-${i}`, ...extra,
+    })),
+});
+
+const stopNames = (s: PlanState) => s.stops.map(x => x.name);
+
+test('대화로 경유지를 추가해도 이미 정해진 가게는 그대로다', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } }]),
+    ['봄빛온누리약국'],
+  );
+  assert.deepEqual(stopNames(before), ['봄빛온누리약국'], '전제: 약국이 정해져 있다');
+
+  const after = planReducer(before, addStop(['빵집']));
+  const pharmacy = after.stops.find(s => s.baseId === before.chips[0].id);
+  assert.equal(pharmacy?.name, '봄빛온누리약국', '사용자가 안 건드린 약국이 바뀌면 안 된다');
+});
+
+test('사용자가 교체한 매장이 대화 편집에서 살아남는다 — asStopState 가 지우던 것', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['마트']).intent, resetStops: true } }]),
+    ['한청할인마트'],
+    { selectedCandidateId: 'k-99', replaceDeltaMin: 4 },
+  );
+
+  const after = planReducer(before, addStop(['빵집']));
+  const mart = after.stops.find(s => s.baseId === before.chips[0].id);
+  assert.equal(mart?.selectedCandidateId, 'k-99', '고른 매장의 id 가 남아야 교체 시트가 그걸 현재로 안다');
+  assert.equal(mart?.replaceDeltaMin, 4, '교체로 늘어난 시간까지 같이 남아야 한다');
+});
+
+test('지운 경유지의 스톱은 안 남는다 — 보존이 삭제를 이기면 안 된다', () => {
+  const before = resolveChips(
+    run(fresh(), [
+      { type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } },
+      addStop(['마트']),
+    ]),
+    ['봄빛온누리약국', '한청할인마트'],
+  );
+  assert.equal(before.stops.length, 2, '전제: 두 곳이 정해져 있다');
+
+  const after = planReducer(before, {
+    ...addStop(['약국']),
+    intent: { ...addStop(['약국']).intent, stops: [{ ...addStop(['약국']).intent.stops[0], op: 'remove' as const }] },
+  });
+  assert.deepEqual(stopNames(after), ['한청할인마트'], '지운 약국의 스톱이 남으면 안 된다');
+});
+
+test('새로 추가한 칩은 스톱이 없다 — 검색해서 채울 자리다', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } }]),
+    ['봄빛온누리약국'],
+  );
+
+  const after = planReducer(before, addStop(['빵집']));
+  const bakeryChip = after.chips.find(c => c.kind === 'stop' && c.label === '빵집')!;
+  assert.equal(after.stops.some(s => s.baseId === bakeryChip.id), false, '아직 안 정해진 곳에 스톱이 있으면 안 된다');
+  assert.equal(after.stopCount, after.stops.length, 'stopCount 는 stops 를 따라간다');
+});
+
+test('같은 곳을 두 번 들르는 계획을 만들지 않는다 — 칩을 하나씩 찾아도 중복 제거는 살아 있다', () => {
+  /* 보존을 넣으면서 `stopsForChips` 를 칩마다 부르고 싶어지는데, 그러면 함수 안의
+     `used` 집합이 매번 새로 생겨 같은 풀 항목이 여러 슬롯에 붙는다. 스톱 id 가 겹치면
+     LEGS 체인 키와 화면 키가 같이 무너진다 — 풀에 은행이 하나뿐인 목 데이터셋으로 잰다 */
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['은행']).intent, resetStops: true } },
+    addStop(['은행'], 3),
+  ]);
+  assert.equal(stopQueries(s).length, 3, '전제: 칩은 count 만큼 선다');
+  assert.equal(new Set(s.stops.map(x => x.id)).size, s.stops.length, '같은 스톱이 두 번 들어가면 안 된다');
+  assert.equal(s.stops.length, 1, '풀에 은행이 하나뿐이면 못 채운 칩은 스톱 없이 남는다');
 });
 
 test('목적지를 고르면 주소도 같이 실린다 — 최근 목록의 둘째 줄이 여기서 온다', () => {

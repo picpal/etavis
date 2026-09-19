@@ -22,7 +22,8 @@ import { logTrack, newRunId } from '../lib/trackLog';
 
 type PlanFlowApi = {
   state: PlanFlowState;
-  start: (request: PlanRequest) => void;
+  /** opts.timeoutMs — 개발 메뉴(A8)가 예산을 0에 가깝게 줘서 진짜 타임아웃 경로를 타게 한다 */
+  start: (request: PlanRequest, opts?: { timeoutMs?: number }) => void;
   select: (idx: number) => void;
   setOverride: (optionIdx: number, slotId: string, candidateId: string) => void;
   reset: () => void;
@@ -166,10 +167,10 @@ export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
 
   const api = useMemo<PlanFlowApi>(() => ({
     state,
-    start: request => {
+    start: (request, opts) => {
       const cur = stateRef.current;
       if (isBusy(cur.phase) && cur.request && requestKey(cur.request) === requestKey(request)) return;
-      void runPlan(request, { provider: deps.provider, search: deps.search, enrich: deps.enrich, dispatch });
+      void runPlan(request, { provider: deps.provider, search: deps.search, enrich: deps.enrich, dispatch, timeoutMs: opts?.timeoutMs });
     },
     select: idx => dispatch({ type: 'SELECT_OPTION', idx }),
     setOverride: (optionIdx, slotId, candidateId) => dispatch({ type: 'SET_OVERRIDE', optionIdx, slotId, candidateId }),

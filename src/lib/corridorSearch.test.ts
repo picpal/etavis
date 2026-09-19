@@ -415,3 +415,65 @@ test('앵커 컷도 near 쪽을 먼저 채운다 — 폴백 경로', async () =>
   // 반대쪽을 버리지 않는다 — 완화가 되돌릴 후보가 없으면 완화가 무의미해진다
   assert.equal(r.candidates.length, 2);
 });
+
+/* ── 표본 하나가 실패해도 계획이 죽지 않는다 ──────────────────────────────
+   2026-09-19 프로덕션: /places 30건 중 1건이 503(KV PUT 429)으로 죽었고,
+   Promise.all 이라 그 하나가 검색 전체를 reject 시켜 계획이 통째로 실패했다.
+   사용자에겐 "연결이 불안정해요"만 보였다. 표본 하나는 표본 하나만큼만 잃어야 한다. */
+
+/** n번째 표본 호출만 던지는 검색 함수 */
+function flakySearch(catalog: PlaceCandidate[], failOn: (i: number) => boolean) {
+  let i = 0;
+  const fn: SearchFn = async (_q, near, radiusM) => {
+    const mine = i++;
+    if (failOn(mine)) throw new Error('KV PUT failed: 429 Too Many Requests');
+    return catalog.filter(c => haversineM(near, c.coord) <= radiusM);
+  };
+  return fn;
+}
+
+test('표본 하나가 던져도 나머지 표본의 후보로 결과를 낸다', async () => {
+  const c1: PlaceCandidate = { id: 'c1', name: 'c1', coord: at(37.5, 127.05) };
+  const fn = flakySearch([c1], i => i === 0);
+
+  const r = await searchAlong(poly, 'q', { need: 1, initialRadiusM: 2000, maxRadiusM: 15000 }, fn);
+
+  assert.equal(r.status, 'ok');
+  assert.deepEqual(r.candidates.map(c => c.id), ['c1']);
+});
+
+test('표본이 전부 던지면 던진다 — "없다"와 "못 봤다"를 섞으면 안 된다', async () => {
+  const fn = flakySearch([], () => true);
+
+  await assert.rejects(
+    () => searchAlong(poly, 'q', { need: 1, initialRadiusM: 2000, maxRadiusM: 15000 }, fn),
+    /429/,
+  );
+});
+
+test('far 폴백에서도 표본 하나는 표본 하나만큼만 잃는다', async () => {
+  // 회랑 안에는 없고 멀리 한 곳만 있다 → far 폴백으로 내려간다
+  const farOne: PlaceCandidate = { id: 'far', name: 'far', coord: at(37.6, 127.05) };
+  const fn = flakySearch([farOne], i => i === 0);
+
+  const r = await searchAlong(
+    poly, 'q',
+    { need: 1, initialRadiusM: 2000, maxRadiusM: 4000, farRadiusM: 20_000 },
+    fn,
+  );
+
+  assert.equal(r.status, 'far');
+  assert.deepEqual(r.candidates.map(c => c.id), ['far']);
+});
+
+test('앵커 검색도 앵커 하나가 던지면 그 앵커만 잃는다', async () => {
+  const a1: Anchor = { id: 'a1', name: '역1', coord: at(37.5, 127.02) };
+  const a2: Anchor = { id: 'a2', name: '역2', coord: at(37.5, 127.08) };
+  const near2: PlaceCandidate = { id: 'n2', name: 'n2', coord: at(37.5, 127.081) };
+  const fn = flakySearch([near2], i => i === 0);
+
+  const r = await searchAtAnchors([a1, a2], 'q', { need: 1, maxRadiusM: 1500 }, fn);
+
+  assert.equal(r.status, 'ok');
+  assert.deepEqual(r.candidates.map(c => c.id), ['n2']);
+});

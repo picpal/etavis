@@ -1,9 +1,11 @@
-/** 하단 입력 바 — 입력창(minHeight 52, R18) + 52×52 전송 버튼 */
+/** 하단 입력 바 — 입력창(minHeight 52, R18) + (선택) 52×52 마이크 + 52×52 전송 버튼 */
 import React, { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, radius, shadow, type } from '../theme/tokens';
 import { haptic } from './common';
+import { MicIcon } from './primitives';
+import { VoiceBars } from './VoiceBars';
 
 function SendGlyph() {
   return (
@@ -40,6 +42,7 @@ export function BottomInputBar({
   onSubmit,
   withBottomInset,
   draft,
+  voice,
 }: {
   placeholder: string;
   editable?: boolean;
@@ -52,9 +55,12 @@ export function BottomInputBar({
   withBottomInset?: boolean;
   /** 외부에서 입력값 주입 (수정 모드) — key가 바뀔 때마다 text로 교체 */
   draft?: { text: string; key: string };
+  /** 마이크 버튼을 보인다. 아직 인식은 없고 듣는 중 표시만 토글한다(디자인) */
+  voice?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const [text, setText] = useState('');
+  const [listening, setListening] = useState(false);
 
   React.useEffect(() => {
     if (draft) setText(draft.text);
@@ -106,19 +112,46 @@ export function BottomInputBar({
             ...shadow.input,
           }}
         >
-          <TextInput
-            editable={editable}
-            autoFocus={autoFocus}
-            value={text}
-            onChangeText={setText}
-            onSubmitEditing={submit}
-            placeholder={placeholder}
-            placeholderTextColor={color.placeholder}
-            selectionColor={color.primary}
-            returnKeyType="send"
-            style={[type.bodyL, { color: color.ink, paddingVertical: 0 }]}
-          />
+          {listening ? (
+            <View style={{ alignItems: 'center' }}>
+              <VoiceBars />
+            </View>
+          ) : (
+            <TextInput
+              editable={editable}
+              autoFocus={autoFocus}
+              value={text}
+              onChangeText={setText}
+              onSubmitEditing={submit}
+              placeholder={placeholder}
+              placeholderTextColor={color.placeholder}
+              selectionColor={color.primary}
+              returnKeyType="send"
+              style={[type.bodyL, { color: color.ink, paddingVertical: 0 }]}
+            />
+          )}
         </View>
+      )}
+      {voice && (
+        <Pressable
+          onPress={() => {
+            haptic();
+            setListening(v => !v);
+          }}
+          accessibilityLabel={listening ? '음성 인식 중, 누르면 멈춤' : '음성으로 말하기'}
+          style={({ pressed }) => ({
+            width: 52,
+            height: 52,
+            borderRadius: radius.input,
+            backgroundColor: listening ? color.green : color.surface,
+            alignItems: 'center',
+            justifyContent: 'center',
+            ...shadow.input,
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <MicIcon size={24} tint={listening ? '#fff' : color.primary} />
+        </Pressable>
       )}
       <Pressable
         onPress={onPressIn ?? submit}

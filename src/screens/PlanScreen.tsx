@@ -661,6 +661,7 @@ export function PlanScreen({ navigation }: Props) {
         <BottomInputBar
           placeholder="조건을 더 말해보세요"
           autoFocus
+          voice
           onSubmit={applyChat}
         />
       </KeyboardAvoidingView>

@@ -270,7 +270,7 @@ test('보강이 실패해도 결과는 나온다', async () => {
  * 실측(mockRouteProvider)으로 확인한 실제 값 — near totalMin ≈27.94분,
  * far로 바꾸면 totalMin ≈28.12분(약 +0.18분). 이 격차로 마감 경계를 가른다.
  */
-async function runTrendSwap(arriveByMin: number | null): Promise<PlanFlowAction[]> {
+async function runTrendSwap(arriveByMin: number | null, fixed?: { placeId: string; name: string; coord: LatLng }): Promise<PlanFlowAction[]> {
   const near: PlaceCandidate = { id: 'near', name: '카페 근처', coord: { latitude: 37.5, longitude: 127.05 } };
   const far: PlaceCandidate = { id: 'far', name: '카페 트렌드', coord: { latitude: 37.505, longitude: 127.05 } };
   const filler1: PlaceCandidate = { id: 'f1', name: '카페 필러1', coord: { latitude: 37.6, longitude: 127.05 } };
@@ -294,7 +294,7 @@ async function runTrendSwap(arriveByMin: number | null): Promise<PlanFlowAction[
   };
   const actions: PlanFlowAction[] = [];
   await runPlan(
-    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category' }], {
+    req([{ id: 's1', queries: ['카페'], count: 1, flexible: true, openNow: false, stopKind: 'category', fixed }], {
       origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.5, longitude: 127.1 },
       departAtMin: 540, arriveByMin,
     }),
@@ -1101,4 +1101,93 @@ test('양쪽 끝의 슬롯 수를 한 덩어리로 합치지 않는다', async (
   // 양쪽을 한 덩어리로 세면 4가 돼 완화가 돈다
   assert.equal(s.nearRelaxedRaw, false);
   assert.equal(s.nearRadiusM, 1500);
+});
+
+
+/* ── 정해진 가게가 이긴다 — 검색은 그대로 돈다 ─────────────────────────────
+   확정된 계획에 경유지를 하나 추가하면 손도 안 댄 가게가 바뀌었다(2026-09-19 실측).
+   요청의 `fixed` 가 그 가게를 슬롯까지 들고 오고(planRequest), 여기서 `candidates[0]`
+   으로 올린 뒤 `flexible:false` 로 닫는다 — `enumerate` 가 그때 한 곳만 고른다
+   (`enumerate.ts:7`).
+
+   **검색을 건너뛰지 않는다.** 건너뛰면 후보가 하나뿐이라 매장 교체 시트가 비고,
+   `/enrich` 가 안 돌아 영업시간 없이 "영업 중"이라 말하고, `near`·`searchStatus` 가
+   실제로 일어나지 않은 일을 적는다. 사용자가 신고한 건 속도가 아니라 가게가 바뀐다는
+   것이다. */
+const fixedSlots = (actions: PlanFlowAction[]) =>
+  (actions.find(a => a.type === 'SLOTS') as {
+    type: 'SLOTS';
+    slots: {
+      id: string; flexible: boolean; searchCalls?: number; nearRelaxedRaw?: boolean;
+      fixed?: { placeId: string; source: 'search' | 'filtered' | 'request' };
+      candidates: { id: string; name: string }[];
+    }[];
+  }).slots;
+
+const pharmacyReq = (fixed?: { placeId: string; name: string; coord: LatLng }) =>
+  req([{ id: 's-1', queries: ['약국'], count: 1, flexible: true, openNow: false, stopKind: 'category', fixed }]);
+
+const runFixed = async (r: PlanRequest) => {
+  const { actions, dispatch } = collect();
+  await runPlan(r, { provider: mockRouteProvider(), search: martSearch, dispatch });
+  return fixedSlots(actions);
+};
+
+test('고정된 슬롯도 검색을 돈다 — 교체 시트에 보여줄 대안이 있어야 한다', async () => {
+  const [s] = await runFixed(pharmacyReq({ placeId: 'k2', name: '약국 B', coord: at(37.5, 127.064) }));
+  assert.ok(s.candidates.length > 1, `후보가 하나뿐이면 교체 시트가 빈다 (${s.candidates.length}곳)`);
+  assert.ok((s.searchCalls ?? 0) > 0, '검색을 아예 안 부르면 near·status 가 거짓말이 된다');
+});
+
+test('고정된 가게가 candidates[0] 이고 flexible 이 아니다', async () => {
+  const [s] = await runFixed(pharmacyReq({ placeId: 'k2', name: '약국 B', coord: at(37.5, 127.064) }));
+  assert.equal(s.candidates[0].id, 'k2');
+  assert.equal(s.flexible, false, 'flexible 이 true 면 플래너가 다른 후보를 고른다');
+});
+
+test('검색 결과에 그 가게가 이미 있으면 중복으로 넣지 않고 그것을 올린다', async () => {
+  const [s] = await runFixed(pharmacyReq({ placeId: 'k1', name: '약국 A', coord: at(37.5, 127.1105) }));
+  assert.equal(s.candidates.filter(c => c.id === 'k1').length, 1, 'enumerate 는 id 로 중복 방문을 막는다');
+  assert.equal(s.candidates[0].id, 'k1');
+  assert.equal(s.fixed?.source, 'search', '검색이 준 것이면 그렇게 적어야 한다');
+});
+
+test('검색이 그 가게를 못 찾으면 맨 앞에 끼워 넣는다 — 사용자가 고른 것이 사라지면 안 된다', async () => {
+  const [s] = await runFixed(pharmacyReq({ placeId: 'k-없는곳', name: '봄빛온누리약국', coord: at(37.5, 127.08) }));
+  assert.equal(s.candidates[0].id, 'k-없는곳');
+  assert.equal(s.candidates[0].name, '봄빛온누리약국');
+  assert.equal(s.fixed?.source, 'request', '검색이 못 준 것이면 신호·영업시간이 없다고 적어야 한다');
+});
+
+test('near 로 걸러졌어도 고정은 살아남고, 로그가 그 사실을 적는다', async () => {
+  // 약국 B(k2)는 출발지 쪽이라 near=end 로 걸러진다. 그래도 사용자가 고른 곳이다
+  const r = req([{ id: 's-1', queries: ['약국'], count: 1, flexible: true, openNow: false,
+    stopKind: 'category', near: 'end', fixed: { placeId: 'k2', name: '약국 B', coord: at(37.5, 127.064) } }]);
+  const [s] = await runFixed(r);
+  assert.equal(s.candidates[0].id, 'k2');
+  assert.equal(s.fixed?.source, 'filtered', '걸러낸 걸 되살렸으면 로그가 그렇게 말해야 한다');
+  assert.equal(s.nearRelaxedRaw, false, 'applyNear 는 완화한 적이 없다 — 그 칸을 빌려 쓰면 로그가 거짓말한다');
+});
+
+test('고정이 없는 형제 슬롯은 아무것도 달라지지 않는다', async () => {
+  const r = req([
+    { id: 's-1', queries: ['약국'], count: 1, flexible: true, openNow: false, stopKind: 'category',
+      fixed: { placeId: 'k2', name: '약국 B', coord: at(37.5, 127.064) } },
+    { id: 's-2', queries: ['마트'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+  ]);
+  const [, mart] = await runFixed(r);
+  assert.equal(mart.flexible, true);
+  assert.equal(mart.fixed, undefined);
+});
+
+/* 트렌드 스왑은 RESULT 뒤에 돌면서 업종 슬롯의 선택을 갈아치운다(runPlan.ts:349).
+   검색을 그대로 돌리기로 했으니 고정된 슬롯에도 후보가 30곳 있고, 막지 않으면
+   **사용자가 고른 가게를 트렌드 1위로 덮어쓴다** — 고정의 의미가 없어진다.
+   `flexible:false` 가 곧 "candidates[0] 한 곳"이라는 계약이므로 그걸로 가른다. */
+test('트렌드 스왑이 고정된 가게를 뒤집지 않는다', async () => {
+  const withFix = await runTrendSwap(null, { placeId: 'near', name: '카페 근처', coord: { latitude: 37.5, longitude: 127.05 } });
+  assert.ok(!withFix.some(a => a.type === 'SET_OVERRIDE'), '고정된 슬롯은 스왑 대상이 아니다');
+  const without = await runTrendSwap(null);
+  assert.ok(without.some(a => a.type === 'SET_OVERRIDE' && a.candidateId === 'far'),
+    '전제: 고정이 없으면 이 시나리오는 트렌드 1위로 바뀐다');
 });

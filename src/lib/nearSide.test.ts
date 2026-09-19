@@ -139,3 +139,19 @@ test('사용자가 말한 위치가 태그를 이긴다', () => {
 test('자동차여도 사용자가 말했으면 지킨다', () => {
   assert.equal(decideNear('end', 'car', tags('none', 'none', 'unknown')), 'end');
 });
+
+/* 출처가 다른 두 태그의 우선순위 — 한 번 "뒤집힌 것 아닌가" 하고 열렸던 질문이라
+   답을 테스트로 박아 둔다. `loadAfter` 는 사용자가 탭으로 답한 값이고
+   (`bulkyAsk.ts`), `needWhen` 은 LLM 태그다. 근거는 `decideNear` 주석. */
+
+test('시점이 부담을 덮는 건 beforeArrival 하나뿐이다 — 사용자 답이라도', () => {
+  // 걸어가며 마실 생수: 사용자가 '무거워요'라고 답해도 그 길에서 필요하다.
+  // 도착해서 사면 무게와 무관하게 쓸모가 없다
+  assert.equal(decideNear(undefined, 'walk', tags('none', 'hard', 'beforeArrival')), 'start');
+});
+
+test('그 밖에는 사용자가 답한 부담이 방향을 정한다', () => {
+  // 장보기가 이 경로다 — 가장 흔한 물성 되묻기 케이스
+  assert.equal(decideNear(undefined, 'walk', tags('none', 'hard', 'afterArrival')), 'end');
+  assert.equal(decideNear(undefined, 'transit', tags('none', 'hard', 'unknown')), 'end');
+});

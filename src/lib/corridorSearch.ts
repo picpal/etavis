@@ -29,6 +29,18 @@ export type CorridorSearchOptions = {
   side?: NearSide;
   origin?: LatLng;
   destination?: LatLng;
+  /**
+   * 반경을 **한 회차 더** 넓힐 시간이 있나. `false` 면 그 자리에서 멈추고 지금까지
+   * 모은 것으로 답한다. 없으면 지금까지처럼 사다리를 끝까지 오른다.
+   *
+   * 사다리는 회차마다 순차로 도는데(회차 안은 병렬), 근처에 그 업종이 없으면
+   * 2000→4000→8000→15000 네 회차가 다 돈다. 실측 2026-09-19: 그 20콜이 검색
+   * 단계를 6.4초로 밀어 계획 전체가 12초 예산을 넘겨 버렸다 — 그 시점에 후보는
+   * 이미 손에 있었는데 통째로 버렸다. 후보를 덜 모으는 게 계획을 잃는 것보다 낫다.
+   *
+   * 첫 회차는 이 판정을 보지 않는다. 안 돌면 아무것도 못 찾는다.
+   */
+  canWiden?: () => boolean;
 };
 
 const INITIAL: Record<Mode, number> = { car: 2000, walk: 500, transit: 800 };
@@ -141,14 +153,17 @@ export async function searchAlong(
     found = merge(await settleSamples(points.map(p => countedSearch(query, p, r))));
     if (countForTarget(found) >= target) return { candidates: byCorridor(found), status: 'ok', radiusM: r, calls };
     if (r >= opts.maxRadiusM) break;
+    if (opts.canWiden && !opts.canWiden()) break;
     radiusM = Math.min(opts.maxRadiusM, r * 2);
   }
   if (found.length >= opts.need) return { candidates: byCorridor(found), status: 'ok', radiusM, calls };
   if (found.length > 0) return { candidates: byCorridor(found), status: 'short', radiusM, calls };
 
-  // 상한까지 0건 — 더 멀리 한 번만 보고 가장 가까운 3곳
+  /* 상한까지 0건 — 더 멀리 한 번만 보고 가장 가까운 3곳.
+     이 마지막 기회도 예산을 본다. 경유지 하나를 살리려다 계획 전체를 잃으면
+     살리려던 경유지까지 같이 잃는다 */
   const farR = opts.farRadiusM ?? 20_000;
-  if (farR > opts.maxRadiusM) {
+  if (farR > opts.maxRadiusM && (!opts.canWiden || opts.canWiden())) {
     const far = merge(await settleSamples(points.map(p => countedSearch(query, p, farR))));
     if (far.length > 0) return { candidates: byCorridor(far).slice(0, 3), status: 'far', radiusM: farR, calls };
   }
@@ -177,6 +192,8 @@ export type AnchorSearchOptions = {
   side?: NearSide;
   origin?: LatLng;
   destination?: LatLng;
+  /** `CorridorSearchOptions.canWiden` 과 같다 */
+  canWiden?: () => boolean;
 };
 
 /**
@@ -240,6 +257,7 @@ export async function searchAtAnchors(
     found = attach(await settleSamples(used.map(a => { calls++; return search(query, a.coord, r); })));
     if (found.length >= target) return { candidates: found, status: 'ok', radiusM: r, calls };
     if (r >= maxR) break;
+    if (opts.canWiden && !opts.canWiden()) break;
     radiusM = Math.min(maxR, r * 2);
   }
   if (found.length >= opts.need) return { candidates: found, status: 'ok', radiusM, calls };

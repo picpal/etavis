@@ -24,6 +24,27 @@ export type PlanRequest = {
 
 export type PlanFlowError = { kind: 'direct' | 'search' | 'measure' | 'timeout'; message: string };
 
+/**
+ * 실패 화면이 쓸 문구. 원인별로 다른 말을 한다.
+ *
+ * 타임아웃을 "연결이 불안정해요"로 뭉뚱그리고 있었다. 실측 2026-09-19 기기에서 그
+ * 실패를 냈을 때 트랙로그의 네트워크 호출은 9건 전부 `ok:true` 였다 — 연결은
+ * 멀쩡했고 반경을 네 번 넓히느라 검색이 6.4초를 쓴 것이다. 틀린 원인을 말하면
+ * 사용자는 엉뚱한 걸 고치려 든다(와이파이를 끄고 켠다).
+ *
+ * 다시 계산을 권하는 건 빈말이 아니다 — 장소 검색은 서버가 24시간 캐시하므로
+ * (`server/src/places.ts`) 두 번째 시도는 검색 단계를 거의 건너뛴다.
+ */
+export function planFailCopy(kind: PlanFlowError['kind']): { title: string; detail: string } {
+  if (kind === 'timeout') {
+    return {
+      title: '계산이 길어졌어요',
+      detail: '12초 안에 끝나지 않았어요. 다시 계산하면 대개 빨라요 — 방금 찾은 곳들이 남아 있어요.',
+    };
+  }
+  return { title: '연결이 불안정해요', detail: '이동시간을 계산하지 못했어요.' };
+}
+
 export type PlanFlowState = {
   phase: Phase;
   progress: { key: ProgressKey; label: string; detail?: string; done: boolean }[];

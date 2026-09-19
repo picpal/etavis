@@ -4,6 +4,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { color, shadow, type } from '../theme/tokens';
 import { usePlanFlow } from '../state/planFlowProvider';
+import { planFailCopy } from '../state/planFlow';
 import { Card, haptic } from '../components/common';
 import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
@@ -20,6 +21,9 @@ export function ErrorScreen({ navigation }: Props) {
   const [mapAppOpen, setMapAppOpen] = useState(false);
 
   // 실측 전에 실패했으니 확정된 계획이 없다 — 보여줄 건 실패한 요청이 뭘 찾으려 했는가뿐
+  /* 원인별 문구는 planFlow 한 곳에서 정한다 — 화면이 직접 고르면 타임아웃을
+     '연결이 불안정해요'로 뭉뚱그렸던 일이 되풀이된다 */
+  const fail = planFailCopy(flow.state.error?.kind ?? 'measure');
   const planRows = flow.state.request
     ? flow.state.request.stops.map(s => ({ key: s.id, name: s.queries[0] }))
     : [];
@@ -47,12 +51,10 @@ export function ErrorScreen({ navigation }: Props) {
             >
               <Text style={{ fontFamily: 'Pretendard-Bold', fontSize: 16, lineHeight: 20, color: '#fff' }}>!</Text>
             </View>
-            <Text style={[type.title, { color: color.amberDeep }]}>연결이 불안정해요</Text>
+            <Text style={[type.title, { color: color.amberDeep }]}>{fail.title}</Text>
           </View>
           <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 21.7, color: color.amberDeep }}>
-            {flow.state.error?.kind === 'timeout'
-              ? '12초 안에 계산이 끝나지 않았어요.'
-              : '이동시간을 계산하지 못했어요.'}
+            {fail.detail}
           </Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <Pressable

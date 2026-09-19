@@ -23,6 +23,16 @@ export type RunPlanDeps = {
 };
 
 const DEFAULT_TIMEOUT_MS = 12_000;
+/**
+ * 실측 단계에 남겨 둘 예산의 몫. 검색이 이걸 파고들면 반경 사다리를 멈춘다
+ * (`corridorSearch.canWiden`).
+ *
+ * 실측 2026-09-19: 슬롯 2개·실측 8회가 4.1초였는데 검색이 9.8초까지 끌어 2.2초만
+ * 남겼다 — 후보를 다 들고도 FAIL('timeout')로 끝났다. 0.5 면 그 회차가 6.6초에
+ * 멈춰 5.4초를 남긴다. 아래 검색어 폴백이 쓰는 몫과 같은 값이다 — 둘 다 "남은
+ * 예산의 절반을 넘겼으면 더 안 쓴다"는 같은 규칙이라 숫자를 갈라 둘 이유가 없다.
+ */
+const MEASURE_RESERVE = 0.5;
 /** 슬롯당 후보 상한. 플래너는 추정만 하므로 늘려도 /route 호출은 안 는다 */
 const MAX_CANDIDATES = 30;
 /** 후보가 이보다 적으면 보강해도 순서가 안 바뀐다 */
@@ -134,6 +144,10 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
         const need = Math.max(1, st.count);
         const target = Math.max(st.count, KC);
 
+        /* 반경을 한 회차 더 넓힐 시간이 있나. 슬롯들이 이 클로저를 공유한다 —
+           예산은 슬롯별이 아니라 계획 전체의 것이다 */
+        const canWiden = () => timeoutMs - (Date.now() - startedMs) > timeoutMs * MEASURE_RESERVE;
+
         const runSearch = async (query: string) => {
           const corridor = () => searchAlong(
             poly, query,
@@ -142,6 +156,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
               initialRadiusM: initialRadiusM(request.mode),
               maxRadiusM: maxRadiusM(request.mode, slack, rho),
               side: near, origin: request.origin, destination: request.destination,
+              canWiden,
             },
             search,
           );
@@ -151,6 +166,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
                 need, target,
                 maxRadiusM: Math.min(ANCHOR_MAX_M, maxRadiusM(request.mode, slack, rho)),
                 side: near, origin: request.origin, destination: request.destination,
+                canWiden,
               }, search)
             : await corridor();
           if (anchors.length > 0 && r.status === 'none') {

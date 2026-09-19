@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialPlanFlow, isBusy, measuredDirectMin, planFlowReducer, requestKey, type PlanRequest } from './planFlow';
+import { initialPlanFlow, isBusy, measuredDirectMin, planFailCopy, planFlowReducer, requestKey, type PlanRequest } from './planFlow';
 import type { PlanResult } from '../lib/routePlan/types';
 
 const req: PlanRequest = {
@@ -180,4 +180,27 @@ test('계산 중에는 아직 없다 — 이전 결과가 없는 채로 START만
   const s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
 
   assert.equal(measuredDirectMin(s, trip), null);
+});
+
+/* ── 실패 문구 ───────────────────────────────────────────────────
+   타임아웃 화면이 "연결이 불안정해요"라고 했다. 실측 2026-09-19 기기에서 그 실패를
+   냈을 때 트랙로그의 네트워크 호출은 9건 전부 ok:true 였다 — 연결은 멀쩡했고 검색이
+   길어졌을 뿐이다. 틀린 원인을 말하면 사용자는 엉뚱한 걸 고치려 든다(와이파이를 끄고
+   켠다). */
+
+test('타임아웃은 연결 탓을 하지 않는다', () => {
+  const c = planFailCopy('timeout');
+
+  assert.ok(!c.title.includes('연결'), `연결을 말하면 안 된다: ${c.title}`);
+  assert.ok(!c.detail.includes('연결'), `연결을 말하면 안 된다: ${c.detail}`);
+});
+
+test('타임아웃은 다시 계산을 권한다 — 방금 찾은 것이 서버에 남아 실제로 빨라진다', () => {
+  assert.ok(planFailCopy('timeout').detail.includes('다시 계산'));
+});
+
+test('그 밖의 실패는 연결을 말한다 — 거기선 실제로 호출이 실패한 것이다', () => {
+  for (const kind of ['direct', 'search', 'measure'] as const) {
+    assert.ok(planFailCopy(kind).title.includes('연결'), kind);
+  }
 });

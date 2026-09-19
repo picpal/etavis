@@ -477,3 +477,88 @@ test('앵커 검색도 앵커 하나가 던지면 그 앵커만 잃는다', asyn
   assert.equal(r.status, 'ok');
   assert.deepEqual(r.candidates.map(c => c.id), ['n2']);
 });
+
+/* ── 반경 넓히기와 시간 예산 ─────────────────────────────────────
+   실측 2026-09-19 기기: '닭강정집'에 업종 경로가 생기자 근처 것이 전부 걸러져
+   반경이 2000→4000→8000→15000 으로 올라갔다(20콜). 검색 단계가 2.6초에서
+   6.4초가 되면서 계획 전체가 12초 예산을 넘겨 FAIL('timeout') 으로 끝났다 —
+   그 시점에 두 슬롯 다 후보를 들고 있었는데 통째로 버렸다.
+
+   같은 파일 위쪽의 원칙을 반경 사다리에도 적용한다:
+   "경유지 하나를 잃는 게 계획 전체를 타임아웃으로 잃는 것보다 낫다."(runPlan.ts) */
+
+test('예산이 없으면 반경을 더 넓히지 않고 지금까지 모은 것을 쓴다', async () => {
+  const near = at(37.5, 127.05); // 회랑 한가운데, 첫 회차(2000m)에 잡힌다
+  const { fn, calls } = catalogSearch([{ id: 'c1', name: 'c1', coord: near }]);
+
+  // target 3 이라 원래는 1곳만 찾고 반경을 넓힌다
+  const r = await searchAlong(
+    poly, 'q',
+    { need: 1, target: 3, initialRadiusM: 2000, maxRadiusM: 15000, canWiden: () => false },
+    fn,
+  );
+
+  assert.equal(calls.length, 5, '첫 회차만 돈다');
+  assert.equal(r.status, 'ok', 'need 는 채웠다');
+  assert.deepEqual(r.candidates.map(c => c.id), ['c1']);
+  assert.equal(r.radiusM, 2000, '넓히지 않았으니 반경도 그대로여야 한다');
+});
+
+test('첫 회차는 예산과 무관하게 돈다 — 안 돌면 아무것도 못 찾는다', async () => {
+  const { fn, calls } = catalogSearch([{ id: 'c1', name: 'c1', coord: at(37.5, 127.05) }]);
+
+  await searchAlong(poly, 'q', { need: 1, initialRadiusM: 2000, maxRadiusM: 15000, canWiden: () => false }, fn);
+
+  assert.equal(calls.length, 5);
+});
+
+test('예산이 없으면 far 한 회차도 포기한다 — 마지막 기회가 계획을 죽이면 안 된다', async () => {
+  // 15km 밖이라 상한(15000)까지 넓혀도 0건 — 원래는 far(20000)로 한 번 더 본다
+  const { fn, calls } = catalogSearch([{ id: 'far', name: 'far', coord: at(37.65, 127.05) }]);
+
+  const r = await searchAlong(
+    poly, 'q',
+    { need: 1, initialRadiusM: 2000, maxRadiusM: 15000, canWiden: () => false },
+    fn,
+  );
+
+  assert.equal(r.status, 'none');
+  assert.equal(calls.length, 5, 'far 회차까지 5콜에서 멈춘다');
+});
+
+test('예산이 남아 있으면 지금까지처럼 넓힌다 — 기본 동작은 그대로다', async () => {
+  const { fn, calls } = catalogSearch([{ id: 'c1', name: 'c1', coord: at(37.53, 127.05) }]); // 북쪽 3.3km
+
+  const r = await searchAlong(
+    poly, 'q',
+    { need: 1, initialRadiusM: 2000, maxRadiusM: 15000, canWiden: () => true },
+    fn,
+  );
+
+  assert.equal(r.status, 'ok');
+  assert.ok(calls.length > 5, '두 회차 이상');
+});
+
+test('이미 target 을 채웠으면 예산을 묻지도 않는다', async () => {
+  let asked = 0;
+  const { fn } = catalogSearch([{ id: 'c1', name: 'c1', coord: at(37.5, 127.05) }]);
+
+  await searchAlong(
+    poly, 'q',
+    { need: 1, initialRadiusM: 2000, maxRadiusM: 15000, canWiden: () => { asked++; return true; } },
+    fn,
+  );
+
+  assert.equal(asked, 0, '넓힐 이유가 없으면 예산은 상관없는 질문이다');
+});
+
+test('앵커 검색도 같은 규칙을 쓴다', async () => {
+  const far = at(37.5300, 126.8700); // 목동역에서 500m 밖, 1000m 안
+  const { fn, calls } = catalogSearch([{ id: 'x', name: '먼곳', coord: far }]);
+
+  const r = await searchAtAnchors(anchors, '카페', { need: 1, canWiden: () => false }, fn);
+
+  assert.equal(calls.length, anchors.length, '한 회차만');
+  assert.equal(r.status, 'none', '500m 안엔 없다 — 넓히지 못했으니 못 찾은 것이다');
+  assert.equal(r.radiusM, ANCHOR_INITIAL_M);
+});

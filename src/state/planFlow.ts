@@ -117,7 +117,11 @@ export function planFlowReducer(state: PlanFlowState, action: PlanFlowAction): P
         ...state,
         phase: 'ready',
         result: action.result,
-        selectedOptionIdx: 0,
+        /* 기본 선택은 **추천안**이다. 최단안(0)을 기본으로 두면 탭을 건드리지 않은
+           사용자가 화면이 권하지 않는 안을 그대로 확정한다 — 이 값은 하이라이트만이
+           아니라 무엇을 확정하나를 정한다. 짐을 안 잰 계획은 `comfortIdx` 가 null 이라
+           가리킬 추천안이 없고, 그때만 최단안으로 떨어진다 */
+        selectedOptionIdx: action.result.comfortIdx ?? 0,
         overrides: {},
         error: null,
         progress: state.progress.map(p => ({ ...p, done: true })),

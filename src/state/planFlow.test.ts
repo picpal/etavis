@@ -108,3 +108,22 @@ test('isBusy', () => {
   assert.equal(isBusy('searching'), true);
   assert.equal(isBusy('ready'), false);
 });
+
+/* 기본 선택은 **추천 순서**다. 최단안(0)을 기본으로 두면, 탭을 건드리지 않은 사용자가
+   화면이 권하지 않는 안을 그대로 확정한다 — `selectedOptionIdx` 는 하이라이트만이
+   아니라 **무엇을 확정하나**를 정하기 때문이다 */
+test('RESULT는 추천안을 기본 선택으로 잡는다', () => {
+  const withComfort = { ...result, comfortIdx: 2 } as unknown as PlanResult;
+
+  const s = planFlowReducer(initialPlanFlow, { type: 'RESULT', result: withComfort });
+
+  assert.equal(s.selectedOptionIdx, 2);
+});
+
+test('짐을 안 잰 계획은 최단안이 기본 선택이다 — 가리킬 추천안이 없다', () => {
+  const noComfort = { ...result, comfortIdx: null } as unknown as PlanResult;
+
+  const s = planFlowReducer(initialPlanFlow, { type: 'RESULT', result: noComfort });
+
+  assert.equal(s.selectedOptionIdx, 0);
+});

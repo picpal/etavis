@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { narrowStopChips, resetChatChips, resetConditionChips, shouldKeepCommittedPlan, syncConditionChips } from './chips';
+import { chipLabel, narrowStopChips, resetChatChips, resetConditionChips, shouldKeepCommittedPlan, syncConditionChips } from './chips';
 import type { IntentChip } from './plan';
 
 let seq = 0;
@@ -149,4 +149,28 @@ test('확정한 적 없으면 나갈 때도 대화를 되돌린다', () => {
 
 test('새 계획을 시작할 때는 확정돼 있어도 지운다 — 이전 대화의 칩이 남으면 안 된다', () => {
   assert.equal(shouldKeepCommittedPlan('startingNewPlan', true), false);
+});
+
+
+/* ── 칩이 정해진 가게 이름을 말한다 ──────────────────────────────────────
+   확정된 계획으로 돌아온 대화 화면이 `마트 ✕` 라고 쓰면 사용자는 그걸 **키워드**로
+   읽는다. 실제로는 이미 `한청할인마트` 한 곳으로 정해져 있는데. 그 어긋남이
+   "대화로 하나 더 추가했더니 가게가 바뀌었다"를 이상하게 느끼지 않게 만든 원인이다 —
+   화면이 애초에 무엇이 정해졌는지 말하지 않았다.
+
+   **칩의 `label` 을 고쳐 쓰지 않는다.** 고쳐 쓰면 같은 사실의 사본이 하나 더 생겨
+   리듀서마다 동기화해야 한다(v1 이 반려된 이유). 그릴 때 `state.stops` 에서 읽는다. */
+const resolvedStop = (baseId: string, name: string) => ({ baseId, name });
+
+test('정해진 가게가 있으면 칩이 그 이름을 말한다 — 화면이 무엇이 정해졌는지 말해야 한다', () => {
+  assert.equal(chipLabel(stop('c1', ['마트']), [resolvedStop('c1', '한청할인마트')]), '한청할인마트');
+});
+
+test('아직 안 정해졌으면 원래 라벨 그대로 — 없는 사실을 지어내지 않는다', () => {
+  assert.equal(chipLabel(stop('c1', ['마트']), []), '약국');
+  assert.equal(chipLabel(stop('c1', ['마트']), [resolvedStop('c2', '한청할인마트')]), '약국');
+});
+
+test('조건 칩은 건드리지 않는다 — 가게 이름이 붙을 자리가 아니다', () => {
+  assert.equal(chipLabel(arriveChip('a1', 1080, '18:00까지'), [resolvedStop('a1', '한청할인마트')]), '18:00까지');
 });

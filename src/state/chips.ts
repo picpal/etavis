@@ -138,6 +138,23 @@ export function narrowStopChips(chips: IntentChip[], chipId: string, query: stri
  * 한 플래그(`committed`)만 보고 둘을 같이 처리한 것이 버그였다. 확정 여부는 사실이고,
  * 그 사실을 어떻게 쓸지는 **부르는 쪽의 목적**이 정한다.
  */
+/**
+ * 칩에 쓸 글자. **정해진 가게가 있으면 그 이름을 말한다.**
+ *
+ * 확정된 계획으로 돌아온 대화 화면이 `마트 ✕` 라고 쓰면 사용자는 그걸 검색 키워드로
+ * 읽는다 — 실제로는 이미 `한청할인마트` 한 곳으로 정해져 있는데. 그 어긋남이
+ * "경유지를 하나 추가했더니 가게가 바뀌었다"를 **이상하다고 느낄 근거 자체를**
+ * 없앴다(2026-09-19). 화면이 무엇이 정해졌는지 먼저 말해야 한다.
+ *
+ * **칩의 `label` 을 고쳐 쓰지 않는다.** 고쳐 쓰면 같은 사실의 사본이 하나 더 생겨
+ * 리듀서마다 동기화해야 한다 — 이 기능의 v1 이 반려된 이유가 그것이다.
+ * 그릴 때 `state.stops` 에서 읽는다. 라벨은 표시용이고, 검색은 여전히 `queries` 로 간다.
+ */
+export function chipLabel(chip: IntentChip, stops: readonly { baseId: string; name: string }[]): string {
+  if (chip.kind !== 'stop') return chip.label;
+  return stops.find(s => s.baseId === chip.id)?.name ?? chip.label;
+}
+
 export type ResetReason = 'leavingChat' | 'startingNewPlan';
 
 export function shouldKeepCommittedPlan(reason: ResetReason, committed: boolean): boolean {

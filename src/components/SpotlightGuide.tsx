@@ -4,7 +4,7 @@
  */
 import React from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
-import { color, radius, type } from '../theme/tokens';
+import { color, layer, radius, type } from '../theme/tokens';
 import { haptic } from './common';
 
 export type SpotRect = { x: number; y: number; width: number; height: number };
@@ -48,7 +48,7 @@ export function SpotlightGuide({
   const isLast = stepIndex === steps.length - 1;
 
   return (
-    <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: 100 }}>
+    <View style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, zIndex: layer.spotlight }}>
       {/* 딤 4장으로 구멍 만들기 */}
       <Pressable style={{ position: 'absolute', left: 0, top: 0, width: W, height: hy, backgroundColor: SCRIM }} onPress={onNext} />
       <Pressable

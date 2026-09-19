@@ -20,6 +20,8 @@ import { NavHeader } from '../components/NavHeader';
 import { BottomInputBar } from '../components/BottomInputBar';
 import { TabBar } from '../components/TabBar';
 import { usePlanFlow } from '../state/planFlowProvider';
+import { measuredDirectMin } from '../state/planFlow';
+import { usePlanRequest } from '../state/usePlanRequest';
 import { SLOT_STATUS_HELP, SLOT_STATUS_TEXT } from '../state/planFlowBridge';
 import { introCopy } from '../lib/timingCopy';
 import { getPref, setPref } from '../lib/prefs';
@@ -28,8 +30,8 @@ import type { RootStackParamList } from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Plan'>;
 
-/** 항공권 스타일 출발–도착 커넥터 */
-function ConnectorCard({ directMin, from, to }: { directMin: number; from: string; to: string }) {
+/** 항공권 스타일 출발–도착 커넥터. `directMin` 이 `null` 이면 시간을 말하지 않는다 */
+function ConnectorCard({ directMin, from, to }: { directMin: number | null; from: string; to: string }) {
   return (
     <View
       style={{
@@ -51,7 +53,11 @@ function ConnectorCard({ directMin, from, to }: { directMin: number; from: strin
         </Text>
       </View>
       <View style={{ flex: 1.2, alignItems: 'center', gap: 5 }}>
-        <Text style={[type.micro, { color: color.muted }]}>직행 {directMin}분</Text>
+        {/* 아직 안 잰 여정이면 줄째로 비운다 — 점선은 가운데 정렬로 내려앉는다.
+            목 숫자를 채워 넣던 자리다(planFlow.measuredDirectMin 의 주석) */}
+        {directMin != null && (
+          <Text style={[type.micro, { color: color.muted }]}>직행 {directMin}분</Text>
+        )}
         <DottedLineH style={{ alignSelf: 'stretch', flex: 0 }} />
       </View>
       <View style={{ flex: 1, gap: 3, alignItems: 'flex-end' }}>
@@ -317,8 +323,9 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 export function PlanScreen({ navigation }: Props) {
   const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat, setChipLoad } = usePlan();
   const flow = usePlanFlow();
+  /* 머리글의 직행 시간이 '지금 이 여정'의 것인지 가리는 데만 쓴다 — 계산은 A5가 건다 */
+  const planRequest = usePlanRequest();
   const insets = useSafeAreaInsets();
-  const ds = state.dataset;
   const scrollRef = useRef<ScrollView>(null);
   const [modeOpen, setModeOpen] = useState(false);
   // '아직이요'로 미룬 시점의 대화 길이 — 새 메시지가 오면 다시 물어본다
@@ -533,7 +540,7 @@ export function PlanScreen({ navigation }: Props) {
       <NavHeader title="계획 만들기" onBack={() => navigation.goBack()}>
         {/* 이름을 첫 단어로 자르지 않는다 — '내 위치'가 '내'가 되고
             'CGV 용산아이파크몰'이 'CGV'가 된다. 넘치면 말줄임으로 처리 */}
-        <ConnectorCard directMin={ds.directMin} from={originDisplay} to={destinationDisplay} />
+        <ConnectorCard directMin={measuredDirectMin(flow.state, planRequest)} from={originDisplay} to={destinationDisplay} />
         {/* 조건 요약 — 이동수단은 여기서 바로 바꾼다. 계산은 '경로 찾기'부터라 되돌아갈 이유가 없다 */}
         <ConditionBar
           mode={state.mode}

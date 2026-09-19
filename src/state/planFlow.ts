@@ -66,13 +66,39 @@ export const initialPlanFlow: PlanFlowState = {
 export const isBusy = (phase: Phase): boolean =>
   phase === 'direct' || phase === 'searching' || phase === 'measuring';
 
+/** 좌표를 비교 가능한 문자열로. 5자리면 1m 남짓이라 같은 지점은 같은 키가 된다 */
+const coord = (p: LatLng) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
+
+/** 직행 시간을 정하는 것 전부. 들르는 곳도 마감도 두 점 사이 직행을 바꾸지 않는다 */
+export type Trip = Pick<PlanRequest, 'origin' | 'destination' | 'mode'>;
+
+const sameTrip = (a: Trip, b: Trip): boolean =>
+  a.mode === b.mode && coord(a.origin) === coord(b.origin) && coord(a.destination) === coord(b.destination);
+
+/**
+ * 화면 머리글에 쓸 직행 시간. **지금 여정을 실제로 잰 값일 때만** 돌려준다. 없으면 `null`.
+ *
+ * 머리글이 `datasets[0].directMin`(목 데이터)을 쓰고 있었다. 목적지를 고르기만 하면
+ * `/route` 를 부른 적도 없이 '직행 16분'이라고 했고, 실제로 계산하면 47분이었다
+ * (2026-09-19 시뮬레이터, 태평로1가→목동). 3배 차이를 사실처럼 말하느니 비워 둔다.
+ *
+ * 좌표 비교가 `flow.reset()` 과 겹쳐 보이지만 겹치지 않는다: 이동수단·칩이 바뀌면
+ * 화면들이 결과를 지우는데(`ModeSheet.tsx`), **출발·목적지를 바꿀 때는 아무도 안 지운다**
+ * (`DestinationSheet.tsx` 는 flow 를 모른다). 그 자리를 여기서 막는다.
+ */
+export function measuredDirectMin(state: PlanFlowState, now: Trip | null): number | null {
+  const measured = state.request;
+  if (state.result == null || measured == null || now == null) return null;
+  return sameTrip(measured, now) ? Math.round(state.result.directMin) : null;
+}
+
 /**
  * 이름은 표시용이라 뺀다. 같은 키면 같은 계산이다.
  * departAtMin도 뺀다 — 그건 사용자가 바꾼 조건이 아니라 시계다.
  * 넣어두면 1분만 지나도 A5에 "조건이 바뀌었어요"가 뜬다.
  */
 export function requestKey(r: PlanRequest): string {
-  const c = (p: LatLng) => `${p.latitude.toFixed(5)},${p.longitude.toFixed(5)}`;
+  const c = coord;
   // near 와 태그가 빠져 있었다 — 태그를 바꿔도 같은 요청으로 보고 재계산을 건너뛴다.
   // mode 는 아래 배열에 이미 있으므로, 이것으로 decideNear 의 입력이 전부 키에 들어간다
   const stops = r.stops.map(s =>

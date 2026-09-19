@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialPlanFlow, isBusy, planFlowReducer, requestKey, type PlanRequest } from './planFlow';
+import { initialPlanFlow, isBusy, measuredDirectMin, planFlowReducer, requestKey, type PlanRequest } from './planFlow';
 import type { PlanResult } from '../lib/routePlan/types';
 
 const req: PlanRequest = {
@@ -126,4 +126,58 @@ test('짐을 안 잰 계획은 최단안이 기본 선택이다 — 가리킬 �
   const s = planFlowReducer(initialPlanFlow, { type: 'RESULT', result: noComfort });
 
   assert.equal(s.selectedOptionIdx, 0);
+});
+
+/* ── 머리글 직행 시간 ─────────────────────────────────────────────
+   목 데이터(datasets[0].directMin)를 그대로 쓰던 자리다. 목적지를 고르기만 해도
+   '직행 16분'이라고 했는데 실제로 재면 47분이었다(2026-09-19 시뮬레이터, 태평로1가→목동). */
+
+const trip = { origin: req.origin, destination: req.destination, mode: req.mode } as const;
+const ready = (r: PlanResult = result) =>
+  planFlowReducer(planFlowReducer(initialPlanFlow, { type: 'START', request: req }), { type: 'RESULT', result: r });
+
+test('재기 전에는 직행 시간이 없다 — 목 숫자를 보여주느니 아무것도 안 보여준다', () => {
+  assert.equal(measuredDirectMin(initialPlanFlow, trip), null);
+});
+
+test('같은 여정을 실측했으면 그 값을 반올림해 준다', () => {
+  const s = ready({ ...result, directMin: 46.5 } as PlanResult);
+
+  assert.equal(measuredDirectMin(s, trip), 47);
+});
+
+test('목적지가 바뀌면 없다 — 옛 계산을 새 목적지에 붙이지 않는다', () => {
+  const s = ready();
+
+  assert.equal(measuredDirectMin(s, { ...trip, destination: { latitude: 37.7, longitude: 127.2 } }), null);
+});
+
+test('출발지가 바뀌어도 없다', () => {
+  const s = ready();
+
+  assert.equal(measuredDirectMin(s, { ...trip, origin: { latitude: 37.4, longitude: 126.9 } }), null);
+});
+
+test('이동수단이 바뀌면 없다 — 걸어가면 직행이 다른 시간이다', () => {
+  const s = ready();
+
+  assert.equal(measuredDirectMin(s, { ...trip, mode: 'walk' }), null);
+});
+
+test('경유지를 더해도 직행은 그대로다 — 직행은 들르는 곳과 무관하다', () => {
+  const s = ready();
+
+  assert.equal(measuredDirectMin(s, trip), 20, '같은 두 점 사이 직행은 안 바뀐다');
+});
+
+test('출발 좌표가 아직 없으면 없다 — GPS를 기다리는 동안 옛 값을 붙들지 않는다', () => {
+  const s = ready();
+
+  assert.equal(measuredDirectMin(s, null), null);
+});
+
+test('계산 중에는 아직 없다 — 이전 결과가 없는 채로 START만 돌았을 때', () => {
+  const s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+
+  assert.equal(measuredDirectMin(s, trip), null);
 });

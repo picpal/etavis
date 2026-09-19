@@ -171,6 +171,44 @@ export function planSearch(raw: string): SearchPlan {
   };
 }
 
+/**
+ * 업종으로 걸러 낼 수단이 있었나. 없으면 카카오가 이름으로 물어다 준 것을 그대로 쓴 것이다.
+ *
+ * `places.ts` 가 주소 검색을 붙일지 정할 때도 같은 판정을 쓴다 — 두 곳이 갈라지면
+ * "업종으로 걸렀다"와 "업종 질의다"가 서로 다른 뜻이 된다.
+ */
+export function isVerifiedCategory(plan: SearchPlan): boolean {
+  return plan.categoryCode != null || plan.pathAny.length > 0;
+}
+
+/**
+ * 이 장소가 질의에 답한다고 말할 근거가 있나. 화면이 "무엇을 찾던 자리인지"를
+ * 덧붙일지 정한다 — 근거가 없을 때만 덧붙인다.
+ *
+ * 근거는 둘 중 하나다.
+ *   1. 업종으로 확인됐다 — `pathAny`·`categoryCode` 가 걸러 낸 결과다.
+ *      '마트'로 물어 '홈플러스익스프레스 광화문점'이 나온 건 이름에 '마트'가 없어도
+ *      마트가 맞다(실측 2026-09-19 기기).
+ *   2. 이름이 검색어를 품는다 — '정숙마트'·'올리브영 명동점'.
+ *
+ * 둘 다 없으면 말해 준다. 표에 없는 업종은 `pathAny` 가 비어 경로 조건이 통째로 없고
+ * (거를 근거가 없으니 거르지 않는다 — 이 파일의 원칙: 과잉 필터링이 훨씬 비싸다),
+ * 그러면 이름 매칭만 남는데 그게 어긋나면 아무 근거도 없는 것이다. 실측 2026-09-19:
+ * '닭강정집' 21건에 메가MGC커피·맘스터치가 섞여 나왔고 '맘스터치 마포공덕역점'이
+ * 뽑혔다. 행에는 상호명만 떠서 사용자가 **도착해서야** 안다.
+ *
+ * 비교 대상은 사용자가 말한 원문이 아니라 **실제로 카카오에 보낸 검색어**다
+ * (`planSearch().query`). '동네 마트'로 물으면 '마트'를 보내는데, 원문으로 재면
+ * '정숙마트'에 '동네'가 없어서 늘 어긋난 것으로 나온다.
+ */
+export function answersQuery(placeName: string, query: string): boolean {
+  const plan = planSearch(query);
+  if (isVerifiedCategory(plan)) return true;
+  const flat = (v: string) => v.replace(/\s+/g, '');
+  const term = flat(plan.query);
+  return term.length > 0 && flat(placeName).includes(term);
+}
+
 /** 계획의 경로 조건을 통과하는가. `category_name`이 없으면 거를 근거가 없으니 통과 */
 export function keepByCategoryName(categoryName: string | undefined, plan: SearchPlan): boolean {
   if (!categoryName) return true;

@@ -115,7 +115,6 @@ export function OptionsScreen({ navigation }: Props) {
     [result, state.slots, state.selectedOptionIdx, state.overrides],
   );
 
-  const slotQuery = (id: string) => state.slots.find(s => s.id === id)?.query ?? '';
   const pickIdx = current ? current.visits.findIndex(v => v.slotId === pickSlot) : -1;
   const pickVisit = current && pickIdx >= 0 ? current.visits[pickIdx] : null;
   // 지금 고른 안 기준으로 낸다 — result.alternatives는 1안 기준이라 2·3안에서 중복·누락이 생긴다.

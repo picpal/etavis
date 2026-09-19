@@ -13,7 +13,7 @@ import { Platform } from 'react-native';
 import { LatLng } from '../data/mockData';
 import { isInKorea, keywordParams, type SearchIntent } from './placesParams';
 import { haversineM } from './geo';
-import { keepPlace, planSearch } from './placeQuery';
+import { isVerifiedCategory, keepPlace, planSearch } from './placeQuery';
 import { withMockFallback } from './placesFallback';
 import type { PlaceCandidate } from './routePlan/types';
 
@@ -238,7 +238,7 @@ const kakaoProvider: PlaceSearchProvider = {
     */
     // 업종을 물었으면 주소 결과는 부르지 않는다 — 카테고리로 거른 것을 뒷문으로 다시 들인다.
     // 주소 검색은 POI 가 없는 순수 주소를 메우는 보조라, 업종 질의에는 쓸모가 없다.
-    const isCategoryQuery = plan.categoryCode != null || plan.pathAny.length > 0;
+    const isCategoryQuery = isVerifiedCategory(plan);
 
     const [keyword, address] = await Promise.all([
       kakaoFetch('keyword', params),

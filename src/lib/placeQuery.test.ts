@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { expandQueries, keepByCategoryName, keepPlace, planSearch } from './placeQuery.ts';
+import { answersQuery, expandQueries, isVerifiedCategory, keepByCategoryName, keepPlace, planSearch } from './placeQuery.ts';
 
 test("'동네 X' 는 검색어가 아니라 접두사다 — X 를 찾고 프랜차이즈를 뺀다", () => {
   // 실측 2026-09-15: "동네 빵집" 질의는 카카오에서 0건이다. 가게 이름이 그렇지 않으니까
@@ -226,4 +226,58 @@ test('expandQueries — 복합명사는 업종어로 넓히지 않는다(끝 단
   assert.deepEqual(expandQueries(['한약국']), ['한약국']);
   assert.deepEqual(expandQueries(['중고서점']), ['중고서점']);
   assert.deepEqual(expandQueries(['키즈카페']), ['키즈카페']);
+});
+
+/* ── 이 장소가 질의에 답하나 ─────────────────────────────────────
+   실측 2026-09-19 기기 트랙로그: '닭강정집' 질의에 카카오가 21건을 줬는데
+   메가MGC커피·맘스터치·본도시락이 섞여 있었다. 이 업종은 표에 없어서 `pathAny`가
+   비고, 경로 조건이 없으면 필터가 무조건 통과라 전부 후보로 남는다. 거를 근거가
+   없으니 거르지 않는 건 이 파일의 원칙(과잉 필터링이 더 비싸다)대로다. 대신 화면이
+   "무엇을 찾던 자리인지"를 말해 사용자가 도착 전에 알아채게 한다. */
+
+test('업종으로 확인된 검색은 이름이 달라도 조용하다 — 마트/홈플러스익스프레스', () => {
+  // 실측 2026-09-19 기기: '마트' 자리에 '홈플러스익스프레스 광화문점'이 뽑혔다.
+  // 이름에 '마트'가 없지만 pathAny(['슈퍼마켓','대형마트'])가 이미 걸러 낸 결과다 —
+  // 여기에 라벨을 붙이면 잘 맞은 행까지 시끄러워지고, 그러면 정작 어긋난 행을 안 읽는다
+  assert.equal(answersQuery('홈플러스익스프레스 광화문점', '마트'), true);
+  assert.ok(isVerifiedCategory(planSearch('마트')));
+});
+
+test('표에 없는 업종이 이름까지 어긋나면 말해야 한다 — 닭강정집', () => {
+  // 실측 2026-09-19 기기: 이 둘이 실제로 1순위·후보로 올라왔다
+  assert.equal(answersQuery('메가MGC커피 명동한진빌딩점', '닭강정집'), false);
+  assert.equal(answersQuery('맘스터치 마포공덕역점', '닭강정집'), false);
+  assert.equal(isVerifiedCategory(planSearch('닭강정집')), false, '거를 근거가 아예 없다');
+});
+
+test('이름이 검색어를 품으면 굳이 다시 말하지 않는다 — 읽는 사람 시간만 쓴다', () => {
+  assert.equal(answersQuery('정숙마트', '마트'), true);
+  assert.equal(answersQuery('레스큐약국', '약국'), true);
+});
+
+test("'동네 X' 는 실제로 보낸 검색어로 잰다 — 접두사까지 요구하면 늘 어긋난다", () => {
+  // planSearch('동네 마트').query 는 '마트'다. '정숙마트'에 '동네'가 있을 리 없다
+  assert.equal(answersQuery('정숙마트', '동네 마트'), true);
+  // 빵집은 표에 있어 업종으로 확인된다 — 성심당은 이름에 '빵집'이 없어도 빵집이 맞다
+  assert.equal(answersQuery('성심당 대전역점', '동네 빵집'), true);
+});
+
+test('공백은 무시한다 — 띄어쓰기로 판정이 갈리면 안 된다', () => {
+  // 닭강정집은 표에 없어서 이름 매칭까지 내려온다 — 공백 처리가 실제로 걸리는 자리다
+  assert.equal(answersQuery('명동 닭강정 집', '닭강정집'), true);
+  assert.equal(answersQuery('명동닭강정집', '닭강정 집'), true);
+});
+
+test('브랜드·특정 장소는 저절로 조용하다 — 이름이 곧 질의다', () => {
+  // 브랜드는 업종 코드가 없다(올리브영·다이소는 카카오에 코드 자체가 없다).
+  // 그래도 이름이 질의를 품어서 라벨이 안 붙는다
+  assert.equal(isVerifiedCategory(planSearch('올리브영')), false);
+  assert.equal(answersQuery('올리브영 명동점', '올리브영'), true);
+  assert.equal(answersQuery('서울시청', '서울시청'), true);
+});
+
+test('진짜 닭강정집이어도 이름이 안 겹치면 말한다 — 과소 표기보다 과대 표기', () => {
+  // '북창치킨'은 실제로 닭을 파는 집이다. 그래도 '닭강정집'을 품지 않으니 말해 준다.
+  // 이 라벨은 고발이 아니라 맥락이다 — 틀린 걸 숨기는 쪽이 훨씬 비싸다
+  assert.equal(answersQuery('북창치킨 서울시청본점', '닭강정집'), false);
 });

@@ -18,6 +18,7 @@ import { Card, haptic } from './common';
 import { Chevron, Hairline } from './primitives';
 import { toHHMM } from '../state/plan';
 import { SLOT_STATUS_TEXT } from '../state/planFlowBridge';
+import { answersQuery } from '../lib/placeQuery';
 import type { PlanResult, Slot, Visit } from '../lib/routePlan/types';
 
 const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
@@ -50,7 +51,14 @@ export function StopList({
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             {visits.map((v, k) => {
               const pending = pendingRemove.includes(v.slotId);
-              const alts = (slots.find(s => s.id === v.slotId)?.candidates.length ?? 0) - 1;
+              const slot = slots.find(s => s.id === v.slotId);
+              const alts = (slot?.candidates.length ?? 0) - 1;
+              /* 무엇을 찾던 자리인지. 업종으로 확인됐거나 이름이 질의를 품으면 붙이지
+                 않는다 — '정숙마트' 옆의 '마트'는 읽는 사람 시간만 쓰고, 잘 맞은 행까지
+                 시끄러우면 정작 어긋난 행을 안 읽는다. 근거가 하나도 없는 행에만 붙어서
+                 '닭강정집' 자리에 앉은 '맘스터치'를 도착 전에 알아챌 수 있다
+                 (실측 2026-09-19 기기 — 판정은 placeQuery.answersQuery) */
+              const askedFor = slot && !answersQuery(v.candidate.name, slot.query) ? slot.query : null;
               const st = result.slotStatus[v.slotId];
               const statusText = st && st !== 'ok' ? SLOT_STATUS_TEXT[st] : null;
               /* 늦을 때만: 이 경유지를 빼면 언제 도착하나 (rescore는 부분 집합에도 동작).
@@ -122,6 +130,11 @@ export function StopList({
                             </View>
                           )}
                           {statusText && !pending && <Text style={[type.caption, { color: color.amberDeep }]}>{statusText}</Text>}
+                          {askedFor && !pending && (
+                            <Text numberOfLines={1} style={[type.caption, { color: color.muted, flexShrink: 1 }]}>
+                              {askedFor} 자리
+                            </Text>
+                          )}
                         </View>
                         {withoutArrive != null && withoutSlack != null && (
                           <Text style={[type.caption, { color: withoutSlack >= 0 ? color.green : color.muted }]}>

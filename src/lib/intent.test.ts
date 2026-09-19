@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractIntent } from './intent';
+import { askWhenNothingFound, extractIntent, type Intent } from './intent';
 
 test('목 — 넓은 업종은 선택지를 함께 낸다', () => {
   const i = extractIntent('가는 길에 빵 사고 싶어', { currentStops: [] });
@@ -117,4 +117,50 @@ test("known — 두 글자 이상 앞자리 일치 + 공백 정규화('여의도
   const i = extractIntent('목적지를  여의도 공원 으로 바꿔줘', { currentStops: [], knownPlaces: ['여의도공원 출입구8'] });
   assert.deepEqual(i.endpoints, { destination: '여의도 공원' });
   assert.equal(i.ambiguous.length, 0, '아는 곳이면 안 되묻는다');
+});
+
+/* ── 아무것도 못 알아들었을 때 침묵하지 않는다 ─────────────────────────────
+   이 판정은 로컬 목 안에만 있었고, 정작 비는 쪽인 **서버 응답에는 안 걸렸다**
+   (`intentClient.ts` 가 모양만 보고 그대로 통과시킨다). 2026-09-19 측정에서
+   LLM 이 45 케이스-회차 중 2회 경유지를 0건으로 냈는데, 화면엔 "알아들었어요"만
+   뜨고 칩도 질문도 없었다. 그래서 판정을 순수 함수로 빼 양쪽이 같은 걸 쓴다. */
+
+const empty = (over: Partial<Intent> = {}): Intent => ({
+  resetStops: false, stops: [], endpoints: {}, order: 'auto',
+  arriveBy: null, mode: null, reject: null, ambiguous: [], say: null, ...over,
+} as Intent);
+
+test('아무것도 못 뽑았는데 부탁처럼 보이면 되묻는다', () => {
+  const out = askWhenNothingFound('나가는 길에 우산 하나 사야 해', empty());
+  assert.deepEqual(out.ambiguous.map(a => a.field), ['text']);
+});
+
+test('청유형도 부탁이다 — "사자"가 정규식에서 빠져 있었다', () => {
+  const out = askWhenNothingFound('걸어가면서 먹을 아이스크림 하나 사자', empty());
+  assert.deepEqual(out.ambiguous.map(a => a.field), ['text'], '사자/하자/먹자 같은 청유형이 새고 있었다');
+});
+
+test('인사에는 침묵한다 — 부탁이 아닌 말까지 되물으면 성가시다', () => {
+  assert.deepEqual(askWhenNothingFound('안녕', empty()).ambiguous, []);
+});
+
+test('이미 되묻고 있으면 덧붙이지 않는다', () => {
+  const withAsk = empty({ ambiguous: [{ field: 'endpoints', question: '어느 집인가요?', options: [] }] });
+  assert.deepEqual(askWhenNothingFound('집으로 가자', withAsk).ambiguous.map(a => a.field), ['endpoints']);
+});
+
+test('이동수단·도착시각만 바뀐 것도 알아들은 것이다', () => {
+  assert.deepEqual(askWhenNothingFound('걸어서 가자', empty({ mode: 'walk' })).ambiguous, []);
+  assert.deepEqual(askWhenNothingFound('9시까지 가야 해', empty({ arriveBy: 540 })).ambiguous, []);
+});
+
+test('이미 있어서 뺀 것은 못 알아들은 게 아니다', () => {
+  assert.deepEqual(askWhenNothingFound('마트 들를게', empty(), { droppedAsPlanned: true }).ambiguous, []);
+});
+
+test('원본을 건드리지 않는다 — 서버 응답에도 쓰는 순수 함수다', () => {
+  const src = empty();
+  const out = askWhenNothingFound('우산 사야 해', src);
+  assert.deepEqual(src.ambiguous, [], '입력이 변형됐다');
+  assert.notEqual(out, src);
 });

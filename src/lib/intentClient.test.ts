@@ -220,3 +220,37 @@ test('onFallback 을 안 넘겨도 폴백은 그대로 돈다 — 선택 인자�
   });
   assert.equal((await fn('t', CTX)).source, 'local');
 });
+
+/* 서버가 경유지를 0건으로 내도 모양은 멀쩡해서 그대로 통과했다 — 화면엔
+   "알아들었어요"만 뜨고 칩도 질문도 없었다. 비는 쪽이 서버인데 가드는 목에만 있었다. */
+test('서버가 빈 응답을 줘도 부탁처럼 보이면 되묻는다', async () => {
+  const emptyIntent = {
+    resetStops: false, stops: [], endpoints: {}, order: 'auto',
+    arriveBy: null, mode: null, reject: null, ambiguous: [], say: null,
+  };
+  const fetchFn = (async () => new Response(JSON.stringify(emptyIntent), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })) as unknown as typeof fetch;
+
+  const extract = serverExtractFn({ baseUrl: 'https://x', appToken: 't', deviceId: 'd', fetchFn });
+  const out = await extract('나가는 길에 우산 하나 사야 해', { currentStops: [] });
+
+  assert.equal(out.source, 'server', '서버 응답을 쓴 채로 되묻어야 한다 — 로컬로 떨어지면 안 된다');
+  assert.deepEqual(out.intent.ambiguous.map(a => a.field), ['text']);
+});
+
+test('서버가 제대로 뽑았으면 되묻기를 덧붙이지 않는다', async () => {
+  const good = {
+    resetStops: false,
+    stops: [{ op: 'add', queries: ['마트'], kind: 'category', why: '', count: 1, flexible: true, openNow: false, prefers: [], near: 'any', loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown' }],
+    endpoints: {}, order: 'auto', arriveBy: null, mode: null, reject: null, ambiguous: [], say: null,
+  };
+  const fetchFn = (async () => new Response(JSON.stringify(good), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })) as unknown as typeof fetch;
+
+  const extract = serverExtractFn({ baseUrl: 'https://x', appToken: 't', deviceId: 'd', fetchFn });
+  const out = await extract('마트 들를게', { currentStops: [] });
+
+  assert.deepEqual(out.intent.ambiguous, []);
+});

@@ -11,7 +11,7 @@
  * 검증은 서버가 `schema.ts`에서 이미 했다. 여기서 다시 좁히지 않고 **모양만**
  * 확인한다 — 중간에 낀 프록시가 HTML 오류 페이지를 돌려주는 경우를 거르는 용도다.
  */
-import { extractIntent, type Intent, type IntentContext } from './intent';
+import { askWhenNothingFound, extractIntent, type Intent, type IntentContext } from './intent';
 
 export type ExtractSource = 'server' | 'local';
 export type ExtractOutcome = { intent: Intent; source: ExtractSource };
@@ -101,7 +101,12 @@ export function serverExtractFn(opts: {
       });
       if (!res.ok) return local(`http ${res.status}`);
       const body = (await res.json()) as unknown;
-      return looksLikeIntent(body) ? { intent: body, source: 'server' } : local('shape');
+      if (!looksLikeIntent(body)) return local('shape');
+      /* 모양이 맞아도 **비어 있을 수 있다.** LLM 이 경유지를 0건으로 내면 화면엔
+         "알아들었어요"만 뜨고 칩도 질문도 없다 — 인사와 구별이 안 된다.
+         목(`extractIntent`)에만 있던 판정을 여기서도 건다. 로컬로 떨어뜨리지는
+         않는다: 서버가 답을 하긴 했고, 되물을 말만 없는 것이다 */
+      return { intent: askWhenNothingFound(text, body), source: 'server' };
     } catch (e) {
       return local(`throw ${String(e).slice(0, 120)}`);
     } finally {

@@ -75,13 +75,15 @@ test('잘못된 요청은 400, 공급자를 안 부른다', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('일일 상한 — PER_DAY["/transit"] 을 넘으면 429, 캐시 히트도 카운트한다', async () => {
+test('일일 상한 — PER_DAY["/transit"] 을 넘으면 429, 세는 건 상류를 부른 요청뿐이다', async () => {
   const e = env();
   const { f } = fakeFetch(200, fixture);
   const cap = PER_DAY['/transit'];
   assert.equal(cap, 300);
-  for (let i = 0; i < cap; i++) assert.equal((await handleTransit(body, e, { fetch: f, now })).status, 200);
-  assert.equal((await handleTransit(body, e, { fetch: f, now })).status, 429);
+  // 매번 다른 구간이라 전부 캐시 미스 = 전부 상류 호출
+  const nth = (i: number) => ({ ...body, origin: { lat: 37.5 + i / 1000, lng: 126.86 } });
+  for (let i = 0; i < cap; i++) assert.equal((await handleTransit(nth(i), e, { fetch: f, now })).status, 200);
+  assert.equal((await handleTransit(nth(cap), e, { fetch: f, now })).status, 429);
 });
 
 test('모르는 공급자는 501 — 조용히 google 로 떨어지지 않는다', async () => {
@@ -113,4 +115,32 @@ test('alternatives 는 캐시 키에서 빠진다 — 3개로 받은 뒤 1개 �
   const j2 = (await r2.json()) as { itineraries: unknown[] };
   assert.equal(j2.itineraries.length, 1);
   assert.equal(calls.length, 1); // 캐시 히트 — 상류를 다시 안 부름
+});
+
+test('/transit 캐시 적중은 일일 상한을 먹지 않는다 — /places 와 같은 순서다', async () => {
+  const e = env();
+  const { f, calls } = fakeFetch(200, fixture);
+  assert.equal((await handleTransit(body, e, { fetch: f, now })).status, 200); // 미스 1회 = 카운터 1
+  const counterKey = [...e.RATE.m.keys()][0];
+  e.RATE.m.set(counterKey, String(PER_DAY['/transit'])); // 상한에 닿은 상태로 만든다
+
+  const res = await handleTransit(body, e, { fetch: f, now });
+  assert.equal(res.status, 200); // 구글엔 안 나가는 요청이 예산을 먹으면 안 된다
+  assert.equal(calls.length, 1);
+  assert.equal(e.RATE.m.get(counterKey), String(PER_DAY['/transit'])); // 적중은 카운터를 올리지 않는다
+});
+
+test('캐시가 깨져 있으면 상류로 가고, 그때는 상한을 센다', async () => {
+  const e = env();
+  const first = fakeFetch(200, fixture);
+  assert.equal((await handleTransit(body, e, { fetch: first.f, now })).status, 200);
+  const cacheKey = [...e.CACHE.m.keys()][0];
+  e.CACHE.m.set(cacheKey, '{깨진'); // JSON.parse 실패
+  const counterKey = [...e.RATE.m.keys()][0];
+  e.RATE.m.set(counterKey, String(PER_DAY['/transit']));
+
+  const again = fakeFetch(200, fixture);
+  const res = await handleTransit(body, e, { fetch: again.f, now });
+  assert.equal(res.status, 429); // 상한을 건너뛰고 상류로 가면 안 된다
+  assert.equal(again.calls.length, 0);
 });

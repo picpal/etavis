@@ -1011,6 +1011,16 @@ type PlanApi = {
   /** A2를 대화 전으로 되돌린다. `entry`는 A2에 들어온 시점의 조건 — 화면이 잡아서 넘긴다 */
   /** `reason` 이 확정된 계획을 지킬지 정한다 — `chips.ts:shouldKeepCommittedPlan` */
   resetChat: (entry: { mode: PlanState['mode']; arriveByMin: number | null }, reason: ResetReason) => void;
+  /**
+   * 이 대화가 이미 확정 계획이 됐나. `resetChat` 이 스토어에 실어 보내는 것과 **같은 값**이다.
+   *
+   * 화면이 이걸 봐야 하는 이유: A2 를 떠날 때 스토어는 확정된 계획을 지키는데(`shouldKeepCommittedPlan`)
+   * 화면은 그 옆에서 `flow.reset()` 으로 플래너 결과를 버렸다. 확정본은 남고 그 계획을 **다시 잴
+   * 수단만** 사라져서, A6 교체가 첫 시도부터 조용히 아무것도 안 했다(2026-09-21 기기).
+   * 상태가 아니라 함수인 건 `chatCommitted` 가 같은 틱 안에서 읽혀야 하는 ref 라서다 —
+   * 근거는 `PlanAction` 의 `RESET_CHAT` 주석에 있다.
+   */
+  isChatCommitted: () => boolean;
   arriveByLabel: string;
 };
 
@@ -1138,6 +1148,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         chatCommitted.current = false;
         dispatch({ type: 'PUSH_CHAT', text });
       },
+      isChatCommitted: () => chatCommitted.current,
       resetChat: (entry, reason) =>
         dispatch({
           type: 'RESET_CHAT',

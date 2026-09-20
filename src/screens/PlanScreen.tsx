@@ -11,7 +11,7 @@ import { knownPlacesSnapshot } from '../lib/placesStore';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { assistantSay, calcPromptVisible, promptKind } from '../state/chatPrompt';
-import { chipLabel } from '../state/chips';
+import { chipLabel, shouldKeepCommittedPlan } from '../state/chips';
 import { Chevron, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
 import { NarrowAskSheet } from '../sheets/NarrowAskSheet';
@@ -342,7 +342,7 @@ function CalculatePrompt({ onYes, onNo }: { onYes: () => void; onNo: () => void 
 }
 
 export function PlanScreen({ navigation }: Props) {
-  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat, setChipLoad } = usePlan();
+  const { state, pushChat, destinationDisplay, originDisplay, applyIntent, removeChip, narrowStop, resetChat, setChipLoad, isChatCommitted } = usePlan();
   const flow = usePlanFlow();
   /* 머리글의 직행 시간이 '지금 이 여정'의 것인지 가리는 데만 쓴다 — 계산은 A5가 건다 */
   const planRequest = usePlanRequest();
@@ -452,6 +452,23 @@ export function PlanScreen({ navigation }: Props) {
      판단하면 리스너가 잡아 둔 낡은 클로저를 볼 수 있어, 통과 여부를 ref 로 못박는다 */
   const leaving = useRef(false);
 
+  /**
+   * A2 를 떠날 때 플래너 결과를 버릴지. **스토어와 같은 규칙을 쓴다**(`shouldKeepCommittedPlan`).
+   *
+   * 예전엔 무조건 `flow.reset()` 이었다. 그런데 A5 확정은 `navigation.reset` 으로 이 화면을
+   * 스택에서 걷어내므로, 포커스 없는 `beforeRemove` 가 그 자리에서 돌아 **방금 확정한 계획의
+   * `PlanResult` 를 버렸다.** 확정본(스톱·후보·leg 표)은 스토어에 남아 화면은 멀쩡한데,
+   * 그 계획을 **다시 잴 수단만** 사라진다 — A6 교체가 `measureSwap` 을 한 번도 못 불러
+   * 끝까지 '약'이었다(2026-09-21 기기, 로그 `cand.measureSkip no-plan`).
+   *
+   * 스토어는 이미 "확정하고 나가는 길이면 계획을 지킨다"고 정해 뒀는데 화면만 다르게 굴었다.
+   * 한 물음에 두 답이 있으면 언젠가 하나가 거짓말한다.
+   */
+  const leaveFlow = () => {
+    if (shouldKeepCommittedPlan('leavingChat', isChatCommitted())) return;
+    flow.reset();
+  };
+
   /* 스와이프 백은 화면을 네이티브에서 먼저 없애고 JS 에 통보한다 — beforeRemove 의
      preventDefault 가 무시되고 콘솔에 남는 건 경고 한 줄뿐이다(2026-09-15 시뮬레이터
      실측: "The screen 'Plan' was removed natively but didn't get removed from JS
@@ -474,7 +491,7 @@ export function PlanScreen({ navigation }: Props) {
            남의 대화처럼 보인다 */
         if (!navigation.isFocused()) {
           resetChat(entryRef.current, 'leavingChat');
-          flow.reset();
+          leaveFlow();
           return;
         }
         e.preventDefault();
@@ -487,7 +504,7 @@ export function PlanScreen({ navigation }: Props) {
 
   const confirmLeave = () => {
     resetChat(entryRef.current, 'leavingChat');
-    flow.reset();
+    leaveFlow();
     // 화면이 들고 있던 대화의 부산물도 같이 버린다 — 스토어만 비우면 되묻기·안내가 남는다
     setReply(null);
     setNarrowAsks([]);

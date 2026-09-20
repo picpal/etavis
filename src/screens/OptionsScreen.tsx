@@ -140,7 +140,7 @@ export function OptionsScreen({ navigation }: Props) {
     const i = current.visits.findIndex(v => v.slotId === slotId);
     const cand = state.slots.find(s => s.id === slotId)?.candidates.find(c => c.id === candId);
     if (i < 0 || !cand) return;
-    swapMeasure.measure(current.visits.map((v, k) => (k === i ? { ...v, candidate: cand } : v)), i);
+    swapMeasure.measure(current.visits, current.visits.map((v, k) => (k === i ? { ...v, candidate: cand } : v)), i);
   };
 
   /** 짐을 덜 드는 안의 옵션 인덱스. 계획이 없거나 짐을 재지 않았으면 null */

@@ -11,8 +11,9 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import type { Visit } from '../lib/routePlan/types';
-import { createSwapMeasurer } from './measureSwap';
-import { buildCandidates, buildLegs, visitsFromStops } from './planFlowBridge';
+import { a6SwapTarget, createSwapMeasurer, type SwapSkip } from './measureSwap';
+import { buildCandidates, buildLegs } from './planFlowBridge';
+import { logTrack } from '../lib/trackLog';
 import { usePlan } from './plan';
 import { usePlanFlow } from './planFlowProvider';
 
@@ -20,10 +21,18 @@ import { usePlanFlow } from './planFlowProvider';
 export type SwapMeasure = { measuring: boolean };
 
 /**
- * A5 — 교체 시트에서 고르면 오버라이드가 즉시 먹고(화면은 안 막는다), 뒤에서 두 구간을 잰다.
- * `visits` 는 **교체가 반영된 뒤의** 배열이어야 한다. 기준 안을 주면 남의 구간을 잰다
+ * 안 잰 이유를 로그에 남긴다. 화면엔 안 띄운다 — 사용자에게 보이는 건 '약'이 남는 것뿐이고
+ * 그건 이미 배너가 말한다. 이 줄이 없어서 기기에서 A6 가 왜 조용한지 못 짚었다(2026-09-21)
  */
-export function useSwapMeasureA5(): SwapMeasure & { measure: (visits: Visit[], idx: number) => void } {
+const logSkip = (where: 'A5' | 'A6', reason: SwapSkip) =>
+  logTrack({ k: 'act', a: 'cand.measureSkip', d: { where, reason } });
+
+/**
+ * A5 — 교체 시트에서 고르면 오버라이드가 즉시 먹고(화면은 안 막는다), 뒤에서 두 구간을 잰다.
+ * `base` 는 바꾸기 전 안, `visits` 는 **교체가 반영된 뒤의** 배열이다 — 잴 자격은 기준 안이,
+ * 잴 대상은 바뀐 안이 정한다
+ */
+export function useSwapMeasureA5(): SwapMeasure & { measure: (base: Visit[], visits: Visit[], idx: number) => void } {
   const flow = usePlanFlow();
   const [measuring, setMeasuring] = useState(false);
   const flowRef = useRef(flow);
@@ -34,16 +43,17 @@ export function useSwapMeasureA5(): SwapMeasure & { measure: (visits: Visit[], i
       createSwapMeasurer({
         onMeasuring: setMeasuring,
         onLearned: () => flowRef.current.legsLearned(),
+        onSkip: r => logSkip('A5', r),
       }),
     [],
   );
 
   return {
     measuring,
-    measure: (visits, idx) => {
+    measure: (base, visits, idx) => {
       const result = flowRef.current.state.result;
       if (!result) return;
-      void measurer.measure(result, visits, idx);
+      void measurer.measure(result, base, visits, idx);
     },
   };
 }
@@ -76,6 +86,7 @@ export function useSwapMeasureA6(): SwapMeasure & { measureReplace: (stopId: str
             buildCandidates(result, slots, visits),
           );
         },
+        onSkip: r => logSkip('A6', r),
       }),
     [],
   );
@@ -83,15 +94,11 @@ export function useSwapMeasureA6(): SwapMeasure & { measureReplace: (stopId: str
   return {
     measuring,
     measureReplace: (stopId, candidateId) => {
-      const { result, slots } = flowRef.current.state;
-      const stops = planRef.current.state.stops;
-      const idx = stops.findIndex(s => s.id === stopId);
-      if (!result || idx < 0) return;
-      const base = visitsFromStops(slots, stops);
-      const cand = slots.find(x => x.id === stops[idx].baseId)?.candidates.find(c => c.id === candidateId);
-      if (!base || !cand) return;
-      const visits = base.map((v, i) => (i === idx ? { ...v, candidate: cand } : v));
-      void measurer.measure(result, visits, idx);
+      /* `planRef.current.state.stops` 는 **교체가 리듀서에 닿기 전** 목록이다 — 같은 틱에
+         `replaceStop` 을 부르지만 리듀서는 다음 렌더에나 돈다. 그게 곧 기준 안이라 맞는 값이다 */
+      const t = a6SwapTarget(flowRef.current.state, planRef.current.state.stops, stopId, candidateId);
+      if (typeof t === 'string') return logSkip('A6', t);
+      void measurer.measure(t.result, t.target.base, t.target.visits, t.target.idx);
     },
   };
 }

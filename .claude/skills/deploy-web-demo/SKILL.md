@@ -201,13 +201,54 @@ curl -s -o /dev/null -D - -X OPTIONS "$W/route" -H 'Origin: https://evil.test' -
 
 ## 8. 화면 확인
 
+### 배포 전에 먼저 보려면 — 포트는 반드시 8080
+
+"확인하고 배포"가 더 안전한 순서다. 그때 **`dist/` 를 8080 으로 띄워야 한다.**
+`server/wrangler.toml` 의 `ALLOWED_ORIGINS` 가 `http://localhost:8080` ·
+`http://localhost:8081` · production 오리진만 허용하기 때문이다.
+
+```bash
+(cd dist && python3 -m http.server 8080)   # 8081 은 Metro 기본 포트다. 쓰지 마라
+```
+
+다른 포트로 띄우면 `/places` 가 CORS 에서 막혀 목 카탈로그로 내려가고,
+**아래 체크리스트의 `지금은 예시 장소 데이터로 보여드리고 있어요` 가 그대로 뜬다.**
+배포가 잘못된 것처럼 보이지만 원인은 포트다 — 2026-09-20 에 8099 로 띄워 이걸
+겪었고, 7번 검증은 전부 통과한 상태였다.
+
+8080 에는 이 워크트리의 `dist/` 를 cwd 로 잡은 프로세스가 이미 떠 있을 수 있다.
+`lsof -nP -iTCP:8080 -sTCP:LISTEN` 와 `lsof -p <pid> | awk '$4=="cwd"'` 로 확인하고,
+cwd 가 맞으면 그대로 쓴다 — `http.server` 는 요청마다 파일을 읽으므로 재빌드가 바로
+반영된다. 서빙 중인 해시와 `dist/index.html` 의 해시를 대조하면 확실하다.
+
+> **위치 권한 프롬프트가 ego-browser 를 멈춘다.** 프롬프트가 뜨는 순간 task space 가
+> 사용자 제어로 넘어가 스크립트가 끊긴다. 새 오리진은 매번 묻고, 사용자가 닫기만
+> 하면 다음 로드에 또 묻는다. `Browser.setPermission` 은 ego 의 CDP 에서 막혀 있으니,
+> 제어를 쥔 상태에서 `navigator.geolocation` 을 덮어쓴다. 실제 위치를 내보내지 않고
+> **거부·허용 두 경로를 다 재현**할 수 있다 — 웹에는 역지오코딩이 없어 **허용하면
+> `area` 가 null 이 되는 별개의 경로**라(`currentPlace.web.ts`), 둘 다 봐야 한다.
+>
+> ```js
+> await page.cdp("Page.addScriptToEvaluateOnNewDocument", {
+>   source: `navigator.geolocation.getCurrentPosition =
+>     (ok, err) => err({ code: 1, PERMISSION_DENIED: 1 });`,   // 허용 경로는 ok({coords}) 로
+> });
+> await page.goto("http://localhost:8080/");   // goto 전에 심어야 한다
+> ```
+>
+> 이 스크립트는 CDP 세션에 묶여 있어 **heredoc 이 끝나면 사라진다.** 리로드하는
+> 라운드마다 다시 심고, 리로드하지 않는 라운드에서는 이미 덮인 채로 남아 있다.
+
+### 밟는 길
+
 브라우저로 `https://etavia-demo.picpal.workers.dev` 를 열고 **A1 → 목적지 검색 →
 계획 만들기 → A5 판정** 까지 한 번 밟는다. 볼 것:
 
 - 데스크톱에서 폰 프레임·다이나믹 아일랜드·하단 탭바가 나오는가
 - 위치 권한을 거부해도 출발지가 `데모 출발지 · 여의나루역` 으로 채워지는가
 - 검색 결과 하단에 `지금은 예시 장소 데이터로 보여드리고 있어요` 가 **뜨지 않는가**
-  (뜨면 `/places` 가 실패해 목 카탈로그로 내려간 것 — 7번의 `/places` 를 다시 본다)
+  (뜨면 `/places` 가 실패해 목 카탈로그로 내려간 것 — 7번의 `/places` 를 다시 본다.
+  **로컬에서 보고 있다면 포트부터 의심한다**: 8080 이 아니면 CORS 에서 막힌다)
 - A5 에 `N분 여유/늦어요` 판정이 뜨는가. `소요시간은 추정이에요 · 서버 연결 전` 배너가
   보이면 `/route` 가 실패해 추정으로 내려간 것이다
 - 콘솔 에러 0

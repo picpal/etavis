@@ -371,3 +371,86 @@ test('toLegacyPlan — timingSource 를 확정본에 싣고, 1안 근거는 출�
   assert.equal(q.dataset.timingSource, 'provider');
   assert.match(q.dataset.options[0].rationale, /^실측 \d+회로 확인한 경로예요\.$/);
 });
+
+test('toLegacyPlan — 오버라이드로 미실측 후보가 들어오면 dataset.legEstimated 가 true 다', async () => {
+  // 시드(옵션에 뽑힌 후보)는 목 공급자라도 leg 가 저장돼 실측으로 친다. 시드 밖 oy4 로 바꾸면
+  // 그 두 구간은 추정이고, 확정 뒤 화면이 이 플래그로 '약'을 붙여야 한다 — 출처가 실측이어도
+  const extraSlots: Slot[] = slots.map(s =>
+    s.id === 's-1' ? { ...s, candidates: [...s.candidates, c('oy4', '올리브영 D', at(37.51, 127.04))] } : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: extraSlots, order: 'auto' }, mockRouteProvider());
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: extraSlots });
+  s = planFlowReducer(s, { type: 'RESULT', result: { ...result, timingSource: 'provider_legs' as const } });
+
+  assert.equal(toLegacyPlan({ flow: s, departMin: 480 }).dataset.legEstimated, false, '시드끼리면 실측이다');
+  s = planFlowReducer(s, { type: 'SET_OVERRIDE', optionIdx: 0, slotId: 's-1', candidateId: 'oy4' });
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  assert.equal(p.dataset.legEstimated, true);
+  assert.equal(p.dataset.timingSource, 'provider_legs', '출처는 그대로다 — 등급을 낮추는 건 legEstimated 몫이다');
+});
+
+test('slotCandidates — 후보마다 등급(cls)을 들고 오고 note 는 추정을 말하지 않는다', async () => {
+  const extraSlots: Slot[] = slots.map(s =>
+    s.id === 's-1' ? { ...s, candidates: [...s.candidates, c('oy4', '올리브영 D', at(37.51, 127.04))] } : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: extraSlots, order: 'auto' }, mockRouteProvider());
+  const { visits, timing } = effectiveVisits(result, extraSlots, 0, {});
+  const idx = visits.findIndex(v => v.slotId === 's-1');
+  const list = slotCandidates(result, extraSlots, visits, idx, timing);
+  // 등급은 값에 붙어 다닌다 — 시트가 note 문자열을 냄새 맡아 '약'을 정하던 자리를 없앤다
+  assert.ok(list.every(x => x.cls === 'measured' || x.cls === 'estimated'));
+  assert.equal(list.find(x => x.id === 'oy4')!.cls, 'estimated', '시드 밖 후보는 추정이다');
+  assert.equal(list.find(x => x.id === visits[idx].candidate.id)!.cls, 'measured', '현재 후보는 계획 등급이다');
+  assert.ok(list.every(x => !x.note.includes('추정')), '등급은 cls 가 말한다. note 까지 말하면 한쪽이 틀린다');
+});
+
+// --- 신뢰성 2단계: 시트의 숫자는 같은 자로 잰 값이다 ---
+//
+// 서교동→코엑스 대중교통, CU 교체 시트 30곳이 전부 "−32분"이고 한 카드의 도착이 22:23 출발 여행에서
+// 21:58 이었다(2026-09-20). 기준 실측 합계에서 추정 합계를 뺐고, 그 여행 전체 차이를 경유지 한 곳
+// 도착에 더했다. 대중교통 목은 구간마다 접근·대기 8분을 넣으므로 같은 함정을 그대로 재현한다.
+const tD = { latitude: 37.5, longitude: 127.1136 };
+const cu1 = c('cu1', 'CU 출발점', at(37.5, 127.0113)); // 회랑 위, 출발 1km
+const cuSeeds = [c('cu3', 'CU 3km', at(37.5, 127.034)), c('cu5', 'CU 5km', at(37.5, 127.0567)), c('cu7', 'CU 7km', at(37.5, 127.079))];
+/** cu1 주변 300m 안 30곳 — 같은 자리다. 시드 4안 밖이라 전부 미실측 */
+const cuGhosts = Array.from({ length: 30 }, (_, i) => c(`g${i}`, `CU 홍대 ${i}`, at(37.5027 + (i % 3) * 0.0003, 127.0113 + (i % 5) * 0.0004)));
+const cuSlots: Slot[] = [{ id: 'cu', query: 'CU', dwellMin: 10, count: 1, flexible: true, openNow: false, stopKind: 'category', searchStatus: 'ok',
+  candidates: [cu1, ...cuSeeds, ...cuGhosts] }];
+const cuReq: PlanRequest = { ...req, destination: tD, mode: 'transit', arriveByMin: null, departAtMin: 1343,
+  stops: [{ id: 'cu', queries: ['CU'], count: 1, flexible: true, openNow: false, stopKind: 'category' }] };
+async function cuReady(): Promise<PlanFlowState> {
+  const result = await plan({ origin: O, destination: tD, departAtMin: 1343, mode: 'transit', slots: cuSlots, order: 'auto' }, mockRouteProvider());
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: cuReq });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: cuSlots });
+  s = planFlowReducer(s, { type: 'RESULT', result });
+  // 기준을 cu1 로 고정한다 — 어느 시드가 1안이 되든 이 테스트의 전제는 "기준은 실측"이다
+  return planFlowReducer(s, { type: 'SET_OVERRIDE', optionIdx: 0, slotId: 'cu', candidateId: 'cu1' });
+}
+
+test('slotCandidates — 같은 자리 후보들이 전부 같은 큰 음수로 나오지 않고 도착은 출발 뒤다', async () => {
+  const s = await cuReady();
+  const { visits, timing } = effectiveVisits(s.result!, cuSlots, 0, s.overrides);
+  assert.equal(visits[0].candidate.id, 'cu1');
+  assert.equal(timing.estimated, false, '전제 — 기준 안은 실측이어야 자 섞기가 성립한다');
+  const list = slotCandidates(s.result!, cuSlots, visits, 0);
+  const ghosts = list.filter(x => x.id.startsWith('g'));
+  assert.equal(ghosts.length, 30);
+  for (const g of ghosts) {
+    assert.equal(g.cls, 'estimated', `${g.id} 는 시드 밖이라 추정이다`);
+    assert.ok(Math.abs(g.addedMin) < 3, `${g.id} 300m 옆인데 ${g.addedMin}분`);
+    assert.ok(toMin(g.arriveAt) >= 1343, `${g.id} 도착 ${g.arriveAt} 이 출발 22:23 앞이다`);
+  }
+  // 시드로 실측된 후보는 '약' 없이 실측 차이다
+  assert.equal(list.find(x => x.id === 'cu3')!.cls, 'measured');
+  assert.equal(list.find(x => x.id === 'cu1')!.cls, 'measured', '현재 경로는 실측이다');
+});
+
+test('경로에서 Nm 는 회랑 수직거리다 — 추정 km 에서 실측 km 를 뺀 0m 가 아니다', async () => {
+  const s = await cuReady();
+  const { visits } = effectiveVisits(s.result!, cuSlots, 0, s.overrides);
+  const list = slotCandidates(s.result!, cuSlots, visits, 0);
+  const g0 = list.find(x => x.id === 'g0')!;
+  assert.match(g0.note, /경로에서 (29\d|30\d)m/, g0.note);
+  assert.ok(g0.detourKm >= 0.3 && g0.detourKm <= 0.31, `${g0.detourKm}`);
+});

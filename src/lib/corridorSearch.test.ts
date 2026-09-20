@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildPolyline, haversineM } from './geo.ts';
-import { ANCHOR_INITIAL_M, initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, type SearchFn } from './corridorSearch.ts';
+import { ANCHOR_INITIAL_M, initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, spreadCut, type SearchFn } from './corridorSearch.ts';
 import type { PlaceCandidate } from './routePlan/types.ts';
 import type { Anchor } from './routePlan/anchors.ts';
 
@@ -561,4 +561,93 @@ test('앵커 검색도 같은 규칙을 쓴다', async () => {
   assert.equal(calls.length, anchors.length, '한 회차만');
   assert.equal(r.status, 'none', '500m 안엔 없다 — 넓히지 못했으니 못 찾은 것이다');
   assert.equal(r.radiusM, ANCHOR_INITIAL_M);
+});
+
+/* ── 한 동네가 목록을 독점하지 않는다 — 진행률 버킷 라운드로빈 ─────────────────
+   실측 2026-09-20 기기: 서교동 → 코엑스 대중교통 13km 에서 CU 를 찾자 교체 시트
+   30곳이 전부 홍대였다. 출발지·승차역 앵커 둘이 홍대 안에 있고 카카오가 앵커당
+   15건을 주니 2 × 15 = 30 = max 로 딱 찼다. 삼성역·코엑스 앵커의 CU 는 걷는 거리가
+   조금 더 멀어 도보순 컷에 닿기도 전에 밀렸다 — 없던 게 아니라 밀린 것이다.
+   그래서 같은 검색 결과를 진행률로 묶어 돌아가며 자른다(설계 §3 D4). /places 는 안 는다. */
+
+test('앵커 둘이 15곳씩 가까이 채워도 세 번째 앵커의 후보가 목록에 산다 — 진행률 버킷마다 자리를 남긴다', async () => {
+  // 앞 두 앵커는 100m 안에 15곳씩, 셋째는 300m 에 5곳. 도보순 한 줄이면 앞 30곳이 max 를 다 먹는다
+  const three: Anchor[] = [
+    anchor('a0', 'origin', 127.0),
+    anchor('a1', 'board', 127.01),
+    anchor('a3', 'alight', 127.49),
+  ];
+  const dense = (lng: number, tag: string): PlaceCandidate[] =>
+    Array.from({ length: 15 }, (_, i) => ({ id: `${tag}${i}`, name: `CU ${tag}${i}`, coord: at(37.5009, lng + i * 0.00001) })); // ≈100m
+  const sparse = Array.from({ length: 5 }, (_, i) =>
+    ({ id: `s${i}`, name: `CU 삼성${i}`, coord: at(37.5027, 127.49 + i * 0.00001) })); // ≈300m
+  const { fn } = catalogSearch([...dense(127.0, 'h'), ...dense(127.01, 'b'), ...sparse]);
+
+  const r = await searchAtAnchors(three, 'CU', { need: 1, target: 8 }, fn);
+
+  assert.equal(r.status, 'ok');
+  assert.equal(r.candidates.length, 30);
+  const third = r.candidates.filter(c => c.anchorId === 'a3');
+  assert.ok(third.length >= 5, `셋째 앵커 후보가 ${third.length}곳 — 5곳 다 살아야 한다`);
+  // 나머지 자리는 앞 두 앵커가 도보순으로 나눠 갖는다 — 한쪽이 독점하지 않는다
+  const first = r.candidates.filter(c => c.anchorId === 'a0').length;
+  const second = r.candidates.filter(c => c.anchorId === 'a1').length;
+  assert.ok(first >= 10 && second >= 10, `a0 ${first} · a1 ${second}`);
+});
+
+test('회랑 5점 중 한 점에 40곳이 몰려도 다른 점의 후보가 산다', async () => {
+  // 첫 표본점(127.0) 옆에 40곳이 경로 위(0~440m)에 있고, 넷째(127.375)·다섯째(127.5) 점엔
+  // 550m 떨어진 곳이 3곳·2곳. 수직거리순 한 줄이면 30곳이 전부 첫 점 것이다
+  const crowd = Array.from({ length: 40 }, (_, i) =>
+    ({ id: `c${i}`, name: `c${i}`, coord: at(37.5 + i * 0.0001, 127.0) }));
+  const later = [
+    ...[0, 1, 2].map(i => ({ id: `d${i}`, name: `d${i}`, coord: at(37.505, 127.375 + i * 0.001) })),
+    ...[0, 1].map(i => ({ id: `e${i}`, name: `e${i}`, coord: at(37.505, 127.499 - i * 0.001) })),
+  ];
+  const { fn } = catalogSearch([...crowd, ...later]);
+
+  const r = await searchAlong(line2, '편의점', { need: 1, target: 8, initialRadiusM: 2000, maxRadiusM: 2000 }, fn);
+
+  assert.equal(r.candidates.length, 30);
+  const ids = new Set(r.candidates.map(c => c.id));
+  for (const c of later) assert.ok(ids.has(c.id), `${c.id} 가 밀려났다: ${[...ids]}`);
+  // 버킷 안 순서는 오늘 기준 그대로 — 첫 점 것은 수직거리순이다
+  const crowdKept = r.candidates.filter(c => c.id.startsWith('c')).map(c => Number(c.id.slice(1)));
+  assert.deepEqual(crowdKept, [...crowdKept].sort((a, b) => a - b));
+});
+
+test('side=end 면 그쪽 버킷을 먼저 채우되 반대쪽을 버리지 않는다', async () => {
+  // 목적지 쪽 2곳, 출발지 쪽 5곳(첫 구간 2곳은 경로 위, 둘째 구간 것은 110m 옆).
+  // 그쪽 먼저: n1·n2. 남은 두 자리는 반대쪽에서 **구간을 돌아가며** — 첫 구간이 더 가까워도 둘 다 주지 않는다
+  const list: PlaceCandidate[] = [
+    { id: 'f0a', name: 'f0a', coord: at2(127.0) },
+    { id: 'f0b', name: 'f0b', coord: at2(127.001) },
+    { id: 'f1a', name: 'f1a', coord: at(37.501, 127.125) },
+    { id: 'f1b', name: 'f1b', coord: at(37.501, 127.126) },
+    { id: 'f2a', name: 'f2a', coord: at2(127.25) },
+    { id: 'n1', name: 'n1', coord: at2(127.495) },
+    { id: 'n2', name: 'n2', coord: at(37.501, 127.49) },
+  ];
+  const fn = async (): Promise<PlaceCandidate[]> => list;
+
+  const r = await searchAlong(line2, '마트', {
+    need: 1, target: 1, initialRadiusM: 2000, maxRadiusM: 2000,
+    max: 4, side: 'end', origin: O2, destination: D2,
+  }, fn);
+
+  assert.deepEqual(r.candidates.slice(0, 2).map(c => c.id), ['n1', 'n2'], '그쪽이 먼저다');
+  assert.deepEqual(r.candidates.slice(2).map(c => c.id), ['f0a', 'f1a'], '반대쪽도 구간마다 한 곳씩');
+});
+
+test('spreadCut — 공급이 있는 버킷 B 개면 각각 최소 ⌊max / B⌋ 자리를 얻는다', () => {
+  // 5 버킷 × 10곳, max 30 → 6곳씩. 순위 값이 버킷마다 겹쳐도(0~9) 버킷 간에 경합하지 않는다
+  const list = Array.from({ length: 50 }, (_, i) => ({ id: i, bucket: i % 5, rank: Math.floor(i / 5), coord: at2(127.0) }));
+  const out = spreadCut(list, c => c.bucket, c => c.rank, 30);
+  assert.equal(out.length, 30);
+  for (let b = 0; b < 5; b++) {
+    assert.equal(out.filter(c => c.bucket === b).length, 6, `버킷 ${b}`);
+  }
+  // 버킷 안은 순위순이고 앞머리는 버킷을 진행 순으로 한 바퀴 돈다
+  assert.deepEqual(out.slice(0, 5).map(c => c.bucket), [0, 1, 2, 3, 4]);
+  assert.deepEqual(out.filter(c => c.bucket === 2).map(c => c.rank), [0, 1, 2, 3, 4, 5]);
 });

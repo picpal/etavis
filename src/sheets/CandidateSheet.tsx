@@ -7,9 +7,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, type } from '../theme/tokens';
 import { Candidate } from '../data/mockData';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SegmentControl } from '../components/common';
-import { CandidateSort, rankCandidates, sortsFor } from '../lib/candidateRank';
+import { CandidateSort, rankClusters, sortsFor } from '../lib/candidateRank';
 import { StripePhoto } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
+import { approxOf, classOf, deltaCopy } from '../lib/timingCopy';
+import type { TimingSource } from '../lib/routePlan/types';
 
 function OpenStateRow({ cand }: { cand: Candidate }) {
   const tint = cand.openState === 'closed' ? color.muted : color.green;
@@ -45,11 +47,6 @@ function HotBadge() {
   );
 }
 
-/** 부호는 하나만 — 빼는 후보(음수)는 '+-1분'이 아니라 '−1분' */
-const signedMin = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(Math.round(n))}분`;
-/** 후보 note에 '추정'이 섞여 있으면 추가시간이 실측이 아니라는 뜻 — 앞에 '약 '을 붙인다 */
-const addedLabel = (cand: Candidate) => `${cand.note.includes('추정') ? '약 ' : ''}${signedMin(cand.addedMin)}`;
-
 export function CandidateSheet({
   visible,
   title,
@@ -58,6 +55,7 @@ export function CandidateSheet({
   onPick,
   onClose,
   mode,
+  timingSource,
 }: {
   visible: boolean;
   title: string;
@@ -67,8 +65,15 @@ export function CandidateSheet({
   onPick: (candidateId: string) => void;
   onClose: () => void;
   mode: 'car' | 'walk' | 'transit';
+  /** 계획의 시간 출처. 후보가 자기 등급(`cls`)을 안 들고 오면 이걸로 본다 — 목 데이터셋 */
+  timingSource?: TimingSource;
 }) {
   const insets = useSafeAreaInsets();
+  // '약'은 여기서 정하지 않는다 — 예전엔 note 의 '추정' 글자를 냄새 맡았는데, note 가 trend 근거로
+  // 바뀌면 그 글자가 사라져 '약'도 같이 사라졌다. 등급은 후보의 cls 가 들고 문구는 timingCopy 가 낸다
+  const clsOf = (cand: Candidate) => cand.cls ?? classOf(timingSource);
+  const addedLabel = (cand: Candidate) => deltaCopy({ min: cand.addedMin, cls: clsOf(cand) });
+  const arriveLabel = (cand: Candidate) => `${approxOf(clsOf(cand))}${cand.arriveAt}`;
   const [tabIdxRaw, setTabIdx] = useState(0);
 
   // 닫힘 애니메이션 동안 내용을 유지 — visible이 꺼지면 호출부의 candidates가 []로 무너져도
@@ -84,12 +89,21 @@ export function CandidateSheet({
   const tabIdx = Math.min(tabIdxRaw, tabs.length - 1);
   const sortIdx = tabs[tabIdx]?.sort ?? 1;
 
-  // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다. 마감·선택불가는 여기서 걸러진다
-  const sorted = useMemo(() => rankCandidates(shown.candidates, sortIdx), [shown.candidates, sortIdx]);
+  // 정렬은 목록 전체에 적용된다 — 펼친 카드도 제자리를 지킨다. 마감·선택불가는 여기서 걸러진다.
+  // 세는 단위는 후보가 아니라 **자리**다. 250m 안 30곳을 30줄로 늘어놓으면 선택지가 30개라고
+  // 말하는 셈인데, 시간으로는 하나다(설계 §4)
+  const clusters = useMemo(() => rankClusters(shown.candidates, sortIdx, shown.currentId), [shown.candidates, sortIdx, shown.currentId]);
+  const total = clusters.reduce((n, g) => n + g.members.length, 0);
   const [showAll, setShowAll] = useState(false);
   const VISIBLE = 5;
-  const visibleCands = showAll ? sorted : sorted.slice(0, VISIBLE);
-  const hidden = sorted.length - visibleCands.length;
+  /** 한 자리 안에서 접지 않고 보여 주는 수. 묶은 이유가 "골라야 할 게 적다"라 여기도 접는다 */
+  const WITHIN = 3;
+  const [openGroups, setOpenGroups] = useState<string[]>([]);
+  const visibleGroups = showAll ? clusters : clusters.slice(0, VISIBLE);
+  const membersShown = (g: (typeof clusters)[number]) =>
+    openGroups.includes(g.id) ? g.members : g.members.slice(0, WITHIN);
+  const visibleCands = visibleGroups.flatMap(membersShown);
+  const hidden = total - visibleGroups.reduce((n, g) => n + g.members.length, 0);
 
   /**
    * 펼쳐 볼 후보 — 기본은 지금 정렬의 1위(visibleCands[0]).
@@ -101,6 +115,7 @@ export function CandidateSheet({
       setExpandedId(null); // 시트가 새로 열리면 추천으로 되돌림
       setTabIdx(0);
       setShowAll(false);
+      setOpenGroups([]);
     }
   }, [visible]);
   // 화면에 실제로 그려지는 카드(visibleCands) 기준으로 찾는다 — sorted 전체에서 찾으면
@@ -122,6 +137,132 @@ export function CandidateSheet({
     onClose();
   };
 
+  /**
+   * 카드 하나. `showTime` 이 거짓이면 시간 칸을 그리지 않는다 — 같은 자리로 묶인 카드는
+   * 자기 시간을 따로 말하지 않고 묶음 머리가 한 번만 말한다(설계 §4)
+   */
+  const renderCard = (cand: Candidate, showTime: boolean) => {
+    const isCurrent = cand.id === shown.currentId;
+    const isOpen = cand.id === expanded?.id;
+
+    if (isOpen) {
+      return (
+        <Card key={cand.id} elevated style={{ padding: 18, gap: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+            <StripePhoto size={64} radius={16} />
+            <View style={{ flex: 1, gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.ink }}>
+                  {cand.name}
+                </Text>
+                {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
+                {cand.trend?.hot ? (
+                  <HotBadge />
+                ) : isCurrent ? (
+                  <CurrentBadge />
+                ) : (
+                  cand.recommended && <RecommendBadge />
+                )}
+              </View>
+              <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
+                {cand.note}
+              </Text>
+              <OpenStateRow cand={cand} />
+            </View>
+          </View>
+          {/* 묶음 안에서는 시간 칸을 빼고 묶음 머리가 한 번만 말한다 — 머리가
+              "시간 차이 없어요"라 해 놓고 카드마다 다른 숫자를 내면 둘 중 하나가 거짓이다 */}
+          <MicroLabelRow
+            items={[
+              ...(showTime
+                ? [
+                    { label: '추가시간', value: addedLabel(cand), tint: color.amber },
+                    { label: '도착', value: arriveLabel(cand) },
+                  ]
+                : []),
+              { label: '체류', value: `${cand.dwellMin}분` },
+              { label: '주차', value: cand.parking },
+            ]}
+          />
+          {(cand.reason || cand.verifiedNote) && (
+            <View style={{ gap: 5 }}>
+              {cand.reason && (
+                <>
+                  <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 12, letterSpacing: 0.48, color: color.muted }}>
+                    추천 이유
+                  </Text>
+                  <Text style={[type.body, { color: color.body }]}>{cand.reason}</Text>
+                </>
+              )}
+              {cand.verifiedNote && (
+                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
+                  {cand.verifiedNote}
+                </Text>
+              )}
+            </View>
+          )}
+          {isCurrent ? (
+            <View
+              style={{
+                minHeight: 52,
+                borderRadius: 16,
+                backgroundColor: color.track,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={[type.btn, { color: color.body }]}>현재 선택된 매장이에요</Text>
+            </View>
+          ) : (
+            <PrimaryButton label="이 매장으로 정하기" height={52} borderRadius={16} onPress={() => pick(cand)} />
+          )}
+        </Card>
+      );
+    }
+
+    return (
+      <Pressable key={cand.id} onPress={() => focus(cand)}>
+        {({ pressed }) => (
+          <Card
+            style={{
+              padding: 16,
+              flexDirection: 'row',
+              gap: 14,
+              alignItems: 'center',
+              opacity: pressed ? 0.8 : 1,
+            }}
+          >
+            <StripePhoto size={52} radius={14} />
+            <View style={{ flex: 1, gap: 5 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={[type.item, { color: color.ink }]}>{cand.name}</Text>
+                {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
+                {cand.trend?.hot ? (
+                  <HotBadge />
+                ) : isCurrent ? (
+                  <CurrentBadge />
+                ) : (
+                  cand.recommended && <RecommendBadge />
+                )}
+              </View>
+              <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
+                {cand.note}
+              </Text>
+            </View>
+            {showTime && (
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Text style={[type.statS, { color: color.amber }]}>{addedLabel(cand)}</Text>
+                <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
+                  {arriveLabel(cand)}
+                </Text>
+              </View>
+            )}
+          </Card>
+        )}
+      </Pressable>
+    );
+  };
+
   return (
     <Sheet visible={visible} onClose={onClose} height={730}>
       {expanded ? (
@@ -133,7 +274,7 @@ export function CandidateSheet({
                 <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 12, lineHeight: 12, letterSpacing: 0.72, color: color.muted }}>
                   {shown.title}
                 </Text>
-                <Text style={[type.titleL, { color: color.ink }]}>후보 {sorted.length}곳</Text>
+                <Text style={[type.titleL, { color: color.ink }]}>후보 {total}곳</Text>
               </View>
               <Pressable onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                 <Text style={[type.action, { color: color.primary }]}>완료</Text>
@@ -154,118 +295,50 @@ export function CandidateSheet({
             contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: Math.max(insets.bottom, 20), gap: 14 }}
             showsVerticalScrollIndicator={false}
           >
-            {/* 후보 목록 — 순서는 정렬 기준만 따르고, 탭하면 그 자리에서 펼쳐진다 */}
-            {visibleCands.map(cand => {
-              const isCurrent = cand.id === shown.currentId;
-              const isOpen = cand.id === expanded.id;
-
-              if (isOpen) {
-                return (
-                  <Card key={cand.id} elevated style={{ padding: 18, gap: 16 }}>
-                    <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
-                      <StripePhoto size={64} radius={16} />
-                      <View style={{ flex: 1, gap: 6 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 18, lineHeight: 22, color: color.ink }}>
-                            {cand.name}
-                          </Text>
-                          {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
-                          {cand.trend?.hot ? (
-                            <HotBadge />
-                          ) : isCurrent ? (
-                            <CurrentBadge />
-                          ) : (
-                            cand.recommended && <RecommendBadge />
-                          )}
-                        </View>
-                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
-                          {cand.note}
-                        </Text>
-                        <OpenStateRow cand={cand} />
-                      </View>
-                    </View>
-                    <MicroLabelRow
-                      items={[
-                        { label: '추가시간', value: addedLabel(cand), tint: color.amber },
-                        { label: '도착', value: cand.arriveAt },
-                        { label: '체류', value: `${cand.dwellMin}분` },
-                        { label: '주차', value: cand.parking },
-                      ]}
-                    />
-                    {(cand.reason || cand.verifiedNote) && (
-                      <View style={{ gap: 5 }}>
-                        {cand.reason && (
-                          <>
-                            <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 12, letterSpacing: 0.48, color: color.muted }}>
-                              추천 이유
-                            </Text>
-                            <Text style={[type.body, { color: color.body }]}>{cand.reason}</Text>
-                          </>
-                        )}
-                        {cand.verifiedNote && (
-                          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted }}>
-                            {cand.verifiedNote}
-                          </Text>
-                        )}
-                      </View>
-                    )}
-                    {isCurrent ? (
-                      <View
-                        style={{
-                          minHeight: 52,
-                          borderRadius: 16,
-                          backgroundColor: color.track,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text style={[type.btn, { color: color.body }]}>현재 선택된 매장이에요</Text>
-                      </View>
-                    ) : (
-                      <PrimaryButton label="이 매장으로 정하기" height={52} borderRadius={16} onPress={() => pick(cand)} />
-                    )}
-                  </Card>
-                );
-              }
-
+            {/* 후보 목록 — 자리(묶음)마다 한 덩어리. 순서는 정렬 기준만 따르고,
+                탭하면 그 자리에서 펼쳐진다 */}
+            {visibleGroups.map(group => {
+              const many = group.members.length > 1;
+              const rest = group.members.length - membersShown(group).length;
               return (
-                <Pressable key={cand.id} onPress={() => focus(cand)}>
-                  {({ pressed }) => (
-                    <Card
+                <View key={group.id} style={{ gap: many ? 8 : 14 }}>
+                  {many && (
+                    <View
                       style={{
-                        padding: 16,
                         flexDirection: 'row',
-                        gap: 14,
                         alignItems: 'center',
-                        opacity: pressed ? 0.8 : 1,
+                        justifyContent: 'space-between',
+                        paddingHorizontal: 4,
+                        gap: 12,
                       }}
                     >
-                      <StripePhoto size={52} radius={14} />
-                      <View style={{ flex: 1, gap: 5 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <Text style={[type.item, { color: color.ink }]}>{cand.name}</Text>
-                          {/* 카드당 배지 하나 — 겹치면 요즘 인기가 이긴다 */}
-                          {cand.trend?.hot ? (
-                            <HotBadge />
-                          ) : isCurrent ? (
-                            <CurrentBadge />
-                          ) : (
-                            cand.recommended && <RecommendBadge />
-                          )}
-                        </View>
-                        <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }}>
-                          {cand.note}
-                        </Text>
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        <Text style={[type.statS, { color: color.amber }]}>{addedLabel(cand)}</Text>
+                      <Text style={{ fontFamily: 'Pretendard-SemiBold', fontSize: 12, lineHeight: 16, color: color.muted }}>
+                        같은 자리 {group.members.length}곳 · 시간 차이 없어요
+                      </Text>
+                      {/* 시간은 자리마다 한 번만 — 250m 안의 1~2분 차이는 구간 추정 오차보다
+                          작아서, 곳마다 다른 숫자를 붙이면 없는 차이를 고르게 만든다 */}
+                      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                        <Text style={[type.statS, { color: color.amber }]}>{addedLabel(group.lead)}</Text>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
-                          {cand.arriveAt}
+                          {arriveLabel(group.lead)}
                         </Text>
                       </View>
-                    </Card>
+                    </View>
                   )}
-                </Pressable>
+                  {membersShown(group).map(cand => renderCard(cand, !many))}
+                  {rest > 0 && (
+                    <Pressable
+                      onPress={() => {
+                        haptic();
+                        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                        setOpenGroups(ids => [...ids, group.id]);
+                      }}
+                      style={{ paddingVertical: 8, alignItems: 'center' }}
+                    >
+                      <Text style={[type.action, { color: color.primary, fontSize: 14 }]}>이 자리 {rest}곳 더</Text>
+                    </Pressable>
+                  )}
+                </View>
               );
             })}
             {hidden > 0 && (

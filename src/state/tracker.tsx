@@ -100,6 +100,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     arrivedAtDest: state.arrivedAtDest,
     arriveByMin: state.arriveByMin,
     timingSource: state.dataset.timingSource,
+    legEstimated: state.dataset.legEstimated,
   });
   planRef.current = {
     stops: state.stops,
@@ -110,6 +111,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     arrivedAtDest: state.arrivedAtDest,
     arriveByMin: state.arriveByMin,
     timingSource: state.dataset.timingSource,
+    legEstimated: state.dataset.legEstimated,
   };
   const actionsRef = useRef({ arriveAtStop, departStop, visitStop, arriveAtDestination });
   actionsRef.current = { arriveAtStop, departStop, visitStop, arriveAtDestination };
@@ -258,7 +260,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         if (!notifiedRef.current.dest) {
           notifiedRef.current.dest = true;
           const p = planRef.current;
-          const copy = timingCopy(p.timingSource, p.mode);
+          const copy = timingCopy(p.timingSource, p.mode, p.legEstimated);
           logTrack({ k: 'notify', kind: 'dest', id: 'D' });
           void notifyDestinationArrival(
             destinationDisplay,
@@ -299,7 +301,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           logTrack({ k: 'notify', kind: 'nextLeg', id: after?.id ?? 'D' });
           void notifyNextLeg(
             after?.name ?? destinationDisplay,
-            `${timingCopy(planRef.current.timingSource, planRef.current.mode).approx}${formatEta(after?.arriveAt ?? planRef.current.destArriveAt)}`,
+            `${timingCopy(planRef.current.timingSource, planRef.current.mode, planRef.current.legEstimated).approx}${formatEta(after?.arriveAt ?? planRef.current.destArriveAt)}`,
             planRef.current.mode === 'transit',
           );
         }

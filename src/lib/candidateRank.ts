@@ -6,6 +6,7 @@
  * - 정렬 기준은 탭 순서와 1:1. 동률이면 항상 추가시간이 짧은 쪽이 먼저다.
  */
 import type { Candidate } from '../data/mockData';
+import { clusterCandidates, preferenceOrder, SAME_TIME_M, type Cluster } from './routePlan/cluster';
 
 export const CANDIDATE_SORTS = ['추천', '추가시간', '주차'] as const;
 export type CandidateSort = 0 | 1 | 2;
@@ -30,6 +31,26 @@ export function isSelectable(c: Candidate): boolean {
 export function rankCandidates(candidates: readonly Candidate[], sort: CandidateSort): Candidate[] {
   const key = keyFor[sort];
   return candidates.filter(isSelectable).sort((a, b) => key(a) - key(b) || byAdded(a, b));
+}
+
+/**
+ * 시트가 그리는 단위. 고를 수 없는 곳을 먼저 빼고(빼야 그것이 묶음 대표가 되는 일이 없다),
+ * 탭 기준으로 한 줄로 세운 뒤 자리로 묶는다. 묶음끼리의 순서는 **대표**의 키로 정하고,
+ * 묶음 안은 흩지 않는다 — 탭을 '추가시간'으로 바꿔도 한 자리 안의 4곳이 흩어져 목록 여기저기로
+ * 튀면 "같은 자리"라는 말이 거짓이 된다
+ */
+export function rankClusters(
+  candidates: readonly Candidate[],
+  sort: CandidateSort,
+  currentId?: string,
+): Cluster<Candidate>[] {
+  const key = keyFor[sort];
+  const flat = rankCandidates(candidates, sort);
+  return clusterCandidates(flat, SAME_TIME_M, currentId).map(g => ({
+    ...g,
+    members: [g.lead, ...g.members.filter(c => c !== g.lead).sort(preferenceOrder)],
+  }))
+    .sort((a, b) => key(a.lead) - key(b.lead) || byAdded(a.lead, b.lead));
 }
 
 /**

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankCandidates, CANDIDATE_SORTS, sortsFor } from './candidateRank.ts';
+import { rankCandidates, rankClusters, CANDIDATE_SORTS, sortsFor } from './candidateRank.ts';
 import type { Candidate } from '../data/mockData.ts';
 
 const base: Omit<Candidate, 'id' | 'addedMin' | 'detourKm' | 'parking'> = {
@@ -89,4 +89,66 @@ test('입력 배열은 건드리지 않는다', () => {
   const list = [c('a', 9, 1, '가능'), c('b', 1, 1, '가능')];
   rankCandidates(list, 0);
   assert.deepEqual(ids(list), ['a', 'b']);
+});
+
+// ── 묶음 ─────────────────────────────────────────────────────────────────────
+// 시트가 그리는 단위는 후보가 아니라 자리다. 250m 안 30곳을 30줄로 세우면 선택지가
+// 30개라는 거짓말이고, 그 30줄의 시간 차이는 구간 추정 오차보다 작아 정보가 아니다
+
+/** 위도 1e-5 ≈ 1.1m. m 를 좌표로 바꿔 쓴다 */
+const at = (m: number) => ({ latitude: 37.5528 + m / 111_320, longitude: 126.9245 });
+const g = (id: string, addedMin: number, m: number, extra: Partial<Candidate> = {}): Candidate =>
+  ({ ...base, id, name: id, addedMin, detourKm: 0, parking: '모름', coord: at(m), ...extra });
+
+test('rankClusters — 250m 안은 한 자리로 접힌다', () => {
+  const list = [g('a', 5, 0), g('b', 6, 120), g('c', 7, 240), g('d', 9, 4000)];
+  const out = rankClusters(list, 1);
+  assert.deepEqual(out.map(x => x.members.length), [3, 1]);
+  assert.deepEqual(out.map(x => x.id), ['a', 'd']);
+});
+
+test('추가시간 탭은 묶음 대표 Δ 로 묶음을 세우고 묶음 안은 흩지 않는다', () => {
+  // 먼 자리가 더 빠르다 — 묶음 순서는 뒤집히지만 가까운 자리의 두 곳은 그대로 붙어 있다
+  const list = [g('가', 8, 0), g('나', 9, 100), g('멀리', 2, 4000)];
+  const out = rankClusters(list, 1);
+  assert.deepEqual(out.map(x => x.id), ['멀리', '가']);
+  assert.deepEqual(ids(out[1].members), ['가', '나']);
+});
+
+test('묶음 안 순서는 시간이 아니라 평점·언급이 정한다 — 시간이 같으니 시간으로 세우면 임의다', () => {
+  const list = [
+    g('시간1위', 3, 0),
+    g('점수1위', 7, 60, { trend: { score: 90, reasons: [], hot: false } }),
+    g('점수2위', 5, 90, { trend: { score: 50, reasons: [], hot: false } }),
+  ];
+  const [only] = rankClusters(list, 1);
+  // 대표는 실측이 없으니 trend 1위. 나머지도 trend → 영업 → 이름이고 추가시간은 안 본다
+  assert.deepEqual(ids(only.members), ['점수1위', '점수2위', '시간1위']);
+});
+
+test('묶음 안에서 곧 마감은 뒤로 — 시간이 같으면 못 들를 위험이 순서를 가른다', () => {
+  const list = [g('곧마감', 3, 0, { openState: 'closing_soon' }), g('영업', 5, 60)];
+  const [only] = rankClusters(list, 1);
+  assert.deepEqual(ids(only.members), ['영업', '곧마감']);
+});
+
+test('묶음 대표는 실측된 후보다 — 묶음의 시간을 말하는 자리라 잰 값이 먼저다', () => {
+  const list = [g('추정', 3, 0, { trend: { score: 99, reasons: [], hot: false } }), g('실측', 6, 60, { cls: 'measured' })];
+  const [only] = rankClusters(list, 1);
+  assert.equal(only.lead.id, '실측');
+});
+
+test('지금 경로에 든 곳이 자기 자리의 대표다 — 접힌 안쪽으로 사라지면 뭐가 들어가 있는지 못 찾는다', () => {
+  // 묶기 전에는 추가시간 0 이라 늘 맨 위였다. 대표 규칙에 넣지 않았더니 화면에서 사라졌다
+  const list = [g('현재', 0, 0), g('이웃', 2, 60, { trend: { score: 99, reasons: [], hot: false } })];
+  const [only] = rankClusters(list, 1, '현재');
+  assert.equal(only.lead.id, '현재');
+  // 그리고 대표 Δ 로 묶음을 세우니 그 자리가 목록 맨 위다
+  assert.equal(rankClusters([...list, g('먼곳', 1, 4000)], 1, '현재')[0].id, '현재');
+});
+
+test('마감한 곳은 묶이기 전에 빠진다 — 못 고르는 곳이 대표가 되면 그 자리 전체가 막힌다', () => {
+  const list = [g('마감', 3, 0, { openState: 'closed', cls: 'measured' }), g('영업', 5, 60)];
+  const [only] = rankClusters(list, 1);
+  assert.deepEqual(ids(only.members), ['영업']);
 });

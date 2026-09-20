@@ -48,24 +48,69 @@ const ABS_MAX: Record<Mode, number> = { car: 15000, walk: 2000, transit: 3000 };
 
 export const initialRadiusM = (mode: Mode): number => INITIAL[mode];
 
+/** 컷이 near 쪽을 먼저 채울 때 보는 것. side 가 있어도 origin·destination 이 없으면 못 쓴다 */
+type NearCut = { side: NearSide; origin: LatLng; destination: LatLng };
+
 /**
- * near 쪽을 먼저 채우고 자른다. **반대쪽을 버리지 않는다** — applyNear 의 완화가
- * 되돌릴 후보가 없으면 완화 자체가 무의미해진다(설계 §5.1).
+ * 경로 위 위치로 묶어 라운드로빈으로 자른다.
+ *
+ * 왜 근접순 한 줄로 자르지 않나: 실측 2026-09-20, 서교동 → 코엑스 대중교통 13km 에서
+ * CU 를 찾자 교체 시트 30곳이 **전부 홍대**였다(라이즈홍대점·서교타워점·홍대입구역점…).
+ * 앵커 5개 중 출발지·승차역 둘이 홍대 안에 있고 카카오가 앵커당 15건을 주니
+ * 2 × 15 = 30 = max 로 딱 찼고, 삼성역·코엑스 앵커의 CU 는 걷는 거리가 조금 더 멀어
+ * 컷에 닿기도 전에 밀렸다. 회랑 검색도 표본 5점 중 한 점이 빽빽하면 같은 꼴이 난다 —
+ * 경로 *진행* 을 보지 않고 자르면 한 동네가 목록을 독점한다(설계 §3 D4).
+ *
+ * 규칙: `bucketOf` 로 묶고(회랑은 진행률 구간, 앵커는 앵커) 버킷 안은 `rankOf`
+ * 오름차순 — 오늘 기준(수직거리 / anchorWalkM)을 그대로 둔다. 버킷을 진행 순으로
+ * 놓고 한 개씩 돌아가며 뽑아 `max` 에서 멈춘다. 빈 버킷은 건너뛴다. 공급이 있는
+ * 버킷이 B 개면 각각 최소 ⌊max / B⌋ 자리를 얻는다 — 5개면 6곳이라 두 앵커가 30을 다 못 먹는다.
+ *
+ * `near` 가 있으면 두 패스 — near 쪽 후보들을 먼저 라운드로빈하고, 그다음 반대쪽.
+ * **반대쪽을 버리지 않는다** — applyNear 의 완화가 되돌릴 후보가 없으면 완화 자체가
+ * 무의미해진다(설계 §5.1). 이 계약은 이전 `nearFirst` 것 그대로다.
+ *
  * 회랑 컷과 앵커 컷이 같은 함수를 쓴다. 두 벌로 두면 기준이 갈린다.
+ * 같은 검색 결과를 다르게 자를 뿐이라 `/places` 호출은 한 번도 늘지 않는다.
  */
-function nearFirst(
-  sorted: PlaceCandidate[],
-  side: NearSide,
-  origin: LatLng,
-  destination: LatLng,
+export function spreadCut<T extends { coord: LatLng }>(
+  list: readonly T[],
+  bucketOf: (c: T) => number,
+  rankOf: (c: T) => number,
   max: number,
-): PlaceCandidate[] {
-  const on: PlaceCandidate[] = [];
-  const off: PlaceCandidate[] = [];
-  for (const c of sorted) {
-    (matchesNear(side, c.coord, origin, destination, NEAR_RADII_M[0]) ? on : off).push(c);
+  near?: NearCut,
+): T[] {
+  const roundRobin = (items: readonly T[], cap: number): T[] => {
+    const buckets = new Map<number, T[]>();
+    for (const c of items) {
+      const k = bucketOf(c);
+      const b = buckets.get(k);
+      if (b) b.push(c); else buckets.set(k, [c]);
+    }
+    const lanes = [...buckets.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, b]) => b.sort((x, y) => rankOf(x) - rankOf(y)));
+    const out: T[] = [];
+    for (let i = 0; out.length < cap; i++) {
+      let took = false;
+      for (const lane of lanes) {
+        if (i >= lane.length) continue;
+        out.push(lane[i]);
+        took = true;
+        if (out.length >= cap) break;
+      }
+      if (!took) break;
+    }
+    return out;
+  };
+  if (!near) return roundRobin(list, max);
+  const on: T[] = [];
+  const off: T[] = [];
+  for (const c of list) {
+    (matchesNear(near.side, c.coord, near.origin, near.destination, NEAR_RADII_M[0]) ? on : off).push(c);
   }
-  return [...on, ...off].slice(0, max);
+  const first = roundRobin(on, max);
+  return [...first, ...roundRobin(off, max - first.length)];
 }
 
 /** 추정 우회 ≈ 2r·ρ 가 여유를 넘지 않게. 여유가 없으면 절대 상한 */
@@ -119,14 +164,22 @@ export async function searchAlong(
 
   const max = opts.max ?? 30;
   /**
-   * 경로 근접순으로 자르되, near 쪽을 노리는 중이면 **그쪽을 먼저 채운다.**
-   * 반대쪽을 버리지는 않는다 — applyNear 의 완화가 되돌릴 후보가 없으면 완화가 무의미해진다.
+   * 진행률 구간(표본 수만큼)으로 묶어 돌아가며 자른다. 구간 안은 경로 수직거리순.
+   * near 쪽을 노리는 중이면 **그쪽을 먼저 채운다.** 반대쪽을 버리지는 않는다 —
+   * applyNear 의 완화가 되돌릴 후보가 없으면 완화가 무의미해진다. 규칙은 `spreadCut`.
    */
   const byCorridor = (list: PlaceCandidate[]) => {
-    const sorted = [...list]
-      .sort((a, b) => crossTrack(a.coord, poly).distanceM - crossTrack(b.coord, poly).distanceM);
-    if (!sided || !opts.origin || !opts.destination) return sorted.slice(0, max);
-    return nearFirst(sorted, opts.side!, opts.origin, opts.destination, max);
+    // 후보마다 한 번만 투영한다 — 버킷과 순위가 같은 값을 본다
+    const ct = new Map(list.map(c => [c.id, crossTrack(c.coord, poly)] as const));
+    const bucketOf = (c: PlaceCandidate) => {
+      const s = L > 0 ? ct.get(c.id)!.progressM / L : 0;
+      return Math.min(samples - 1, Math.floor(s * samples)); // s=1 (끝점)은 마지막 구간
+    };
+    const rankOf = (c: PlaceCandidate) => ct.get(c.id)!.distanceM;
+    const near = sided && opts.origin && opts.destination
+      ? { side: opts.side!, origin: opts.origin, destination: opts.destination }
+      : undefined;
+    return spreadCut(list, bucketOf, rankOf, max, near);
   };
 
   const merge = (lists: PlaceCandidate[][]) => {
@@ -186,7 +239,7 @@ export type AnchorSearchOptions = {
   /**
    * 어느 쪽 끝을 노릴까. 그쪽 종류의 앵커만 조회한다 — 앵커당 1콜이라 호출 수도 준다.
    * 앵커 *선택* 은 kind 만으로 된다. origin·destination 은 그 뒤 attach 안에서
-   * max(기본 30개)로 자르는 컷에 쓰인다 — nearFirst 를 거쳐 matchesNear 로
+   * max(기본 30개)로 자르는 컷에 쓰인다 — spreadCut 이 matchesNear 로
    * near 쪽을 먼저 채운다.
    */
   side?: NearSide;
@@ -231,9 +284,12 @@ export async function searchAtAnchors(
 
   /**
    * 후보를 가장 가까운 앵커에 붙인다. 같은 id 가 여러 앵커에서 나오면 가까운 쪽이 이긴다.
-   * 도보순으로 자르되, near 쪽을 노리는 중이면 그쪽을 먼저 채운다(byCorridor 와 같은 이유).
+   * 앵커별로 묶어 돌아가며 자르고 앵커 안은 도보순 — 출발지·승차역 둘이 한 동네면
+   * 도보순 한 줄로는 그 동네가 30을 다 먹는다(`spreadCut` 주석의 실측). near 쪽을
+   * 노리는 중이면 그쪽을 먼저 채운다(byCorridor 와 같은 이유).
    * 앵커를 이미 좁혔어도 폴백 경로(picked.length === 0)에서는 이 컷이 필요하다.
    */
+  const laneOf = new Map(used.map((a, i) => [a.id, i] as const)); // 앵커 순서 = 경로 진행 순서
   const attach = (lists: PlaceCandidate[][]) => {
     const best = new Map<string, PlaceCandidate>();
     for (let i = 0; i < lists.length; i++) {
@@ -245,9 +301,16 @@ export async function searchAtAnchors(
         best.set(c.id, { ...c, anchorId: a.id, anchorWalkM: walkM });
       }
     }
-    const sorted = [...best.values()].sort((x, y) => (x.anchorWalkM ?? 0) - (y.anchorWalkM ?? 0));
-    if (!kinds || !opts.origin || !opts.destination) return sorted.slice(0, max);
-    return nearFirst(sorted, opts.side!, opts.origin, opts.destination, max);
+    const near = kinds && opts.origin && opts.destination
+      ? { side: opts.side!, origin: opts.origin, destination: opts.destination }
+      : undefined;
+    return spreadCut(
+      [...best.values()],
+      c => laneOf.get(c.anchorId!) ?? 0,
+      c => c.anchorWalkM ?? 0,
+      max,
+      near,
+    );
   };
 
   let radiusM = initial;

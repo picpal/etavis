@@ -14,7 +14,7 @@ import { DEST_ID, LegStore, learnLegs, ORIGIN_ID } from './legs';
 import { allClosedAtArrival, comfortMin, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
 import { pickOptions, pickSeeds, planKey, round2Plan, type Ranked } from './select';
 import { TRANSIT_SEED_BUDGET, transitCallCost } from './transitBudget';
-import type { Alternative, LatLng, PlanInput, PlanOption, PlanResult, Rescored, RouteProvider, RouteResult, SlotStatus, Visit } from './types';
+import type { Alternative, LatLng, PlaceCandidate, PlanInput, PlanOption, PlanResult, Rescored, RescoredFrom, RouteProvider, RouteResult, SlotStatus, TimeClass, Timed, Visit } from './types';
 
 const DEFAULT_R = 4;
 const BEAM_FULL_UPTO = 3;
@@ -192,26 +192,6 @@ export async function plan(
     : -1;
   const comfortIdx = ci >= 0 ? ci : null;
 
-  // 대안 — 1안에서 슬롯 하나만 바꿔 채점
-  const alternatives: Alternative[] = [];
-  if (best) {
-    for (const slot of input.slots) {
-      const idx = best.visits.findIndex(v => v.slotId === slot.id);
-      if (idx < 0) continue;
-      for (const cand of slot.candidates) {
-        if (best.visits.some(v => v.candidate.id === cand.id)) continue;
-        const swapped = best.visits.map((v, i) => (i === idx ? { ...v, candidate: cand } : v));
-        const s = scorePlan(swapped, ctx);
-        alternatives.push({
-          slotId: slot.id, candidate: cand,
-          addedMin: s.totalMin - best.totalMin,
-          detourKm: Math.max(0, s.distanceKm - best.distanceKm),
-          estimated: s.unknownLegs > 0,
-        });
-      }
-    }
-  }
-
   // 슬롯 status
   const slotStatus: Record<string, SlotStatus> = {};
   for (const slot of input.slots) {
@@ -228,14 +208,113 @@ export async function plan(
     slotStatus[slot.id] = 'ok';
   }
 
-  const rescore = (visits: Visit[]): Rescored => {
-    // 교체 시트는 회랑에 없던 후보도 넣을 수 있다 — 그 자리에서 투영한다
+  /** 교체 시트는 회랑에 없던 후보도 넣을 수 있다 — 그 자리에서 투영한 회랑점까지 아는 ctx */
+  const ctxFor = (visits: Visit[]): ScoreContext => {
     const localCps = new Map<string, CorridorPoint>();
     for (const v of visits) if (!corridor.has(v.candidate.id)) localCps.set(v.candidate.id, projectOnCorridor(poly, v.candidate.coord));
-    const rescoreCtx: ScoreContext = { ...ctx, corridorOf: id => corridor.get(id) ?? localCps.get(id)! };
-    const s = scorePlan(visits, rescoreCtx);
-    return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0, legsKm: s.legsKm };
+    return { ...ctx, corridorOf: id => corridor.get(id) ?? localCps.get(id)! };
   };
+  const rescore = (visits: Visit[]): Rescored => {
+    const s = scorePlan(visits, ctxFor(visits));
+    return { totalMin: s.totalMin, arrivals: s.arrivals, distanceKm: s.distanceKm, estimated: s.unknownLegs > 0, legsKm: s.legsKm, legCls: s.legCls };
+  };
+
+  /**
+   * 같은-자 차이. 안 바뀐 구간은 기준 값·등급 그대로 베끼고, 바뀐 구간만 다시 낸다:
+   *   둘 다 실측         → M_new,  Δ = M_new − M_old               (measured)
+   *   아니면             → E_new·E_old 를 **같은 추정기**(km × ρ)로 내고 Δ = E_new − E_old,
+   *                        값 = max(E_new, M_old + Δ)              (estimated)
+   * 대중교통 실측엔 구간마다 접근·대기 8분이 들어 있고 km × ρ 엔 없다. 그래서 실측 합계에서
+   * 추정 합계를 빼면 홍대 안 300m 옆 후보가 −32분이 됐다(2026-09-20). 같은 자로 잰 두 값의
+   * 차는 그 계통 오차가 서로 지워져 "약 +1분"이 된다. 상수로 보정하지 않는다 —
+   * 구간 오차는 한쪽으로 쏠린 게 아니라 흩어져 있어 보정해도 RMSE 9% 다(docs/transit-추정-오차.md).
+   * `max(E_new, …)` 하한은 음수 구간을 막는 것이지 보정이 아니다.
+   *
+   * 도착 차이·총합 차이는 (새 시계 − 기준 시계) 로 낸다 — 안 바뀐 구간을 그대로 베꼈으니
+   * 정확히 바뀐 구간들의 Δ 합(+ 체류 차이)이고, 여행 전체 차이를 한 지점에 더할 자리가 없다(21:58).
+   */
+  const rescoreFrom = (base: Visit[], visits: Visit[]): RescoredFrom => {
+    if (base.length !== visits.length) throw new Error(`rescoreFrom: 방문 수가 다르다(${base.length}≠${visits.length}) — 교체만 잰다`);
+    const rctx = ctxFor([...base, ...visits]);
+    const b = scorePlan(base, rctx);
+    const idsOf = (vs: Visit[]) => [ORIGIN_ID, ...vs.map(v => v.candidate.id), DEST_ID];
+    const coordsOf = (vs: Visit[]) => [input.origin, ...vs.map(v => v.candidate.coord), input.destination];
+    const cpsOf = (vs: Visit[]) => [originPoint(), ...vs.map(v => rctx.corridorOf(v.candidate.id)), destinationPoint(L)];
+    const bIds = idsOf(base), nIds = idsOf(visits);
+    const bCoords = coordsOf(base), nCoords = coordsOf(visits);
+    const bCps = cpsOf(base), nCps = cpsOf(visits);
+    const lower = (a: TimeClass, c: TimeClass): TimeClass => (a === 'estimated' || c === 'estimated' ? 'estimated' : 'measured');
+
+    let clock = input.departAtMin;
+    let distanceKm = 0;
+    let changedCls: TimeClass = 'measured'; // 지금까지 바뀐 구간들의 최저 등급. 바뀐 게 없으면 차이 0 은 정확하다
+    const arrivals: number[] = [];
+    const legsKm: number[] = [];
+    const legCls: TimeClass[] = [];
+    const dArrivals: Timed[] = [];
+    for (let k = 0; k < nIds.length - 1; k++) {
+      const same = bIds[k] === nIds[k] && bIds[k + 1] === nIds[k + 1];
+      let min: number, km: number, cls: TimeClass;
+      if (same) {
+        min = b.legsMin[k]; km = b.legsKm[k]; cls = b.legCls[k];
+      } else {
+        const hit = legs.lookup(nIds[k], nIds[k + 1], input.mode, clock);
+        if (hit && b.legCls[k] === 'measured') {
+          min = hit.durationMin; km = hit.distanceKm; cls = 'measured';
+        } else {
+          const eNewKm = estimateLegKm(nCoords[k], nCoords[k + 1], nCps[k], nCps[k + 1]);
+          const eOldKm = estimateLegKm(bCoords[k], bCoords[k + 1], bCps[k], bCps[k + 1]);
+          // 기준이 추정이면 b.legsMin[k] = E_old 라 그대로 E_new 가 된다
+          min = Math.max(eNewKm * ctx.rhoMinPerKm, b.legsMin[k] + (eNewKm - eOldKm) * ctx.rhoMinPerKm);
+          km = Math.max(eNewKm, b.legsKm[k] + (eNewKm - eOldKm));
+          cls = 'estimated';
+        }
+        changedCls = lower(changedCls, cls);
+      }
+      distanceKm += km;
+      clock += min;
+      arrivals.push(clock);
+      legsKm.push(km);
+      legCls.push(cls);
+      dArrivals.push({ min: clock - b.arrivals[k], cls: changedCls });
+      if (k < visits.length) clock += visits[k].dwellMin;
+    }
+    const totalMin = clock - input.departAtMin;
+    return {
+      totalMin, arrivals, distanceKm, legsKm, legCls,
+      estimated: legCls.some(c => c === 'estimated'),
+      delta: { totalMin: { min: totalMin - b.totalMin, cls: changedCls }, arrivals: dArrivals },
+    };
+  };
+
+  const alternativeAt = (base: Visit[], idx: number, candidate: PlaceCandidate): Alternative => {
+    const v = base[idx];
+    if (!v) throw new Error(`alternativeAt: idx ${idx} 가 기준 안 밖이다`);
+    const swapped = base.map((vv, i) => (i === idx ? { ...vv, candidate } : vv));
+    const r = rescoreFrom(base, swapped);
+    // 도착의 등급은 그 지점까지의 구간 전부가 정한다 — 앞에 추정 구간이 있으면 실측 구간을 바꿔도 '약'이다
+    const arriveCls: TimeClass = r.legCls.slice(0, idx + 1).some(c => c === 'estimated') ? 'estimated' : 'measured';
+    const cp = corridor.get(candidate.id) ?? projectOnCorridor(poly, candidate.coord);
+    return {
+      slotId: v.slotId, candidate,
+      addedMin: r.delta.totalMin,
+      arriveMin: { min: r.arrivals[idx], cls: arriveCls },
+      detourKm: Math.abs(cp.y) / 1000,
+    };
+  };
+
+  // 대안 — 1안에서 슬롯 하나만 바꿔 관문으로 잰다
+  const alternatives: Alternative[] = [];
+  if (best) {
+    for (const slot of input.slots) {
+      const idx = best.visits.findIndex(v => v.slotId === slot.id);
+      if (idx < 0) continue;
+      for (const cand of slot.candidates) {
+        if (best.visits.some(v => v.candidate.id === cand.id)) continue;
+        alternatives.push(alternativeAt(best.visits, idx, cand));
+      }
+    }
+  }
 
   // leg 표 — 옵션에 등장한 후보 전부 × 양끝
   const nodeIds = new Set<string>();
@@ -269,5 +348,5 @@ export async function plan(
     direct.source !== 'provider' ? 'estimate'
       : seedEstimated ? 'provider_direct_only'
         : seedLegJoined ? 'provider_legs' : 'provider';
-  return { directMin, directKm, options, comfortIdx, alternatives, slotStatus, apiCalls, rescore, legTable, measuredCount, timingSource };
+  return { directMin, directKm, options, comfortIdx, alternatives, slotStatus, apiCalls, rescore, rescoreFrom, alternativeAt, legTable, measuredCount, timingSource };
 }

@@ -64,7 +64,9 @@ test('오류 코드 매핑 — 웹 스피치 이름을 앱의 다섯 가지로',
   assert.equal(mapErrorCode('network'), 'network');
   assert.equal(mapErrorCode('service-not-allowed'), 'unavailable');
   assert.equal(mapErrorCode('language-not-supported'), 'unavailable');
-  assert.equal(mapErrorCode('audio-capture'), 'other');
+  // 마이크가 없는 기기다. 'other'("다시 눌러 주세요")면 눌러도 계속 같은 자리라
+  // 사용자가 무한히 반복한다 — 데스크톱 웹 데모에서 실제로 밟는 길이다.
+  assert.equal(mapErrorCode('audio-capture'), 'unavailable');
   assert.equal(mapErrorCode('aborted'), 'other');
 });
 

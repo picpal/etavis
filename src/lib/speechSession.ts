@@ -63,6 +63,9 @@ export function mapErrorCode(code: string): SpeechErrorCode {
       return code;
     case 'service-not-allowed':
     case 'language-not-supported':
+    // 마이크가 아예 없는 기기. 'other'("다시 눌러 주세요")로 두면 눌러도 계속
+    // 같은 자리라 사용자가 무한히 반복한다
+    case 'audio-capture':
       return 'unavailable';
     default:
       return 'other';

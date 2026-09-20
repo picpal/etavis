@@ -109,21 +109,23 @@ test('정확도: 반경보다 나쁘면(100m 이하) 반경을 정확도만큼 �
   assert.equal(r.state.arriveStreak, 1);
 });
 
-test('출발 반경 = 다음 지점 거리/2 (200m면 100m), 밖 2샘플이면 depart', () => {
+test('출발 반경은 다음 지점이 가까우면 좁아진다 — 다만 도착 반경 아래로는 안 내려간다', () => {
   const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
   const s: ArrivalState = { ...initialArrivalState, arrivedId: 'olive' };
-  // 남쪽(다음 지점 반대편)으로 130m — 옛 반경 250m로는 영영 출발이 안 잡히던 거리
-  const rs = run([fix(north(O, -130), 3), fix(north(O, -130), 3)], ctx, s);
-  assert.ok(Math.abs(rs[0].departR - 100) < 1);
+  /* 다음 지점이 200m 앞이라 gap/2 = 100m 지만, 그대로 쓰면 도착 반경(150m)보다 좁아
+     도착한 자리가 곧 출발이 된다. 그래서 150m 로 올라간다 — 260m 는 나가야 떠난 것이다 */
+  const rs = run([fix(north(O, -260), 3), fix(north(O, -260), 3)], ctx, s);
+  assert.equal(rs[0].departR, 150);
   assert.deepEqual(rs.map(kinds), [[], ['depart:olive']]);
   assert.equal(rs[1].state.departedId, 'olive');
 });
 
-test('출발 반경은 50m 바닥, 250m 천장', () => {
+test('출발 반경은 도착 반경이 바닥, 250m 천장', () => {
   const near: Point = { id: 'n', coord: north(O, 60) };
   const far: Point = { id: 'f', coord: north(O, 5000) };
+  // gap/2 = 30m → DEPART_FLOOR_M(50) 로 올라가고, 다시 도착 반경(150)까지 올라간다
   const a = stepArrival(initialArrivalState, fix(O), { target: T, next: near, atStop: true, profile: car });
-  assert.equal(a.departR, 50);
+  assert.equal(a.departR, 150);
   const b = stepArrival(initialArrivalState, fix(O), { target: T, next: far, atStop: true, profile: car });
   assert.equal(b.departR, 250);
   const c = stepArrival(initialArrivalState, fix(O), { target: T, next: null, atStop: true, profile: car });
@@ -174,7 +176,7 @@ test('중복: 이미 도착을 낸 지점은 dispatch 반영 전 샘플에서 �
 test('중복: 이미 출발을 낸 지점은 다시 내지 않는다', () => {
   const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
   const s: ArrivalState = { ...initialArrivalState, arrivedId: 'olive' };
-  const rs = run([fix(north(O, -130), 3), fix(north(O, -130), 3), fix(north(O, -130), 3)], ctx, s);
+  const rs = run([fix(north(O, -260), 3), fix(north(O, -260), 3), fix(north(O, -260), 3)], ctx, s);
   assert.deepEqual(rs.map(kinds), [[], ['depart:olive'], []]);
 });
 
@@ -290,7 +292,8 @@ test('방문: visit은 한 번만 난다 — 계속 머물러도 다시 내지 �
 test('방문: 체류 시간을 채우기 전에 떠나면 depart만 나고 visit은 없다 — 스쳐 간 것과 들른 것의 구분', () => {
   const s = arriveAt();
   const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
-  const rs = run([fixAt(north(O, -130), 10_000, 3), fixAt(north(O, -130), 11_000, 3), fixAt(north(O, -130), 120_000, 3)], ctx, s);
+  // 출발 반경은 도착 반경(150m) 아래로 안 내려가므로, 떠나려면 그보다 멀리 나가야 한다
+  const rs = run([fixAt(north(O, -260), 10_000, 3), fixAt(north(O, -260), 11_000, 3), fixAt(north(O, -260), 120_000, 3)], ctx, s);
   assert.deepEqual(rs.map(kinds), [[], ['depart:olive'], []]);
   assert.equal(rs[1].state.dwellId, null);
   assert.equal(rs[2].state.visitedId, null);
@@ -302,4 +305,14 @@ test('방문: 한 샘플이 노이즈로 반경을 벗어나도 체류 시계는
   // 60초쯤에 160m 튄 샘플 하나(반경 150m 밖) — departSamples=2라 출발로 굳지 않는다
   const rs = run([fixAt(north(O, 160), 60_000, 0.5), fixAt(O, 93_000)], ctx, s);
   assert.deepEqual(rs.map(kinds), [[], ['visit:olive']]);
+});
+
+test('회귀: 출발 반경은 도착 반경보다 좁아지지 않는다 — 안 그러면 도착한 자리가 곧 출발이 된다', () => {
+  /* 다음 지점이 200m 앞이라 gap/2 = 100m. 옛 코드는 그걸 그대로 써서 departR(100) < arriveR(150) 이었고,
+     도착을 인정한 130m 지점이 다음 샘플에서 곧바로 '떠났다'가 됐다 — 체류 시계가 돌 틈이 없었다.
+     2026-09-20 가상 주행에서 실측(arriveR 400 · departR 86)해 잡은 결함 */
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const r = run([fixAt(north(O, -130), 10_000, 3)], ctx, arriveAt())[0];
+  assert.ok(r.departR >= r.arriveR, `departR(${r.departR}) 가 arriveR(${r.arriveR}) 보다 작다`);
+  assert.deepEqual(kinds(r), []);
 });

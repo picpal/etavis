@@ -177,7 +177,13 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
   const { target, next, atStop, profile } = ctx;
   const arriveR = Math.max(profile.arriveBaseM, fix.accuracyM ?? 0);
   const gap = target && next ? haversineM(target.coord, next.coord) : null;
-  const departR = gap == null ? profile.departBaseM : Math.min(profile.departBaseM, Math.max(DEPART_FLOOR_M, gap / 2));
+  /* 출발 반경은 다음 지점이 가까우면 좁아진다. 다만 **도착 반경보다 좁아질 수는 없다** —
+     그러면 도착을 인정한 그 자리가 곧 '떠났다'가 되어, 움직이지도 않았는데 한 샘플 만에
+     arrive→depart 로 뒤집힌다(2026-09-20 가상 주행에서 실측: arriveR 400 · departR 86).
+     체류 시계가 돌 틈이 없어 방문이 영영 안 잡히고, 실주행도 경유지 간격이 arriveR*2 미만이면
+     같은 일이 난다. 가까운 다음 지점은 규칙 3(선행 도착)이 잡으므로 좁힐 이유도 없다. */
+  const departGap = gap == null ? profile.departBaseM : Math.min(profile.departBaseM, Math.max(DEPART_FLOOR_M, gap / 2));
+  const departR = Math.max(departGap, arriveR);
   const distToTargetM = target ? haversineM(fix, target.coord) : null;
   const distToNextM = next ? haversineM(fix, next.coord) : null;
   const base = { ignored: null as ArrivalStep['ignored'], distToTargetM, distToNextM, arriveR, departR };

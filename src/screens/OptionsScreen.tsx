@@ -121,7 +121,7 @@ export function OptionsScreen({ navigation }: Props) {
   // 지금 고른 안 기준으로 낸다 — result.alternatives는 1안 기준이라 2·3안에서 중복·누락이 생긴다.
   // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
   const sheetCands = useMemo(
-    () => (result && current && pickIdx >= 0 ? slotCandidates(result, state.slots, current.visits, pickIdx, current.timing) : []),
+    () => (result && current && pickIdx >= 0 ? slotCandidates(result, state.slots, current.visits, pickIdx) : []),
     [result, current, pickIdx, state.slots],
   );
 

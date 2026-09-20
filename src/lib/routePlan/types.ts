@@ -170,14 +170,19 @@ export type PlanOption = {
   distanceKm: number;
 };
 
+/**
+ * 기준 안에서 경유지 하나를 바꾼 대안. 숫자는 전부 `rescoreFrom` 이 낸 같은-자 값이다 —
+ * 여기엔 "합계 둘"이 없어서 호출부가 실측에서 추정을 뺄 재료가 없다(2026-09-20 의 −32분)
+ */
 export type Alternative = {
   slotId: string;
   candidate: PlaceCandidate;
-  /** 1안 대비 추가 시간 */
-  addedMin: number;
+  /** 기준 안 대비 추가 시간. 등급은 바뀐 구간 중 낮은 쪽 */
+  addedMin: Timed;
+  /** 바꾼 경유지의 도착 시각(분). 기준 도착에 **앞 구간 차이만** 얹은 값 — 여행 전체 차이가 아니다 */
+  arriveMin: Timed;
+  /** 회랑 수직거리(km). 기하값이라 등급이 없다 — 추정 km 에서 실측 km 를 뺀 '0m' 가 아니다 */
   detourKm: number;
-  /** 실측 leg가 없어 추정치인가 */
-  estimated: boolean;
 };
 
 export type Rescored = {
@@ -187,7 +192,18 @@ export type Rescored = {
   estimated: boolean;
   /** 방문별 도착 leg의 km. arrivals와 같은 길이·순서(마지막은 목적지 도착 leg) */
   legsKm: number[];
+  /** 구간마다의 등급. arrivals 와 같은 길이·순서 — 값 하나의 '약'은 여기서 나온다 */
+  legCls: TimeClass[];
 };
+
+/** 기준 안 대비 차이. `rescoreFrom` 만 만든다 — 차이는 관문 안에서 같은 자로만 난다 */
+export type RescoredDelta = {
+  /** 총 소요시간 차이. 등급은 바뀐 구간들의 최저, 바뀐 구간이 없으면 measured(0) */
+  totalMin: Timed;
+  /** 방문 i 도착 시각 차이 = i 까지의 구간 차이 합. 마지막은 목적지 */
+  arrivals: Timed[];
+};
+export type RescoredFrom = Rescored & { delta: RescoredDelta };
 
 export type PlanResult = {
   directMin: number;
@@ -203,6 +219,20 @@ export type PlanResult = {
   apiCalls: number;
   /** 실측 leg가 있으면 실측, 없으면 추정으로 임의 방문 순서를 다시 채점한다(교체 시트용) */
   rescore: (visits: Visit[]) => Rescored;
+  /**
+   * 기준 안 `base` 대비 변형 `visits` 의 시간과 **차이**. 방문 수가 같아야 한다(교체만 잰다).
+   *
+   * 구간을 짝지어(`from>to` id) 안 바뀐 구간은 기준 값·등급 그대로, 바뀐 구간만 다시 낸다 —
+   * 둘 다 실측이면 실측 차이, 아니면 **둘 다 같은 추정기**(km × ρ)로 잰 차이를 기준 값 위에 얹는다.
+   * 실측 합계에서 추정 합계를 빼는 일이 여기선 구조적으로 없다. 대중교통 실측엔 구간마다
+   * 접근·대기 8분이 들어 있고 추정엔 없어서, 그걸 빼면 300m 옆 후보가 −32분이 됐다(2026-09-20)
+   */
+  rescoreFrom: (base: Visit[], visits: Visit[]) => RescoredFrom;
+  /**
+   * `base[idx]` 를 `candidate` 로 바꾼 대안 하나. `rescoreFrom` 위에서 도착·차이·우회를 낸다 —
+   * 브리지와 플래너의 대안 목록이 이 하나를 쓴다. 호출부에 합계 둘을 주지 않는 것이 관문이다
+   */
+  alternativeAt: (base: Visit[], idx: number, candidate: PlaceCandidate) => Alternative;
   /** 선택된 후보 전부 × 출발·도착의 leg 표. 키 'O>c1' · 'c1>D'. 확정 변환이 쓴다 */
   legTable: Record<string, { min: number; km: number; measured: boolean }>;
   /** 성공한 라우팅 호출 수(직행 포함). "실측 6회" */

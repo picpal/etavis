@@ -6,7 +6,7 @@ import { haversineM } from '../geo';
 import type { StopTags } from '../nearSide';
 import { corridorLegM, destinationPoint, estimateC, originPoint, type CorridorPoint } from './corridor';
 import { DEST_ID, LegStore, ORIGIN_ID } from './legs';
-import type { LatLng, Mode, PlaceCandidate, Visit } from './types';
+import type { LatLng, Mode, PlaceCandidate, TimeClass, Visit } from './types';
 
 export type ScoreContext = {
   origin: LatLng;
@@ -36,6 +36,8 @@ export type Scored = {
   legsMin: number[];
   /** 방문별 도착 leg의 km. legsMin·arrivals와 같은 길이·순서 */
   legsKm: number[];
+  /** 구간마다 실측(lookup 적중)인지 추정인지. `unknownLegs` 가 개수라면 이건 자리다 — 같은 길이·순서 */
+  legCls: TimeClass[];
   /**
    * 짐을 진 채 이동한 시간. `totalMin` 에는 **안 들어간다** — 화면에 보이는 숫자는
    * 계속 진짜 소요시간이어야 한다. 순위에만 쓴다(`comfortMin`).
@@ -100,6 +102,7 @@ export function scorePlan(visits: Visit[], ctx: ScoreContext): Scored {
   const arrivals: number[] = [];
   const legsMin: number[] = [];
   const legsKm: number[] = [];
+  const legCls: TimeClass[] = [];
 
   for (let i = 0; i < ids.length - 1; i++) {
     const hit = ctx.legs.lookup(ids[i], ids[i + 1], ctx.mode, clock);
@@ -110,12 +113,14 @@ export function scorePlan(visits: Visit[], ctx: ScoreContext): Scored {
       legKm = hit.distanceKm;
       distanceKm += hit.distanceKm;
       uncertaintyMin += hit.uncertaintyMin;
+      legCls.push('measured');
     } else {
       const km = estimateLegKm(coords[i], coords[i + 1], cps[i], cps[i + 1]);
       legMin = km * ctx.rhoMinPerKm;
       legKm = km;
       distanceKm += km;
       unknownLegs++;
+      legCls.push('estimated');
     }
     legsMin.push(legMin);
     legsKm.push(legKm);
@@ -126,7 +131,7 @@ export function scorePlan(visits: Visit[], ctx: ScoreContext): Scored {
 
   return {
     visits, totalMin: clock - ctx.departAtMin, distanceKm, arrivals,
-    unknownLegs, uncertaintyMin, legsMin, legsKm,
+    unknownLegs, uncertaintyMin, legsMin, legsKm, legCls,
     burdenMin: burdenOf(visits, legsMin, ctx),
   };
 }

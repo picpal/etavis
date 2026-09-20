@@ -30,12 +30,12 @@ test('V=1 — 후보 전부 실측, 1안은 회랑 위 후보, apiCalls = 1 + K'
   assert.equal(r.slotStatus.a, 'ok');
 });
 
-test('V=1 — 대안은 실측값이라 estimated=false, addedMin은 1안 대비', async () => {
+test('V=1 — 대안은 실측값이라 addedMin 등급이 measured, 값은 1안 대비', async () => {
   const r = await plan(base([slot('a', [far, near, on])]), mockRouteProvider());
   const alts = r.alternatives.filter(x => x.slotId === 'a');
   assert.equal(alts.length, 2);
-  assert.ok(alts.every(x => !x.estimated && x.addedMin > 0));
-  assert.ok(alts.find(x => x.candidate.id === 'far')!.addedMin > alts.find(x => x.candidate.id === 'near')!.addedMin);
+  assert.ok(alts.every(x => x.addedMin.cls === 'measured' && x.addedMin.min > 0));
+  assert.ok(alts.find(x => x.candidate.id === 'far')!.addedMin.min > alts.find(x => x.candidate.id === 'near')!.addedMin.min);
 });
 
 test('V=2 — 직행 1 + R=4, 옵션 ≤ 3, 모든 옵션은 실측', async () => {
@@ -121,7 +121,7 @@ test('시드 하나가 실패해도 나머지로 계획한다', async () => {
   assert.equal(r.apiCalls, 4);
   // 실패한 건 3번째 호출 = near. 1안은 on, 대안 중 near만 추정치로 남는다
   assert.equal(r.options[0].visits[0].candidate.id, 'on');
-  assert.deepEqual(r.alternatives.map(a => [a.candidate.id, a.estimated]).sort(), [['far', false], ['near', true]]);
+  assert.deepEqual(r.alternatives.map(a => [a.candidate.id, a.addedMin.cls]).sort(), [['far', 'measured'], ['near', 'estimated']]);
 });
 
 test('직행이 실패하면 계획 자체가 실패한다', async () => {
@@ -261,4 +261,87 @@ test('timingSource — 자동차는 경유지를 한 번에 실어 보내 절대
   const oneCall = { route: async (...args: Parameters<typeof mock.route>) => ({ ...(await mock.route(...args)), source: 'provider' as const }) };
   const r = await plan(base([slot('a', [on, near])], { mode: 'car' }), oneCall);
   assert.equal(r.timingSource, 'provider');
+});
+
+// --- 신뢰성 2단계: 차이는 같은 자에서만 난다(rescoreFrom) ---
+//
+// 서교동→코엑스 대중교통에서 CU 후보 30곳이 전부 −32분이었다(2026-09-20). 기준 안은 실측,
+// 바꾼 안은 추정이라 실측 합계에서 추정 합계를 뺀 값이었다. 대중교통 목도 구간마다 접근·대기
+// 8분을 넣으므로(mockProvider MODE_ESTIMATE) 같은 함정을 그대로 재현한다.
+const tO = { latitude: 37.5, longitude: 127.0 };
+const tD = { latitude: 37.5, longitude: 127.1136 };
+const tc1 = c('c1', at(37.5, 127.0113)); // 회랑 위, 출발 1km — 앞 구간이 짧아야 여행 전체 차이가 첫 도착을 출발 앞으로 끌고 간다
+const tc3 = c('c3', at(37.5, 127.034));
+const tc5 = c('c5', at(37.5, 127.0567));
+const tc7 = c('c7', at(37.5, 127.079));
+/** c1 에서 300m 북쪽 — 같은 자리다. 시드 4안(transitSeedFloor(1)) 밖이라 실측이 없다 */
+const ghost = c('ghost', at(37.5027, 127.0113));
+const transitPlan = () => plan(
+  { origin: tO, destination: tD, departAtMin: 1343, mode: 'transit', slots: [slot('a', [tc1, tc3, tc5, tc7, ghost])], order: 'auto' },
+  mockRouteProvider(),
+);
+const visit = (cand: PlaceCandidate) => ({ slotId: 'a', candidate: cand, dwellMin: 10 });
+
+test('rescoreFrom — 기준 안이 실측이고 바꾼 구간만 미실측이면 차이는 같은 추정기로 잰 두 값의 차다 — 실측에서 추정을 빼지 않는다', async () => {
+  const r = await transitPlan();
+  const base = [visit(tc1)];
+  assert.deepEqual(r.rescore(base).legCls, ['measured', 'measured'], '전제 — 기준 안은 두 구간 다 실측');
+  const swapped = [visit(ghost)];
+  // 함정이 진짜로 있는지 먼저 본다 — 합계 둘을 빼면 300m 옆이 십수 분 빨라진다
+  const mixed = r.rescore(swapped).totalMin - r.rescore(base).totalMin;
+  assert.ok(mixed < -10, `픽스처가 자 섞기를 재현해야 한다: ${mixed.toFixed(1)}`);
+  const d = r.rescoreFrom(base, swapped).delta;
+  assert.equal(d.totalMin.cls, 'estimated');
+  assert.ok(Math.abs(d.totalMin.min) < 3, `300m 옆은 비슷해야 한다: ${d.totalMin.min.toFixed(2)}`);
+});
+
+test('rescoreFrom — 바뀐 두 구간이 다 실측이면 차이도 실측이다', async () => {
+  const r = await transitPlan();
+  const from = r.rescoreFrom([visit(tc1)], [visit(tc3)]);
+  assert.equal(from.delta.totalMin.cls, 'measured');
+  assert.deepEqual(from.legCls, ['measured', 'measured']);
+  assert.ok(Math.abs(from.totalMin - r.rescore([visit(tc3)]).totalMin) < 1e-9, '실측끼리면 그냥 다시 잰 값과 같다');
+});
+
+test('rescoreFrom — 바꾼 경유지의 도착 차이는 들어오는 구간만이다 — 여행 전체 차이를 한 지점에 더하지 않는다', async () => {
+  const r = await transitPlan();
+  const base = [visit(tc1)];
+  const bt = r.rescore(base);
+  const f = r.rescoreFrom(base, [visit(ghost)]);
+  assert.equal(f.delta.arrivals.length, 2);
+  assert.ok(Math.abs(f.delta.arrivals[0].min - (f.arrivals[0] - bt.arrivals[0])) < 1e-9, '도착 차이 = 새 도착 − 기준 도착');
+  assert.ok(Math.abs(f.delta.arrivals[1].min - f.delta.totalMin.min) < 1e-9, '목적지 도착 차이 = 총합 차이');
+  assert.ok(f.arrivals[0] >= 1343, `도착 ${f.arrivals[0].toFixed(1)} 이 출발 1343 앞이면 안 된다`);
+  // 여행 전체 차이를 첫 도착에 더했을 때의 값(예전 브리지) — 그건 출발보다 이르다. 여기선 나올 수 없다
+  const bogus = bt.arrivals[0] + (r.rescore([visit(ghost)]).totalMin - bt.totalMin);
+  assert.ok(bogus < 1343, `픽스처가 21:58 을 재현해야 한다: ${bogus.toFixed(1)}`);
+});
+
+test('rescoreFrom — 안 바뀐 구간은 값도 등급도 그대로다', async () => {
+  const r = await plan(base([slot('a', [on, near]), slot('b', [c('b1', at(37.5, 127.09)), c('b2', at(37.495, 127.08))])]), mockRouteProvider(), { R: 4 });
+  const best = r.options[0].visits;
+  const bt = r.rescore(best);
+  // 두 번째 방문을 시드 밖(far)으로 — 첫 구간은 안 바뀐다
+  const swapped = best.map((v, i) => (i === 1 ? { ...v, candidate: far } : v));
+  const f = r.rescoreFrom(best, swapped);
+  assert.equal(f.arrivals[0], bt.arrivals[0]);
+  assert.equal(f.legsKm[0], bt.legsKm[0]);
+  assert.equal(f.legCls[0], bt.legCls[0]);
+  assert.deepEqual(f.delta.arrivals[0], { min: 0, cls: 'measured' }, '바뀐 게 없으면 차이 0 은 정확한 값이다');
+  assert.equal(f.delta.arrivals[1].cls, 'estimated');
+  assert.equal(f.legCls[1], 'estimated');
+});
+
+test('rescoreFrom — 방문 수가 다르면 던진다 — 교체만 잰다, 빼기·더하기는 rescore 몫이다', async () => {
+  const r = await transitPlan();
+  assert.throws(() => r.rescoreFrom([visit(tc1)], []), /방문 수/);
+});
+
+test('alternativeAt — 우회는 회랑 수직거리다 — 추정 km 에서 실측 km 를 뺀 0m 가 아니다', async () => {
+  const r = await transitPlan();
+  const alt = r.alternativeAt([visit(tc1)], 0, ghost);
+  assert.ok(alt.detourKm > 0.25 && alt.detourKm < 0.35, `300m 북쪽인데 ${alt.detourKm}km`);
+  assert.equal(alt.addedMin.cls, 'estimated');
+  assert.equal(alt.arriveMin.cls, 'estimated');
+  assert.ok(alt.arriveMin.min >= 1343);
 });

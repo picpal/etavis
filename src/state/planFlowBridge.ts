@@ -118,8 +118,12 @@ function openStateOf(c: { hours?: { openMin: number; closeMin: number } }, arriv
 const openNoteOf = (state: Stop['openState']) =>
   state === 'closed' ? '영업 종료 · 선택 불가' : state === 'closing_soon' ? '곧 마감' : '영업 중';
 
-export function alternativeToCandidate(alt: Alternative, slotQuery: string, arrivalMin: number, dwellMin: number): Candidate {
-  const openState = openStateOf(alt.candidate, arrivalMin);
+/**
+ * 도착 시각은 `alt.arriveMin` 그대로다 — 여기서 기준 도착에 무언가를 더하지 않는다.
+ * 여행 전체 차이를 경유지 한 곳 도착에 더해 출발(22:23)보다 이른 도착(21:58)이 나온 적이 있다(2026-09-20)
+ */
+export function alternativeToCandidate(alt: Alternative, slotQuery: string, dwellMin: number): Candidate {
+  const openState = openStateOf(alt.candidate, alt.arriveMin.min);
   return {
     id: alt.candidate.id,
     name: alt.candidate.name,
@@ -127,10 +131,12 @@ export function alternativeToCandidate(alt: Alternative, slotQuery: string, arri
     // 등급은 `cls` 가 들고 '약'은 timingCopy 가 붙인다. 두 군데서 말하면 한쪽이 틀린다
     // (note 가 trend 근거로 바뀌면 '추정' 글자가 사라졌고, 시트는 그걸 냄새 맡아 '약'을 정했다)
     note: `${slotQuery} · 경로에서 ${formatDistanceM(alt.detourKm * 1000)}`,
-    addedMin: Math.round(alt.addedMin),
-    cls: alt.estimated ? 'estimated' : 'measured',
+    addedMin: Math.round(alt.addedMin.min),
+    // 카드의 등급은 하나다 — 추가시간과 도착 중 낮은 쪽. 둘이 갈리면(앞 구간이 추정, 바꾼 구간은 실측)
+    // 실측 차이에도 '약'이 붙지만, 반대로 하면 추정 도착이 실측인 척한다
+    cls: alt.addedMin.cls === 'estimated' || alt.arriveMin.cls === 'estimated' ? 'estimated' : 'measured',
     detourKm: round1(alt.detourKm),
-    arriveAt: toHHMM(arrivalMin),
+    arriveAt: toHHMM(alt.arriveMin.min),
     dwellMin,
     parking: alt.candidate.parking ?? '모름',
     openState,
@@ -150,38 +156,34 @@ export function chosenToCandidate(v: Visit, slotQuery: string, arrivalMin: numbe
 }
 
 /**
- * visits[idx] 슬롯의 교체 후보 목록 — 지금 고른 안(visits/timing) 기준.
- * 현재 매장이 맨 앞(recommended), 나머지는 그 자리에 끼워 넣고 rescore해 추가시간을 낸다.
+ * visits[idx] 슬롯의 교체 후보 목록 — 지금 고른 안(visits) 기준.
+ * 현재 매장이 맨 앞(recommended), 나머지는 `result.alternativeAt` 이 그 자리에 끼워 넣고 잰다.
  * result.alternatives를 쓰면 안 된다 — 그건 옵션 0 기준이라
  * 2·3안에서는 같은 매장이 두 번 뜨거나 진짜 대안이 빠진다.
+ *
+ * 기준 안의 `timing` 을 **받지 않는다.** 예전엔 받아서 `swapped.totalMin − timing.totalMin` 을
+ * 여기서 뺐고, 기준은 실측·바꾼 안은 추정이라 30곳이 전부 −32분이 됐다(2026-09-20). 차이는
+ * 관문(`rescoreFrom`) 안에서 같은 자로만 나고, 여기엔 뺄 재료가 없다
  */
 export function slotCandidates(
   result: PlanResult,
   slots: Slot[],
   visits: Visit[],
   idx: number,
-  timing: Rescored,
 ): Candidate[] {
   const v = visits[idx];
   if (!v) return [];
   const slot = slots.find(s => s.id === v.slotId);
   const query = slot?.query ?? '';
-  const arrive = timing.arrivals[idx];
+  const timing = result.rescore(visits);
+  // 현재 매장의 도착 등급도 그 지점까지의 구간이 정한다 — 뒤 구간이 추정이어도 앞이 실측이면 실측
+  const arriveCls: TimeClass = timing.legCls.slice(0, idx + 1).some(c => c === 'estimated') ? 'estimated' : 'measured';
   const seen = new Set<string>([v.candidate.id]);
-  const list: Candidate[] = [chosenToCandidate(v, query, arrive, timing.estimated ? 'estimated' : 'measured')];
+  const list: Candidate[] = [chosenToCandidate(v, query, timing.arrivals[idx], arriveCls)];
   for (const cand of slot?.candidates ?? []) {
     if (seen.has(cand.id)) continue;
     seen.add(cand.id);
-    const swapped = visits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
-    const swappedTiming = result.rescore(swapped);
-    const alt: Alternative = {
-      slotId: v.slotId,
-      candidate: cand,
-      addedMin: swappedTiming.totalMin - timing.totalMin,
-      detourKm: Math.max(0, swappedTiming.distanceKm - timing.distanceKm),
-      estimated: swappedTiming.estimated,
-    };
-    list.push(alternativeToCandidate(alt, query, arrive + alt.addedMin, v.dwellMin));
+    list.push(alternativeToCandidate(result.alternativeAt(visits, idx, cand), query, v.dwellMin));
   }
 
   // 신호가 하나라도 있으면 추천 점수를 붙인다. 없으면 trend 없이 그대로 —
@@ -289,7 +291,7 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
   // candidates — A5 교체 시트와 같은 함수로 낸다. 화면과 확정본이 다른 목록을 보면 안 된다
   const candidates: Dataset['candidates'] = {};
   visits.forEach((v, i) => {
-    candidates[v.slotId] = slotCandidates(result, slots, visits, i, timing);
+    candidates[v.slotId] = slotCandidates(result, slots, visits, i);
   });
 
   const options: RouteOption[] = result.options.map((o, i) => ({

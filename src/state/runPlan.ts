@@ -416,7 +416,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     // 업종 슬롯에서 트렌드 1위가 시간 1위와 다르면 바꾼다.
     // 단 마감을 넘기면 안 바꾼다 — 추천은 제시간 도착보다 앞설 수 없다.
     // 슬롯이 여럿이면 스왑을 누적한다 — 각자 따로는 마감을 지켜도 합치면 넘길 수 있다.
-    // runningVisits가 그 누적 상태고, 다음 슬롯의 기준선(baseTiming)도 여기서 다시 잰다 —
+    // runningVisits가 그 누적 상태고, 다음 슬롯은 이걸 기준 안으로 rescoreFrom 한다 —
     // addedMin(scoreTrend용)과 마감 판정(도착 절대시각은 이미 누적이라 그대로 둔다)엔 이게 맞다.
     // 단 "마감 없을 때 총 +10분 이내"는 원래 여행 전체 기준 딱 한 번이어야 한다 — 슬롯마다
     // 직전 슬롯이 이미 늘려놓은 시간을 기준으로 다시 재면 슬롯 N개면 최대 N×10분까지 새는
@@ -440,14 +440,14 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           const idx = runningVisits.findIndex(v => v.slotId === slot.id);
           if (idx < 0) continue;
           const current = runningVisits[idx].candidate.id;
-          const baseTiming = result.rescore(runningVisits);
 
           const ranked = scoreTrend(slot.candidates.map(c => {
+            // 같은-자 차이(rescoreFrom). 예전엔 rescore 합계 둘을 여기서 뺐다 — 시드 밖 후보는
+            // 추정 합계라 실측 기준보다 십수 분 빠르게 나와 fit=1 로 순위를 차지했다
             const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: c } : vv));
-            const t = result.rescore(swapped);
             return {
               id: c.id,
-              addedMin: t.totalMin - baseTiming.totalMin,
+              addedMin: result.rescoreFrom(runningVisits, swapped).delta.totalMin.min,
               blog: c.signals?.blog ? { weighted: c.signals.blog.weighted } : undefined,
               blogQueried: c.signals?.blogQueried,
               google: c.signals?.google
@@ -461,7 +461,7 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           const cand = slot.candidates.find(c => c.id === top.id);
           if (!cand) continue;
           const swapped = runningVisits.map((vv, j) => (j === idx ? { ...vv, candidate: cand } : vv));
-          const t = result.rescore(swapped);
+          const t = result.rescoreFrom(runningVisits, swapped);
           // t.estimated면 이 타이밍은 실측 leg가 아니라 하버사인 추정이다(SINGLE_R=8 이후
           // 30개 후보 중 상위 8곳 밖은 구조적으로 추정치). 마감 판정을 마진 0 추정치 위에서
           // 내리면 +8분 추정이 실제 +15분일 때 "제시간 도착"이라 말하고 늦게 만든다 —

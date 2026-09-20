@@ -311,7 +311,7 @@ export function TodayScreen() {
     if (params.sheet === 'task' && params.stopId) setTaskStopId(params.stopId);
     if (params.sheet === 'mapapp') setMapAppOpen(true);
   }, [params.sheet, params.stopId]);
-  const copy = timingCopy(state.dataset.timingSource, state.mode);
+  const copy = timingCopy(state.dataset.timingSource, state.mode, state.dataset.legEstimated);
   // 추정치 위에서는 마감 초과를 판정하지 않는다 — 알림도 같이 막는다
   const verdictSlack = copy.showVerdict ? slackMin : null;
   const badge = trackerBadge({

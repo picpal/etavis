@@ -4,7 +4,7 @@
  * 좌표는 실제 평창/원주 일대 근사값 (지도 폴리라인 확인용).
  */
 
-import type { TimingSource } from '../lib/routePlan/types';
+import type { TimeClass, TimingSource } from '../lib/routePlan/types';
 
 export type LatLng = { latitude: number; longitude: number };
 
@@ -29,6 +29,9 @@ export type Candidate = {
   name: string;
   note: string;              // '화장품 · 경로에서 1.1km'
   addedMin: number;          // +4
+  /** addedMin·arriveAt 의 등급. 없으면 계획 등급(`timingCopy.classOf`)으로 본다 — 목 데이터셋.
+      브리지는 항상 채운다. 실측 계획 안에서도 시드 밖 후보는 추정이라 후보마다 달라야 한다 */
+  cls?: TimeClass;
   detourKm: number;          // 경로에서 벗어나는 거리(km). 라우팅 API 값이 들어올 자리
   arriveAt: string;
   dwellMin: number;
@@ -71,6 +74,9 @@ export type Dataset = {
   totals: { totalMin: number; stopCount: number; deltaMin: number };
   /** 시간의 출처. 없으면 추정(목 데이터셋). 확정본은 planFlowBridge 가 채운다 */
   timingSource?: TimingSource;
+  /** 지금 고른 후보 중 실측 안 된 구간이 있나. `timingSource` 가 실측이어도 매장을 바꾸면 참이 된다 —
+      확정 뒤 화면(트래커·진행중·타임라인)이 `timingCopy` 세 번째 인자로 넘긴다. 없으면 거짓 */
+  legEstimated?: boolean;
   /**
    * 구간 이동시간 테이블 — 재정렬·삭제 후 재계산에 쓴다.
    * 키는 `origin>s1` 형식. 없으면 평창 데이터셋 기본값을 쓴다.

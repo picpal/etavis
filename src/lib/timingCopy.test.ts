@@ -1,13 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { introCopy, rationaleCopy, timingCopy } from './timingCopy';
+import { approxOf, classOf, deltaCopy, introCopy, rationaleCopy, timingCopy } from './timingCopy';
 
 test('실측이면 약 없음·배너 없음·판정 함', () => {
   assert.deepEqual(timingCopy('provider', 'car'), { approx: '', banner: null, showVerdict: true });
 });
 
-test('실측이라도 leg 하나가 추정이면 약은 붙고 판정은 한다 — 자동차 교체 시트의 기존 동작', () => {
-  assert.deepEqual(timingCopy('provider', 'car', true), { approx: '약 ', banner: null, showVerdict: true });
+test('실측(provider)이라도 구간 하나가 추정이면 판정하지 않는다 — 추정 위의 여유는 거짓 정밀도다', () => {
+  // 예전엔 '약'을 붙이고도 판정을 했다. +8분 추정이 실제 +15분이면 "3분 여유"가 늦음이 된다 —
+  // 파일 머리말이 금하는 바로 그 일이고, runPlan 의 트렌드 스왑도 같은 이유로 추정 위 스왑을 거부한다
+  assert.deepEqual(timingCopy('provider', 'car', true), { approx: '약 ', banner: '바꾼 매장 구간은 추정이에요', showVerdict: false });
 });
 
 test('추정이면 약·배너·판정 안 함 — 배너는 모드별', () => {
@@ -53,4 +55,39 @@ test('1안 근거 — 구간마다 실측은 실측 횟수를 말하되 한 번�
 
 test('입력 화면 안내 — 대중교통도 이제 구간마다 조회한다', () => {
   assert.equal(introCopy('transit'), '구간마다 시간표를 조회해 실제 소요시간으로 계산해요');
+});
+
+test('구간 실측(provider_legs)이라도 바꾼 구간이 추정이면 약이 붙고 배너가 그걸 말하고 판정은 없다', () => {
+  // 2026-09-20 관측: CU 를 바꾸자 23:47 → 23:15 가 '약' 없이, 배너는 "구간마다 시간표 조회" 그대로,
+  // 버튼은 "23:15 도착 경로로 계속". 지어낸 숫자가 실측인 척 확정까지 흘렀다
+  assert.deepEqual(timingCopy('provider_legs', 'transit', true), {
+    approx: '약 ', banner: '구간마다 시간표 조회 · 바꾼 매장 구간은 추정', showVerdict: false,
+  });
+});
+
+test('추정 등급은 legEstimated 가 있어도 문구가 안 바뀐다 — 이미 약·판정 없음이라 더 낮출 게 없다', () => {
+  assert.deepEqual(timingCopy('provider_direct_only', 'transit', true), timingCopy('provider_direct_only', 'transit'));
+  assert.deepEqual(timingCopy('estimate', 'walk', true), timingCopy('estimate', 'walk'));
+  assert.deepEqual(timingCopy(undefined, 'car', true), timingCopy(undefined, 'car'));
+});
+
+test('deltaCopy — 실측은 부호 그대로, 추정은 약, 3분 미만 추정은 비슷해요, 실측 0은 같아요', () => {
+  assert.equal(deltaCopy({ min: 7, cls: 'measured' }), '+7분');
+  assert.equal(deltaCopy({ min: -3, cls: 'measured' }), '−3분');
+  assert.equal(deltaCopy({ min: 0, cls: 'measured' }), '같아요');
+  assert.equal(deltaCopy({ min: 2.4, cls: 'estimated' }), '비슷해요');
+  assert.equal(deltaCopy({ min: -2, cls: 'estimated' }), '비슷해요');
+  assert.equal(deltaCopy({ min: 6, cls: 'estimated' }), '약 +6분');
+  assert.equal(deltaCopy({ min: -32, cls: 'estimated' }), '약 −32분');
+});
+
+test('값 등급 → 약 · 계획 등급 → 값 등급 — 실측은 provider·provider_legs 둘뿐이다', () => {
+  assert.equal(approxOf('estimated'), '약 ');
+  assert.equal(approxOf('measured'), '');
+  assert.equal(classOf('provider'), 'measured');
+  assert.equal(classOf('provider_legs'), 'measured');
+  // 직행만 실측의 경유 추가시간은 추정이다
+  assert.equal(classOf('provider_direct_only'), 'estimated');
+  assert.equal(classOf('estimate'), 'estimated');
+  assert.equal(classOf(undefined), 'estimated');
 });

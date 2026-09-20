@@ -14,7 +14,7 @@ import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { StopList } from '../components/StopList';
-import { timingCopy } from '../lib/timingCopy';
+import { signedMin, timingCopy } from '../lib/timingCopy';
 import { recommendTabState } from '../lib/routePlan/recommendTab';
 import { makeReasonClient } from '../lib/reasonClient';
 import type { RootStackParamList } from '../../App';
@@ -75,7 +75,8 @@ function EtaBar({ departMin, directMin, totalMin, arriveByMin, estimated, showVe
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
           <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: color.primary }} />
-          <Text style={[type.micro, { color: color.muted }]}>들르기 +{Math.round(totalMin - directMin)}분</Text>
+          {/* 부호를 '+'로 박아 두면 음수일 때 '+-5분'이 된다 — 추정 구간이 섞이면 들르기가 음수로 나올 수 있다(2026-09-20 기기) */}
+          <Text style={[type.micro, { color: color.muted }]}>들르기 {signedMin(totalMin - directMin)}</Text>
         </View>
         {late && (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
@@ -406,6 +407,7 @@ export function OptionsScreen({ navigation }: Props) {
         candidates={sheetCands}
         currentId={pickVisit?.candidate.id}
         mode={req.mode}
+        timingSource={result.timingSource}
         onPick={candId => pickSlot && flow.setOverride(state.selectedOptionIdx, pickSlot, candId)}
         onClose={() => setPickSlot(null)}
       />

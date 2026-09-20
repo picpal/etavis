@@ -31,7 +31,7 @@ let guideSeen = false;
 export function TimelineScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { state, reorderStops, removeStop, replaceStop, destinationDisplay, originDisplay, slackMin, arriveByLabel, confirmPlan, departAtLabel } = usePlan();
-  const copy = timingCopy(state.dataset.timingSource, state.mode);
+  const copy = timingCopy(state.dataset.timingSource, state.mode, state.dataset.legEstimated);
   const [taskStopId, setTaskStopId] = useState<string | null>(null);
   const [candidateStopId, setCandidateStopId] = useState<string | null>(null);
 
@@ -363,6 +363,7 @@ export function TimelineScreen({ navigation, route }: Props) {
         candidates={candidateSheetCands}
         currentId={candidateCurrentId}
         mode={state.dataset.mode}
+        timingSource={state.dataset.timingSource}
         onPick={candId => candidateStop && replaceStop(candidateStop.id, candId)}
         onClose={() => setCandidateStopId(null)}
       />

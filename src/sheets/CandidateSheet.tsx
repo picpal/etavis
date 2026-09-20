@@ -10,6 +10,8 @@ import { Card, haptic, MicroLabelRow, PrimaryButton, SegmentControl } from '../c
 import { CandidateSort, rankCandidates, sortsFor } from '../lib/candidateRank';
 import { StripePhoto } from '../components/primitives';
 import { Sheet } from '../components/Sheet';
+import { approxOf, classOf, deltaCopy } from '../lib/timingCopy';
+import type { TimingSource } from '../lib/routePlan/types';
 
 function OpenStateRow({ cand }: { cand: Candidate }) {
   const tint = cand.openState === 'closed' ? color.muted : color.green;
@@ -45,11 +47,6 @@ function HotBadge() {
   );
 }
 
-/** 부호는 하나만 — 빼는 후보(음수)는 '+-1분'이 아니라 '−1분' */
-const signedMin = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(Math.round(n))}분`;
-/** 후보 note에 '추정'이 섞여 있으면 추가시간이 실측이 아니라는 뜻 — 앞에 '약 '을 붙인다 */
-const addedLabel = (cand: Candidate) => `${cand.note.includes('추정') ? '약 ' : ''}${signedMin(cand.addedMin)}`;
-
 export function CandidateSheet({
   visible,
   title,
@@ -58,6 +55,7 @@ export function CandidateSheet({
   onPick,
   onClose,
   mode,
+  timingSource,
 }: {
   visible: boolean;
   title: string;
@@ -67,8 +65,15 @@ export function CandidateSheet({
   onPick: (candidateId: string) => void;
   onClose: () => void;
   mode: 'car' | 'walk' | 'transit';
+  /** 계획의 시간 출처. 후보가 자기 등급(`cls`)을 안 들고 오면 이걸로 본다 — 목 데이터셋 */
+  timingSource?: TimingSource;
 }) {
   const insets = useSafeAreaInsets();
+  // '약'은 여기서 정하지 않는다 — 예전엔 note 의 '추정' 글자를 냄새 맡았는데, note 가 trend 근거로
+  // 바뀌면 그 글자가 사라져 '약'도 같이 사라졌다. 등급은 후보의 cls 가 들고 문구는 timingCopy 가 낸다
+  const clsOf = (cand: Candidate) => cand.cls ?? classOf(timingSource);
+  const addedLabel = (cand: Candidate) => deltaCopy({ min: cand.addedMin, cls: clsOf(cand) });
+  const arriveLabel = (cand: Candidate) => `${approxOf(clsOf(cand))}${cand.arriveAt}`;
   const [tabIdxRaw, setTabIdx] = useState(0);
 
   // 닫힘 애니메이션 동안 내용을 유지 — visible이 꺼지면 호출부의 candidates가 []로 무너져도
@@ -187,7 +192,7 @@ export function CandidateSheet({
                     <MicroLabelRow
                       items={[
                         { label: '추가시간', value: addedLabel(cand), tint: color.amber },
-                        { label: '도착', value: cand.arriveAt },
+                        { label: '도착', value: arriveLabel(cand) },
                         { label: '체류', value: `${cand.dwellMin}분` },
                         { label: '주차', value: cand.parking },
                       ]}
@@ -260,7 +265,7 @@ export function CandidateSheet({
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
                         <Text style={[type.statS, { color: color.amber }]}>{addedLabel(cand)}</Text>
                         <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 11, lineHeight: 11, color: color.muted }}>
-                          {cand.arriveAt}
+                          {arriveLabel(cand)}
                         </Text>
                       </View>
                     </Card>

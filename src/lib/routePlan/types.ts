@@ -110,6 +110,16 @@ export type PlanInput = {
  */
 export type TimingSource = 'provider' | 'provider_legs' | 'provider_direct_only' | 'estimate';
 
+/**
+ * 시간 **값 하나**의 등급. `TimingSource` 가 계획 전체의 출처라면 이건 숫자 하나에 붙는다 —
+ * 실측 계획 안에서 매장을 바꾸면 그 두 구간만 추정이 되고, 화면은 값마다 등급을 물어야
+ * '약'을 맞게 붙인다. 계획 등급으로 추측하면 바꾼 뒤 23:15 가 실측인 척 나간다(2026-09-20).
+ * 등급을 문구로 바꾸는 곳은 `timingCopy.ts` 하나다
+ */
+export type TimeClass = 'measured' | 'estimated';
+/** 등급을 들고 다니는 분 값. 실측 − 추정 같은 뺄셈은 같은 `cls` 끼리만 한다 */
+export type Timed = { min: number; cls: TimeClass };
+
 export type TransitStop = { name: string; lat: number; lng: number };
 export type TransitLeg =
   | { kind: 'walk'; durationMin: number; distanceM: number }

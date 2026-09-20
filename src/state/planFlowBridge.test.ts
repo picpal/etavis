@@ -371,3 +371,36 @@ test('toLegacyPlan — timingSource 를 확정본에 싣고, 1안 근거는 출�
   assert.equal(q.dataset.timingSource, 'provider');
   assert.match(q.dataset.options[0].rationale, /^실측 \d+회로 확인한 경로예요\.$/);
 });
+
+test('toLegacyPlan — 오버라이드로 미실측 후보가 들어오면 dataset.legEstimated 가 true 다', async () => {
+  // 시드(옵션에 뽑힌 후보)는 목 공급자라도 leg 가 저장돼 실측으로 친다. 시드 밖 oy4 로 바꾸면
+  // 그 두 구간은 추정이고, 확정 뒤 화면이 이 플래그로 '약'을 붙여야 한다 — 출처가 실측이어도
+  const extraSlots: Slot[] = slots.map(s =>
+    s.id === 's-1' ? { ...s, candidates: [...s.candidates, c('oy4', '올리브영 D', at(37.51, 127.04))] } : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: extraSlots, order: 'auto' }, mockRouteProvider());
+  let s = planFlowReducer(initialPlanFlow, { type: 'START', request: req });
+  s = planFlowReducer(s, { type: 'SLOTS', slots: extraSlots });
+  s = planFlowReducer(s, { type: 'RESULT', result: { ...result, timingSource: 'provider_legs' as const } });
+
+  assert.equal(toLegacyPlan({ flow: s, departMin: 480 }).dataset.legEstimated, false, '시드끼리면 실측이다');
+  s = planFlowReducer(s, { type: 'SET_OVERRIDE', optionIdx: 0, slotId: 's-1', candidateId: 'oy4' });
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  assert.equal(p.dataset.legEstimated, true);
+  assert.equal(p.dataset.timingSource, 'provider_legs', '출처는 그대로다 — 등급을 낮추는 건 legEstimated 몫이다');
+});
+
+test('slotCandidates — 후보마다 등급(cls)을 들고 오고 note 는 추정을 말하지 않는다', async () => {
+  const extraSlots: Slot[] = slots.map(s =>
+    s.id === 's-1' ? { ...s, candidates: [...s.candidates, c('oy4', '올리브영 D', at(37.51, 127.04))] } : s,
+  );
+  const result = await plan({ origin: O, destination: D, departAtMin: 480, arriveByMin: 560, mode: 'car', slots: extraSlots, order: 'auto' }, mockRouteProvider());
+  const { visits, timing } = effectiveVisits(result, extraSlots, 0, {});
+  const idx = visits.findIndex(v => v.slotId === 's-1');
+  const list = slotCandidates(result, extraSlots, visits, idx, timing);
+  // 등급은 값에 붙어 다닌다 — 시트가 note 문자열을 냄새 맡아 '약'을 정하던 자리를 없앤다
+  assert.ok(list.every(x => x.cls === 'measured' || x.cls === 'estimated'));
+  assert.equal(list.find(x => x.id === 'oy4')!.cls, 'estimated', '시드 밖 후보는 추정이다');
+  assert.equal(list.find(x => x.id === visits[idx].candidate.id)!.cls, 'measured', '현재 후보는 계획 등급이다');
+  assert.ok(list.every(x => !x.note.includes('추정')), '등급은 cls 가 말한다. note 까지 말하면 한쪽이 틀린다');
+});

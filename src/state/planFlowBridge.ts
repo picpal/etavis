@@ -12,7 +12,7 @@ import type { Candidate, Dataset, RouteOption, Stop } from '../data/mockData';
 import { rationaleCopy } from '../lib/timingCopy';
 import { isOpenAt } from '../lib/routePlan/score';
 import { scoreTrend } from '../lib/trendScore';
-import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, Visit } from '../lib/routePlan/types';
+import type { Alternative, PlanOption, PlanResult, Rescored, Slot, SlotStatus, TimeClass, Visit } from '../lib/routePlan/types';
 import type { PlanFlowState } from './planFlow';
 import type { ApplyLivePayload, StopState } from './plan';
 
@@ -123,9 +123,12 @@ export function alternativeToCandidate(alt: Alternative, slotQuery: string, arri
   return {
     id: alt.candidate.id,
     name: alt.candidate.name,
-    // 1km 미만은 m로 — '0km'는 거리를 말하지 않는다
-    note: `${slotQuery} · 경로에서 ${formatDistanceM(alt.detourKm * 1000)}${alt.estimated ? ' · 추정' : ''}`,
+    // 1km 미만은 m로 — '0km'는 거리를 말하지 않는다. 추정 여부는 note 에 안 쓴다 —
+    // 등급은 `cls` 가 들고 '약'은 timingCopy 가 붙인다. 두 군데서 말하면 한쪽이 틀린다
+    // (note 가 trend 근거로 바뀌면 '추정' 글자가 사라졌고, 시트는 그걸 냄새 맡아 '약'을 정했다)
+    note: `${slotQuery} · 경로에서 ${formatDistanceM(alt.detourKm * 1000)}`,
     addedMin: Math.round(alt.addedMin),
+    cls: alt.estimated ? 'estimated' : 'measured',
     detourKm: round1(alt.detourKm),
     arriveAt: toHHMM(arrivalMin),
     dwellMin,
@@ -137,10 +140,10 @@ export function alternativeToCandidate(alt: Alternative, slotQuery: string, arri
   };
 }
 
-export function chosenToCandidate(v: Visit, slotQuery: string, arrivalMin: number): Candidate {
+export function chosenToCandidate(v: Visit, slotQuery: string, arrivalMin: number, cls: TimeClass): Candidate {
   const openState = openStateOf(v.candidate, arrivalMin);
   return {
-    id: v.candidate.id, name: v.candidate.name, note: `${slotQuery} · 현재 경로`, addedMin: 0, detourKm: 0,
+    id: v.candidate.id, name: v.candidate.name, note: `${slotQuery} · 현재 경로`, addedMin: 0, detourKm: 0, cls,
     arriveAt: toHHMM(arrivalMin), dwellMin: v.dwellMin, parking: v.candidate.parking ?? '모름',
     openState, openNote: openNoteOf(openState), recommended: true, coord: v.candidate.coord,
   };
@@ -165,7 +168,7 @@ export function slotCandidates(
   const query = slot?.query ?? '';
   const arrive = timing.arrivals[idx];
   const seen = new Set<string>([v.candidate.id]);
-  const list: Candidate[] = [chosenToCandidate(v, query, arrive)];
+  const list: Candidate[] = [chosenToCandidate(v, query, arrive, timing.estimated ? 'estimated' : 'measured')];
   for (const cand of slot?.candidates ?? []) {
     if (seen.has(cand.id)) continue;
     seen.add(cand.id);
@@ -315,6 +318,8 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     candidates,
     totals: { totalMin, deltaMin: totalMin - Math.round(result.directMin), stopCount: stops.length },
     timingSource: result.timingSource,
+    // 오버라이드로 시드 밖 후보가 들어오면 그 구간은 추정이다 — 출처가 실측이어도 확정 뒤 화면은 '약'을 붙여야 한다
+    legEstimated: timing.estimated,
     legs,
   };
 

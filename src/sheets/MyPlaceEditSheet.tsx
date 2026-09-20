@@ -13,6 +13,7 @@ import type { SavedPlace } from '../lib/placesFormat';
 import { newPlaceId, removePlace, savePlace } from '../lib/placesStore';
 import { usePlaces } from '../lib/usePlaces';
 import { useCurrentPlace } from '../lib/currentPlace';
+import { labelForSlot } from '../lib/placeLabel';
 import { josa } from '../state/planFlowBridge';
 import { Card, haptic } from '../components/common';
 import { PlaceSearch } from '../components/PlaceSearch';
@@ -53,7 +54,7 @@ export function MyPlaceEditSheet({
   /* 열릴 때마다 들고 온 값으로 초기화한다 — 지난번에 쓰다 만 값이 남으면 안 된다 */
   useEffect(() => {
     if (!visible) return;
-    setLabel(place?.label ?? (presetSlot ? (presetSlot === 'home' ? '집' : '회사') : ''));
+    setLabel(place?.label ?? labelForSlot('', presetSlot ?? null));
     setSlot(place?.slot ?? presetSlot ?? null);
     setPicked(place ? { name: place.name, address: place.address, coord: place.coord } : null);
     setSearching(!place); // 새로 추가할 때는 검색부터
@@ -170,7 +171,9 @@ export function MyPlaceEditSheet({
                       onPress={() => {
                         haptic();
                         setSlot(s.key);
-                        if (s.key && !label.trim()) setLabel(s.key === 'home' ? '집' : '회사');
+                        // 자동으로 찼던 라벨만 따라 옮긴다 — 직접 쓴 이름은 지키고,
+                        // 그대로 두면 회사 슬롯에 '집'이라 적힌 항목이 남는다
+                        setLabel(prev => labelForSlot(prev, s.key));
                       }}
                       style={({ pressed }) => ({
                         flex: 1,

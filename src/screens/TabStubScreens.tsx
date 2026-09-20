@@ -1284,31 +1284,39 @@ export function SettingsScreen() {
         ))}
       </Card>
 
-      <Text style={[type.label, { color: color.muted }]}>개발</Text>
-      <Card style={{ padding: 8 }}>
-        <Pressable
-          onPress={() => {
-            haptic();
-            setDevOpen(true);
-          }}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 12,
-            paddingVertical: 15,
-            paddingHorizontal: 12,
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 16, lineHeight: 20, color: color.ink }}>
-            개발 메뉴
-          </Text>
-          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 14, color: color.muted }}>
-            {state.dataset.label.split(' ')[0]}
-          </Text>
-          <Chevron size={8} thickness={2} color={color.stroke} dir="right" />
-        </Pressable>
-      </Card>
+      {/* 개발 빌드에서만 보인다. 공개 웹 데모에서는 이 행이 설정에 그대로 노출돼
+          있었고, 안에 든 '계산 타임아웃(A8)' 을 켜면 경로 계산이 매번 타임아웃
+          화면으로 가 앱이 고장 난 것처럼 보인다 — 심사 중에 밟으면 되돌릴 방법을
+          모른다. 개발자용 진입로는 A1 타이틀 롱프레스(HomeScreen)가 따로 있다. */}
+      {__DEV__ && (
+        <>
+          <Text style={[type.label, { color: color.muted }]}>개발</Text>
+          <Card style={{ padding: 8 }}>
+            <Pressable
+              onPress={() => {
+                haptic();
+                setDevOpen(true);
+              }}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingVertical: 15,
+                paddingHorizontal: 12,
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text style={{ flex: 1, fontFamily: 'Pretendard-Medium', fontSize: 16, lineHeight: 20, color: color.ink }}>
+                개발 메뉴
+              </Text>
+              <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 14, lineHeight: 14, color: color.muted }}>
+                {state.dataset.label.split(' ')[0]}
+              </Text>
+              <Chevron size={8} thickness={2} color={color.stroke} dir="right" />
+            </Pressable>
+          </Card>
+        </>
+      )}
       </ScrollView>
 
       <DevSheet visible={devOpen} onClose={() => setDevOpen(false)} />

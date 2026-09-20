@@ -19,11 +19,11 @@ import { hourWindow } from './window';
 export type Env = {
   METRICS: AnalyticsEngineDataset;
   ALLOWED_ORIGINS: string;
-  CF_ACCOUNT_ID: string;
+  AE_ACCOUNT_ID: string;
   DEMO_URL: string;
   /** wrangler secret put — 파일에 쓰지 않는다 */
   APP_TOKEN: string;
-  CF_API_TOKEN: string;
+  AE_API_TOKEN: string;
   SLACK_WEBHOOK_URL: string;
 };
 
@@ -80,22 +80,23 @@ export default {
   },
 };
 
-/** AE 에 SQL 을 던져 행을 받는다. 실패하면 빈 배열 — 리포트가 안 오는 것보다 0 이 낫다 */
-async function query(env: Env, from: string, to: string): Promise<Row[]> {
+/** AE 에 SQL 을 던져 행을 받는다. 실패는 null 로 구별한다 — 빈 배열로 접으면
+ *  "아무도 안 왔다"와 "숫자를 못 읽었다"가 같은 리포트가 된다 */
+async function query(env: Env, from: string, to: string): Promise<Row[] | null> {
   const sql =
     `SELECT blob1 AS event, blob2 AS session, sum(_sample_interval) AS n ` +
     `FROM ${DATASET} ` +
     `WHERE timestamp >= toDateTime('${from}') AND timestamp < toDateTime('${to}') ` +
     `GROUP BY event, session`;
 
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`, {
+  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.AE_ACCOUNT_ID}/analytics_engine/sql`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${env.CF_API_TOKEN}` },
+    headers: { authorization: `Bearer ${env.AE_API_TOKEN}` },
     body: sql,
   });
   if (!res.ok) {
     console.error(`[metrics] AE 조회 실패 ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    return [];
+    return null;
   }
   const json = (await res.json()) as { data?: { event: string; session: string; n: number | string }[] };
   return (json.data ?? []).map(r => ({ event: r.event, session: r.session, n: Number(r.n) || 0 }));
@@ -106,17 +107,29 @@ export async function report(env: Env, now: Date): Promise<void> {
   const [rows, prevRows] = await Promise.all([query(env, w.from, w.to), query(env, w.prevFrom, w.from)]);
 
   const payload = buildReport({
-    stats: aggregate(rows),
+    stats: aggregate(rows ?? []),
+    failed: rows === null,
     // 직전 시간에 데이터가 아예 없으면 비교를 지어내지 않는다
-    prevVisitors: prevRows.length ? aggregate(prevRows).visitors : null,
+    prevVisitors: prevRows && prevRows.length ? aggregate(prevRows).visitors : null,
     windowLabel: w.label,
     demoUrl: env.DEMO_URL,
   });
 
+  if (!env.SLACK_WEBHOOK_URL) {
+    console.error('[metrics] SLACK_WEBHOOK_URL 이 없다 — 리포트를 보낼 곳이 없다');
+    return;
+  }
   const res = await fetch(env.SLACK_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) console.error(`[metrics] Slack 전송 실패 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  // 성공해도 한 줄 남긴다. 실패만 남기면 "잘 돌았다"와 "아예 안 돌았다"를
+  // 로그로 구분할 수 없다 — 2026-09-20 에 tail 을 붙여 놓고도 판단을 못 했다
+  if (res.ok) {
+    const st = aggregate(rows ?? []);
+    console.log(`[metrics] 전송함 ${w.label} 방문 ${st.visitors} 질문 ${st.asks} 확정 ${st.plans}${rows === null ? ' (조회 실패)' : ''}`);
+  } else {
+    console.error(`[metrics] Slack 전송 실패 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  }
 }

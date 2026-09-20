@@ -3,7 +3,7 @@
 #
 # 비밀값은 여기 쓰지 않는다. 사용자가 직접 넣는다:
 #   npx wrangler secret put APP_TOKEN         --config metrics/wrangler.toml
-#   npx wrangler secret put CF_API_TOKEN      --config metrics/wrangler.toml
+#   npx wrangler secret put AE_API_TOKEN      --config metrics/wrangler.toml
 #   npx wrangler secret put SLACK_WEBHOOK_URL --config metrics/wrangler.toml
 name = "etavia-metrics"
 main = "src/index.ts"
@@ -23,7 +23,7 @@ ALLOWED_ORIGINS = "https://etavia-demo.picpal.workers.dev,http://localhost:8080"
 DEMO_URL = "https://etavia-demo.picpal.workers.dev"
 # 계정 id 는 비밀값이 아니다(대시보드 URL 에 그대로 있다). KV 네임스페이스 id 를
 # server/wrangler.toml 에 두는 것과 같은 취급.
-CF_ACCOUNT_ID = "0735fc1b945ba922944da9c6fa7aa3f6"
+AE_ACCOUNT_ID = "0735fc1b945ba922944da9c6fa7aa3f6"
 
 [[analytics_engine_datasets]]
 binding = "METRICS"

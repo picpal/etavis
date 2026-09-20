@@ -67,3 +67,15 @@ test('아무도 안 왔으면 한 줄로 줄인다 — 밤새 같은 카드가 �
 test('시간 구간을 반드시 적는다', () => {
   assert.ok(dump(make(busy)).includes('09-21 14:00~15:00'));
 });
+
+test('집계를 못 읽었으면 "방문 없음"이 아니라 고장났다고 말한다', () => {
+  // AE 조회가 실패해도 빈 배열이 오면 리포트는 "방문 없음"과 구별되지 않는다.
+  // 토큰이 만료돼 아무것도 못 읽는 상태가 조용한 새벽처럼 보이면, 며칠을 모르고 지난다.
+  const p = buildReport({
+    stats: quiet, prevVisitors: null, windowLabel: '09-21 14:00~15:00',
+    demoUrl: 'https://etavia-demo.picpal.workers.dev', failed: true,
+  });
+  const s = dump(p);
+  assert.ok(!s.includes('방문 없음'), '고장을 조용한 시간으로 보고하면 안 된다');
+  assert.ok(/집계|조회|실패/.test(s), `무엇이 잘못됐는지 말해야 한다: ${s}`);
+});

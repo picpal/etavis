@@ -14,6 +14,8 @@ export type ReportInput = {
   /** 'MM-DD HH:mm~HH:mm' (KST) */
   windowLabel: string;
   demoUrl: string;
+  /** 집계 조회 자체가 실패했다. 0 과 구별해서 말해야 한다 */
+  failed?: boolean;
 };
 
 function delta(now: number, prev: number | null): string {
@@ -25,6 +27,21 @@ function delta(now: number, prev: number | null): string {
 
 export function buildReport(input: ReportInput): { blocks: unknown[] } {
   const { stats: s, windowLabel, demoUrl } = input;
+
+  // 조회가 깨진 것을 "방문 없음"으로 보고하면, 토큰이 만료돼 아무것도 못 읽는 상태가
+  // 조용한 새벽과 똑같이 보인다 — 며칠을 모르고 지나간다
+  if (input.failed) {
+    return {
+      blocks: [
+        {
+          type: 'context',
+          elements: [
+            { type: 'mrkdwn', text: `:warning: *Etavia 데모* ${windowLabel} · 집계 조회 실패 (숫자를 못 읽었습니다)` },
+          ],
+        },
+      ],
+    };
+  }
 
   // 조용한 시간엔 카드를 통째로 보내지 않는다. 밤새 같은 카드가 쌓이면 아무도 안 본다 —
   // 그래도 한 줄은 보낸다. 안 보내면 cron 이 죽은 건지 사람이 없는 건지 구분이 안 된다.

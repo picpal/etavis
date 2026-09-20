@@ -25,7 +25,7 @@ const hhmm = (min: number) => toHHMM(Math.round(min)).padStart(5, '0');
 
 export function StopList({
   result, visits, arrivals, slots, departAtMin, arriveByMin, late, approx, onPick, onRemove,
-  pendingRemove, onUndoRemove,
+  pendingRemove, onUndoRemove, headerAccessory,
 }: {
   result: PlanResult;
   visits: Visit[];
@@ -41,6 +41,9 @@ export function StopList({
   /** 뺄 예정인 행. 아직 계획에서 지운 게 아니라 '다시 계산'을 누를 때 반영된다 */
   pendingRemove: string[];
   onUndoRemove: (slotId: string) => void;
+  /* 라벨과 카드 사이. 목록을 다시 세우는 조작(기준 탭)이 여기 들어간다 —
+     조작과 그 결과가 붙어 있어야 무엇이 바뀌는지 눈으로 이어진다 */
+  headerAccessory?: React.ReactNode;
 }) {
   const left = visits.length - pendingRemove.length;
   return (
@@ -48,6 +51,17 @@ export function StopList({
       <Text style={[type.label, { color: color.muted }]}>
         경유지 {left}곳{pendingRemove.length > 0 ? ` · ${pendingRemove.length}곳 뺌` : ''}
       </Text>
+      {headerAccessory}
+      {/* 들를 곳이 하나도 없을 때. 예전에는 빈 카드가 높이 0으로 접혀 아무것도 안 그려졌고,
+          그러면 '경유지가 없다'가 아니라 '목록이 안 떴다'로 읽힌다 — 실제로 그렇게 읽혔다.
+          왜 없는지는 바로 위 '못 찾아 뺐어요' 줄들이 말하므로, 여기서는 지금 어떤 길인지만
+          말한다 */}
+      {visits.length === 0 ? (
+        <Card style={{ paddingVertical: 22, paddingHorizontal: 16, alignItems: 'center', gap: 4 }}>
+          <Text style={[type.body, { color: color.body }]}>들를 곳이 없어요</Text>
+          <Text style={[type.caption, { color: color.muted }]}>목적지까지 바로 가는 길이에요</Text>
+        </Card>
+      ) : (
           <Card style={{ padding: 0, overflow: 'hidden' }}>
             {visits.map((v, k) => {
               const pending = pendingRemove.includes(v.slotId);
@@ -149,6 +163,7 @@ export function StopList({
               );
             })}
           </Card>
+      )}
     </View>
   );
 }

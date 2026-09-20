@@ -128,6 +128,15 @@ export function OptionsScreen({ navigation }: Props) {
   const comfortIdx = result?.comfortIdx ?? null;
   /* 탭이 가리킬 안과 켜진 자리. 판단은 `recommendTab.ts` 한 곳이 한다 */
   const tab = recommendTabState(comfortIdx, state.selectedOptionIdx);
+  /* 두 기준이 각각 몇 시 도착인지. 탭 라벨에 박아 두려는 값이다 — 번갈아 눌러
+     기억으로 비교하게 두면, 도착 시각이 화면 위쪽에 있어 스크롤이 내려간 순간
+     비교가 끊긴다. 교체(overrides)까지 반영해야 화면의 다른 숫자와 어긋나지 않는다 */
+  const tabTiming = useMemo(() => {
+    if (!result) return null;
+    const pick = (idx: number) => effectiveVisits(result, state.slots, idx, state.overrides).timing;
+    const comfort = pick(tab.target);
+    return { comfort, fast: tab.target === 0 ? comfort : pick(0) };
+  }, [result, state.slots, state.overrides, tab.target]);
   /* 두 기준이 같은 안을 가리킬 때(`sameAsFast`) 켜진 자리를 화면이 직접 든다.
      그때는 어느 쪽을 눌러도 고를 안이 0 하나뿐이라 `selectedOptionIdx` 가 안 움직이고,
      그 값으로 켜진 자리를 정하면 썸이 손가락을 안 따라온다 — 눌러도 아무 일도 없는
@@ -230,6 +239,57 @@ export function OptionsScreen({ navigation }: Props) {
     navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Today' }] });
   };
 
+  /* 탭 한 칸에 박을 '이 기준을 고르면 몇 시 도착'. 판정(늦음)은 timingCopy 가 허락할
+     때만 색으로 말한다 — 추정치 위에서 붉게 칠하면 없는 확신을 파는 것이다 */
+  const segArrival = (t: { totalMin: number; estimated: boolean }) => {
+    const at = req.departAtMin + t.totalMin;
+    const c = timingCopy(result.timingSource, req.mode, t.estimated);
+    const isLate = req.arriveByMin != null && Math.round(req.arriveByMin - at) < 0;
+    return { text: `${c.approx}${hhmm(at)}`, tint: c.showVerdict && isLate ? color.late : null };
+  };
+  const segComfort = tabTiming ? segArrival(tabTiming.comfort) : null;
+  const segFast = tabTiming ? segArrival(tabTiming.fast) : null;
+
+  /* 기준 고르기 — **늘 보인다.** 가리킬 추천안이 따로 없을 때도 자리를 비우지 않는다:
+     탭이 있다 없다 하면 사용자는 자기가 뭘 잘못 눌렀는지 의심한다. 자리는 경유지 목록
+     바로 위다 — 이 탭이 실제로 바꾸는 건 아래 목록의 순서이고, 도착 시각은 그 결과다 */
+  const criteria = (
+    <View style={{ gap: 7, opacity: dirty ? 0.4 : 1 }}>
+      <SegmentControl
+        options={['추천 순서', '최단 시간']}
+        subs={[segComfort?.text ?? null, segFast?.text ?? null]}
+        subTints={[segComfort?.tint ?? null, segFast?.tint ?? null]}
+        /* 기본 트랙(`color.bg`)은 화면 배경과 같은 색이다 — 카드 위에 놓을 때를 전제한
+           값이라, 배경 위에 바로 두면 트랙이 사라지고 켜진 칸만 떠 있는 카드로 보인다 */
+        track={color.track}
+        value={tab.sameAsFast ? sameSeg : tab.value}
+        onChange={i => {
+          haptic();
+          setSameSeg(i === 0 ? 0 : 1);
+          flow.select(i === 0 ? tab.target : 0);
+        }}
+        fontSize={14}
+        padV={10}
+      />
+      {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
+          설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
+      <Text
+        numberOfLines={1}
+        style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
+      >
+        {/* `가장 편해요` 라고 쓰던 자리다. 무엇과 견줘 '가장'인지 코드가 모른다 —
+            `sameAsFast` 에는 짐을 아예 안 잰 경우(자동차는 늘 그렇다)가 섞여 있다.
+            서버가 LLM 에게 금지한 말이기도 하다(`server/src/reason.ts` FORBIDDEN).
+            그래서 등수 대신 사실만 말한다: 지금은 두 기준의 답이 같다 */}
+        {tab.sameAsFast
+          ? '두 기준이 지금은 같은 순서를 가리켜요'
+          : tab.value === 0
+            ? whyLine ?? '짐을 들고 이동하는 시간을 줄였어요'
+            : '총 이동 시간이 가장 짧아요'}
+      </Text>
+    </View>
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: color.bg }}>
       <NavHeader title="추천 경로" onBack={() => navigation.goBack()} />
@@ -246,39 +306,6 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           </View>
         )}
-
-        {/* 0. 기준 고르기 — **늘 보인다.** 아래 숫자가 전부 이 선택을 따라 바뀌므로
-            판정보다 위에 둔다. 가리킬 추천안이 따로 없을 때도 자리를 비우지 않는다:
-            탭이 있다 없다 하면 사용자는 자기가 뭘 잘못 눌렀는지 의심한다 */}
-        <View style={{ gap: 6 }}>
-          <SegmentControl
-            options={['추천 순서', '최단 시간']}
-            value={tab.sameAsFast ? sameSeg : tab.value}
-            onChange={i => {
-              haptic();
-              setSameSeg(i === 0 ? 0 : 1);
-              flow.select(i === 0 ? tab.target : 0);
-            }}
-            fontSize={14}
-            padV={9}
-          />
-          {/* 버튼만으로는 두 기준이 무슨 뜻인지 모른다. 높이를 미리 잡아 둔다 —
-              설명이 나중에 와서 줄이 생기면 아래가 밀리고, 그게 곧 '말없이 바뀐다'다 */}
-          <Text
-            numberOfLines={1}
-            style={{ fontFamily: 'Pretendard-Regular', fontSize: 12, lineHeight: 17, color: color.muted, paddingHorizontal: 2 }}
-          >
-            {/* `가장 편해요` 라고 쓰던 자리다. 무엇과 견줘 '가장'인지 코드가 모른다 —
-                `sameAsFast` 에는 짐을 아예 안 잰 경우(자동차는 늘 그렇다)가 섞여 있다.
-                서버가 LLM 에게 금지한 말이기도 하다(`server/src/reason.ts` FORBIDDEN).
-                그래서 등수 대신 사실만 말한다: 지금은 두 기준의 답이 같다 */}
-            {tab.sameAsFast
-              ? '두 기준이 지금은 같은 순서를 가리켜요'
-              : tab.value === 0
-                ? whyLine ?? '짐을 들고 이동하는 시간을 줄였어요'
-                : '총 이동 시간이 가장 짧아요'}
-          </Text>
-        </View>
 
         {/* 1. 판정 — 답 먼저. 카드 없이 헤드라인 + 타임바: 직행·들르기·마감을 한 줄 그림으로.
             조건이 달라졌으면 흐리게 — 지우지는 않는다. 무엇과 견줘 뺐는지가 이 숫자라
@@ -352,6 +379,7 @@ export function OptionsScreen({ navigation }: Props) {
           onRemove={removeStop}
           pendingRemove={pendingRemove}
           onUndoRemove={undoRemove}
+          headerAccessory={criteria}
         />
       </ScrollView>
 

@@ -193,9 +193,18 @@ export function Bubble({ children, maxWidth = 285 }: { children: React.ReactNode
   );
 }
 
-/** 세그먼트 — 트랙 R12 p3, 활성 썸 흰색 R10 + shadow */
+/**
+ * 세그먼트 — 트랙 R12 p3, 활성 썸 흰색 R10 + shadow.
+ *
+ * `subs` 를 주면 각 칸이 두 줄이 된다: 위에 기준 이름, 아래에 그 기준을 골랐을 때의 값.
+ * 번갈아 눌러 기억으로 비교하지 않게 하려는 것이다 — 값이 화면 다른 데(위쪽 도착 시각)에만
+ * 있으면 스크롤 밖으로 나가는 순간 비교가 끊긴다. `subTints` 로 칸마다 값 색을 달리 준다
+ * (마감을 넘긴 안은 붉게). 색은 부르는 쪽이 정한다 — 여기서 판정하면 두 곳이 판정하게 된다.
+ */
 export function SegmentControl({
   options,
+  subs,
+  subTints,
   value,
   onChange,
   track = color.bg,
@@ -203,6 +212,10 @@ export function SegmentControl({
   padV = 12,
 }: {
   options: string[];
+  /** 칸마다 아래에 붙일 값. 칸 수만큼. 비우면 한 줄짜리 기존 모양 그대로다 */
+  subs?: (string | null)[];
+  /** 값 글자색. 안 주면 활성 ink · 비활성 muted */
+  subTints?: (string | null)[];
   value: number;
   onChange: (index: number) => void;
   track?: string;
@@ -220,6 +233,7 @@ export function SegmentControl({
     >
       {options.map((opt, i) => {
         const active = i === value;
+        const sub = subs?.[i] ?? null;
         return (
           <Pressable
             key={opt}
@@ -246,14 +260,28 @@ export function SegmentControl({
               numberOfLines={1}
               style={{
                 fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',
-                fontSize,
-                lineHeight: fontSize,
-                color: active ? color.ink : color.muted,
+                fontSize: sub ? 12 : fontSize,
+                lineHeight: sub ? 12 : fontSize,
+                color: active ? (sub ? color.body : color.ink) : color.muted,
                 textAlign: 'center',
               }}
             >
               {opt}
             </Text>
+            {sub != null && (
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontFamily: 'Pretendard-Bold',
+                  fontSize: 16,
+                  lineHeight: 19,
+                  color: subTints?.[i] ?? (active ? color.ink : color.muted),
+                  textAlign: 'center',
+                }}
+              >
+                {sub}
+              </Text>
+            )}
           </Pressable>
         );
       })}
@@ -266,5 +294,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
   },
 });

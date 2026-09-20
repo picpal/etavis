@@ -15,7 +15,7 @@ import { formatDistanceM, formatEta } from '../lib/geo';
 import { useRouteLegs } from '../lib/routeLegs';
 import { CONGESTION } from '../lib/congestion';
 import { notifyDeadlineRisk, scheduleThanksNotification } from '../notifications';
-import { timingCopy } from '../lib/timingCopy';
+import { signedMin, timingCopy } from '../lib/timingCopy';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
 import { DevSheet } from '../sheets/DevSheet';
@@ -488,8 +488,10 @@ export function TodayScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
             <View style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'baseline', gap: 7 }}>
               <Text style={[type.statL, { color: color.ink }]}>{copy.approx}{state.totals.totalMin}분</Text>
+              {/* 옆의 총 시간과 같은 등급이다 — '약 94분' 옆에 '경유 +35분'만 맨몸으로 두면
+                  둘 중 하나는 거짓이 된다. 부호도 signedMin 이 낸다(박아 두면 음수에서 '+-'가 된다) */}
               {state.totals.deltaMin > 0 && (
-                <Text style={[type.captionM, { color: color.amber }]}>경유 +{state.totals.deltaMin}분</Text>
+                <Text style={[type.captionM, { color: color.amber }]}>경유 {copy.approx}{signedMin(state.totals.deltaMin)}</Text>
               )}
             </View>
             {badge && (

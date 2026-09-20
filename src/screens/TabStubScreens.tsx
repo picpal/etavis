@@ -20,6 +20,7 @@ import { notifyDeadlineRisk, scheduleThanksNotification } from '../notifications
 import { timingCopy } from '../lib/timingCopy';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
+import Constants from 'expo-constants';
 import { DevSheet } from '../sheets/DevSheet';
 import { TaskSheet } from '../sheets/TaskSheet';
 import { MapAppSheet } from '../sheets/MapAppSheet';
@@ -1245,7 +1246,9 @@ export function SettingsScreen() {
     { name: '기본 이동수단', value: MODE_LABELS[state.mode] },
     { name: '지도 앱 연결', value: '네이버지도' },
     { name: '알림', value: '켜짐' },
-    { name: '앱 정보', value: '1.0.0' },
+    // app.json 의 expo.version 을 읽는다. 하드코딩이던 시절엔 릴리스를 여섯 번 하는 동안
+    // 설정만 1.0.0 에 머물렀다 — 릴리스 커밋은 app.json 한 줄만 고치기 때문이다.
+    { name: '앱 정보', value: Constants.expoConfig?.version ?? '—' },
   ];
 
   return (

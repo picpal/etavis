@@ -4,6 +4,8 @@
  *   slotCandidates   — 슬롯 하나의 교체 후보 목록. 지금 고른 안 기준으로 매번 다시 낸다
  *   optionTitle      — 카드 제목은 규칙이 아니라 "무엇이 다른가"
  *   toLegacyPlan     — 확정 순간 StopState[] + key:'live' Dataset. A6 이후는 이걸로 그대로 돈다
+ *   buildLegs/buildCandidates — 그 Dataset 의 leg 표·후보 목록. 확정 뒤 재측정도 같은 함수를 쓴다
+ *   visitsFromStops  — toLegacyPlan 의 역방향. 확정 뒤 화면이 플래너에게 말을 걸 때 쓴다
  * SLOT_STATUS_TEXT/HELP — 슬롯 status 표시 문구. 화면 여러 곳(추천 카드·교체 시트)이 같이 쓴다
  */
 import { formatDistanceM } from '../lib/geo';
@@ -221,6 +223,63 @@ export function slotCandidates(
 }
 
 /**
+ * 슬롯 id 기준 전체 쌍의 leg 표(재정렬 지원). `result.legTable` 에 기대지 않고 rescore 로 직접 낸다 —
+ * 오버라이드로 옵션 밖 후보가 들어와도(legTable 에 없는 후보) 빠지는 leg 가 없다.
+ *
+ * **분을 반올림하지 않는다.** 이 표는 화면에 바로 나가는 값이 아니라 `computeChain` 이
+ * 이어 붙이는 재료다. 구간마다 깎으면 누적 오차로 도착 시각이 밀린다 —
+ * 표기용 반올림은 `computeChain` 이 마지막에 한 번만 한다.
+ *
+ * 확정(`toLegacyPlan`)과 확정 뒤 재측정(`LEGS_LEARNED`)이 **같은 함수**를 쓴다. 두 벌로 두면
+ * 한쪽만 고쳐져 A6 가 A5 와 다른 숫자를 말한다 — 이 코드베이스가 반복해서 당한 자리다
+ */
+export function buildLegs(result: PlanResult, visits: Visit[], timingBase: number): NonNullable<Dataset['legs']> {
+  const legs: NonNullable<Dataset['legs']> = {};
+  for (const v of visits) {
+    const single = result.rescore([v]);
+    legs[`origin>${v.slotId}`] = { min: single.arrivals[0] - timingBase, km: round1(single.legsKm[0] ?? 0) };
+    legs[`${v.slotId}>dest`] = { min: single.arrivals[1] - (single.arrivals[0] + v.dwellMin), km: round1(single.legsKm[1] ?? 0) };
+  }
+  for (const a of visits) {
+    for (const b of visits) {
+      if (a.slotId === b.slotId) continue;
+      const pair = result.rescore([a, b]);
+      legs[`${a.slotId}>${b.slotId}`] = { min: pair.arrivals[1] - (pair.arrivals[0] + a.dwellMin), km: round1(pair.legsKm[1] ?? 0) };
+    }
+  }
+  legs['origin>dest'] = { min: result.directMin, km: round1(result.directKm) };
+  return legs;
+}
+
+/** 방문마다의 교체 후보 목록. A5 시트와 같은 함수로 낸다 — 화면과 확정본이 다른 목록을 보면 안 된다 */
+export function buildCandidates(result: PlanResult, slots: Slot[], visits: Visit[]): Dataset['candidates'] {
+  const candidates: Dataset['candidates'] = {};
+  visits.forEach((v, i) => {
+    candidates[v.slotId] = slotCandidates(result, slots, visits, i);
+  });
+  return candidates;
+}
+
+/**
+ * 확정 뒤 스톱을 계획의 방문으로 되돌린다 — `toLegacyPlan` 의 역방향.
+ * 확정 뒤에도 `measureSwap`·재측정은 `Visit[]` 로만 말하는데(플래너 계약), A6 가 들고 있는 건
+ * `StopState[]` 뿐이라 여기가 유일한 이음매다.
+ *
+ * 하나라도 못 풀면 **null** 이다. 목 데이터셋 계획이거나(슬롯이 없다) 계획이 갈아치워진 것이라,
+ * 반쯤 푼 배열로 재면 남의 계획 구간을 재고 그 결과를 이 화면에 붙이게 된다
+ */
+export function visitsFromStops(slots: Slot[], stops: StopState[]): Visit[] | null {
+  const out: Visit[] = [];
+  for (const s of stops) {
+    const slot = slots.find(x => x.id === s.baseId);
+    const cand = slot?.candidates.find(c => c.id === s.selectedCandidateId);
+    if (!slot || !cand) return null;
+    out.push({ slotId: slot.id, candidate: cand, dwellMin: s.dwellMin });
+  }
+  return out;
+}
+
+/**
  * 계획 결과를 기존 스토어 형식으로 옮긴다.
  *
  * `departMin`은 **화면에 쓸 출발 시각**이다. 계산이 기준으로 삼은 시각
@@ -268,31 +327,8 @@ export function toLegacyPlan({ flow, departMin }: { flow: PlanFlowState; departM
     };
   });
 
-  // legs — 슬롯 id 기준 전체 쌍(재정렬 지원). result.legTable에 기대지 않고 rescore로 직접 낸다 —
-  // 오버라이드로 옵션 밖 후보가 들어와도(legTable에 없는 후보) 빠지는 leg가 없다
-  /* **분을 반올림하지 않는다.** 이 표는 화면에 바로 나가는 값이 아니라 `computeChain`이
-     이어 붙이는 재료다. 구간마다 깎으면 누적 오차로 도착 시각이 밀린다 —
-     표기용 반올림은 `computeChain`이 마지막에 한 번만 한다. */
-  const legs: NonNullable<Dataset['legs']> = {};
-  for (const v of visits) {
-    const single = result.rescore([v]);
-    legs[`origin>${v.slotId}`] = { min: single.arrivals[0] - timingBase, km: round1(single.legsKm[0] ?? 0) };
-    legs[`${v.slotId}>dest`] = { min: single.arrivals[1] - (single.arrivals[0] + v.dwellMin), km: round1(single.legsKm[1] ?? 0) };
-  }
-  for (const a of visits) {
-    for (const b of visits) {
-      if (a.slotId === b.slotId) continue;
-      const pair = result.rescore([a, b]);
-      legs[`${a.slotId}>${b.slotId}`] = { min: pair.arrivals[1] - (pair.arrivals[0] + a.dwellMin), km: round1(pair.legsKm[1] ?? 0) };
-    }
-  }
-  legs['origin>dest'] = { min: result.directMin, km: round1(result.directKm) };
-
-  // candidates — A5 교체 시트와 같은 함수로 낸다. 화면과 확정본이 다른 목록을 보면 안 된다
-  const candidates: Dataset['candidates'] = {};
-  visits.forEach((v, i) => {
-    candidates[v.slotId] = slotCandidates(result, slots, visits, i);
-  });
+  const legs = buildLegs(result, visits, timingBase);
+  const candidates = buildCandidates(result, slots, visits);
 
   const options: RouteOption[] = result.options.map((o, i) => ({
     id: `live-${i}`,

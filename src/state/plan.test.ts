@@ -691,3 +691,56 @@ test('cls 가 없는 목 데이터셋 후보는 등급을 못 낮춘다 — 계�
   assert.equal(s.stops[1].selectedCandidateId, 'k3', '전제: 교체가 됐다');
   assert.equal(s.dataset.legEstimated ?? false, false);
 });
+
+
+/* ── 6단계 · 고른 매장의 두 구간을 실측하면 '약'이 지워진다 ─────────────────────
+   `measureSwap` 은 값을 안 돌려주고 플래너 안의 leg 저장소만 채운다. 확정본(A6)은 그 저장소를
+   안 보는 스냅샷이라, 실측이 들어오면 leg 표와 후보 목록을 **고른 매장이 '현재'인 상태로**
+   다시 내서 얹는다(`LEGS_LEARNED`). 그래서 스톱에 얹혀 있던 교체 차이는 여기서 0 이 된다 —
+   새 표에 그 교체가 이미 들어 있으므로, 남겨 두면 같은 교체가 두 번 더해진다. */
+
+/** 두 구간을 실제로 재고 나서 브리지가 다시 낸 표. k2 가 '현재'라 추가시간은 0 이고 등급은 실측이다 */
+const learnedAfterK2 = () => {
+  const s1 = livePlan().dataset.candidates.s1;
+  return {
+    legs: { 'origin>s1': { min: 14, km: 3.4 }, 's1>s2': { min: 11, km: 2.6 } },
+    candidates: {
+      s1: [
+        { ...s1[1], addedMin: 0, arriveAt: '10:14', cls: 'measured' as const, recommended: true },
+        { ...s1[0], addedMin: -2, arriveAt: '10:12', cls: 'measured' as const, recommended: false },
+      ],
+    },
+  };
+};
+
+test('두 구간이 실측으로 들어오면 legEstimated 가 내려간다 — 재고도 약이 남으면 돈만 쓴 것이다', () => {
+  const swapped = planReducer(planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() }),
+    { type: 'REPLACE_LOCAL', stopId: 's1', candidateId: 'k2' });
+  assert.equal(swapped.dataset.legEstimated, true, '전제: 바꾼 직후엔 그 구간이 추정이다');
+
+  const learned = planReducer(swapped, { type: 'LEGS_LEARNED', ...learnedAfterK2() });
+  assert.equal(learned.dataset.legEstimated, false);
+  assert.equal(learned.stops[0].name, 'CU 삼성역점', '고른 매장은 그대로 — 재는 것이 선택을 되돌리면 안 된다');
+});
+
+test('실측 표를 얹으면 스톱의 교체 차이는 0 이 된다 — 새 표에 그 교체가 이미 들어 있다', () => {
+  const swapped = planReducer(planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() }),
+    { type: 'REPLACE_LOCAL', stopId: 's1', candidateId: 'k2' });
+  assert.equal(swapped.stops[0].replaceDeltaInMin, 7, '전제: 추정으로 낸 앞 구간 몫');
+
+  const learned = planReducer(swapped, { type: 'LEGS_LEARNED', ...learnedAfterK2() });
+  // 10:00 + 14(실측) — 차이를 남겨 두면 10:21 이 되어, 실측을 사고 도착을 더 틀리게 만든다
+  assert.equal(learned.stops[0].arriveAt, '10:14');
+  assert.equal(learned.stops[0].replaceDeltaMin, 0);
+  assert.equal(learned.stops[0].replaceDeltaInMin, 0);
+  assert.equal(learned.stops[1].arriveAt, '10:35', '10:14 + 체류 10 + 11');
+  assert.equal(learned.destArriveAt, '11:03', '10:35 + 체류 20 + 8');
+});
+
+test('실측 표는 겹치고 덮지 않는다 — 안 바뀐 구간의 leg 가 사라지면 되돌릴 근거가 없다', () => {
+  const swapped = planReducer(planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() }),
+    { type: 'REPLACE_LOCAL', stopId: 's1', candidateId: 'k2' });
+  const learned = planReducer(swapped, { type: 'LEGS_LEARNED', ...learnedAfterK2() });
+  assert.deepEqual(learned.dataset.legs?.['s2>dest'], { min: 8, km: 2.0 });
+  assert.equal(learned.dataset.candidates.s2.length, 1, '안 낸 슬롯의 후보 목록도 남는다');
+});

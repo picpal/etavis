@@ -119,6 +119,9 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
       return { a: 'plan.confirm', d: { stops: before.stops.map(s => s.name).join(' · ') } };
     case 'RECALC':
       return { a: 'plan.recalc' };
+    // 돈이 나간 뒤 화면이 실제로 올라갔는지는 이 줄로만 안다 — 호출은 net 줄에, 반영은 여기에
+    case 'LEGS_LEARNED':
+      return { a: 'plan.legsLearned', d: { stops: Object.keys(action.candidates).length } };
 
     case 'REPORT_STOP_CONGESTION':
       return { a: 'congestion.report', d: { stop: stopName(action.stopId), level: action.level } };
@@ -227,6 +230,8 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
         d: { query: slot?.query ?? action.slotId, to: cand?.name ?? action.candidateId },
       };
     }
+    case 'LEGS_LEARNED':
+      return { a: 'cand.measured' };
     case 'RESET':
       return { a: 'plan.reset' };
     default:

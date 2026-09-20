@@ -9,6 +9,7 @@ import { nowMin } from '../lib/clock';
 import { usePlanFlow } from '../state/planFlowProvider';
 import { usePlanRequest } from '../state/usePlanRequest';
 import { effectiveVisits, josa, slotCandidates, toLegacyPlan } from '../state/planFlowBridge';
+import { useSwapMeasureA5 } from '../state/useSwapMeasure';
 import { haptic, PrimaryButton, SegmentControl } from '../components/common';
 import { NavHeader } from '../components/NavHeader';
 import { TabBar } from '../components/TabBar';
@@ -111,9 +112,12 @@ export function OptionsScreen({ navigation }: Props) {
      칩을 실제로 건드리지 않으므로 되돌리기도 공짜다 — 목록에서 빼기만 취소하면 된다 */
   const [pendingRemove, setPendingRemove] = useState<string[]>([]);
 
+  /* `state.legsVersion` 이 deps 에 있는 이유: `measureSwap` 은 `result` 안의 leg 저장소만
+     채우고 객체 참조를 안 바꾼다. 빼 두면 두 구간을 실제로 재고도 이 memo 가 안 돌아
+     화면은 계속 '약'이다 — 돈만 나가는 상태가 된다 */
   const current = useMemo(
     () => (result ? effectiveVisits(result, state.slots, state.selectedOptionIdx, state.overrides) : null),
-    [result, state.slots, state.selectedOptionIdx, state.overrides],
+    [result, state.slots, state.selectedOptionIdx, state.overrides, state.legsVersion],
   );
 
   const pickIdx = current ? current.visits.findIndex(v => v.slotId === pickSlot) : -1;
@@ -124,6 +128,20 @@ export function OptionsScreen({ navigation }: Props) {
     () => (result && current && pickIdx >= 0 ? slotCandidates(result, state.slots, current.visits, pickIdx) : []),
     [result, current, pickIdx, state.slots],
   );
+
+  /* 고른 매장의 두 구간을 뒤에서 잰다(6단계). 고르기 자체는 위 `setOverride` 로 즉시 먹고,
+     이건 '약'을 지우러 따라가는 일이라 화면을 막지 않는다 */
+  const swapMeasure = useSwapMeasureA5();
+  const pickCandidate = (slotId: string, candId: string) => {
+    flow.setOverride(state.selectedOptionIdx, slotId, candId);
+    // 재는 건 **교체가 반영된 뒤의** 방문 배열이다 — 기준 안을 주면 남의 구간을 잰다.
+    // 오버라이드 dispatch 는 다음 렌더에나 보이므로 여기서 직접 끼워 넣는다
+    if (!result || !current) return;
+    const i = current.visits.findIndex(v => v.slotId === slotId);
+    const cand = state.slots.find(s => s.id === slotId)?.candidates.find(c => c.id === candId);
+    if (i < 0 || !cand) return;
+    swapMeasure.measure(current.visits.map((v, k) => (k === i ? { ...v, candidate: cand } : v)), i);
+  };
 
   /** 짐을 덜 드는 안의 옵션 인덱스. 계획이 없거나 짐을 재지 않았으면 null */
   const comfortIdx = result?.comfortIdx ?? null;
@@ -137,7 +155,7 @@ export function OptionsScreen({ navigation }: Props) {
     const pick = (idx: number) => effectiveVisits(result, state.slots, idx, state.overrides).timing;
     const comfort = pick(tab.target);
     return { comfort, fast: tab.target === 0 ? comfort : pick(0) };
-  }, [result, state.slots, state.overrides, tab.target]);
+  }, [result, state.slots, state.overrides, tab.target, state.legsVersion]);
   /* 두 기준이 같은 안을 가리킬 때(`sameAsFast`) 켜진 자리를 화면이 직접 든다.
      그때는 어느 쪽을 눌러도 고를 안이 0 하나뿐이라 `selectedOptionIdx` 가 안 움직이고,
      그 값으로 켜진 자리를 정하면 썸이 손가락을 안 따라온다 — 눌러도 아무 일도 없는
@@ -203,7 +221,7 @@ export function OptionsScreen({ navigation }: Props) {
   const slack = req.arriveByMin == null ? null : Math.round(req.arriveByMin - arriveMin);
   const late = slack != null && slack < 0;
   /* 출처는 결과가 안다. 서버 연결 여부만으로는 대중교통 추정치를 실측인 양 말하게 된다 */
-  const copy = timingCopy(result.timingSource, req.mode, current.timing.estimated);
+  const copy = timingCopy(result.timingSource, req.mode, { legEstimated: current.timing.estimated, measuring: swapMeasure.measuring });
   const approx = copy.approx;
   const stale = request ? flow.isStale(request) : false;
 
@@ -244,7 +262,7 @@ export function OptionsScreen({ navigation }: Props) {
      때만 색으로 말한다 — 추정치 위에서 붉게 칠하면 없는 확신을 파는 것이다 */
   const segArrival = (t: { totalMin: number; estimated: boolean }) => {
     const at = req.departAtMin + t.totalMin;
-    const c = timingCopy(result.timingSource, req.mode, t.estimated);
+    const c = timingCopy(result.timingSource, req.mode, { legEstimated: t.estimated });
     const isLate = req.arriveByMin != null && Math.round(req.arriveByMin - at) < 0;
     return { text: `${c.approx}${hhmm(at)}`, tint: c.showVerdict && isLate ? color.late : null };
   };
@@ -408,7 +426,7 @@ export function OptionsScreen({ navigation }: Props) {
         currentId={pickVisit?.candidate.id}
         mode={req.mode}
         timingSource={result.timingSource}
-        onPick={candId => pickSlot && flow.setOverride(state.selectedOptionIdx, pickSlot, candId)}
+        onPick={candId => pickSlot && pickCandidate(pickSlot, candId)}
         onClose={() => setPickSlot(null)}
       />
     </View>

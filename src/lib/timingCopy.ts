@@ -24,11 +24,40 @@ const BANNER: Record<Mode, string> = {
  */
 const BANNER_LEGS = '구간마다 시간표 조회 · 체류 뒤 배차는 미반영';
 /**
- * 실측 계획 안에서 매장을 바꿔 그 구간이 추정이 된 경우. "조회해요" 같은 약속은 넣지 않는다 —
- * 바꾼 구간을 다시 재는 기능(6단계)은 아직 없고, 없는 기능을 말하면 거짓말이다
+ * 실측 계획 안에서 매장을 바꿔 그 구간이 추정이 된 경우. **여기에 "조회해요"를 박지 않는다** —
+ * 6단계가 들어왔어도 그 조회는 늘 일어나지 않는다(예산 초과·`provider_direct_only`·공급자 실패).
+ * 정말로 요청이 나가 있는 동안만 아래 `MEASURING` 이 붙는다
  */
 const BANNER_LEGS_SWAPPED = '구간마다 시간표 조회 · 바꾼 매장 구간은 추정';
 const BANNER_SWAPPED = '바꾼 매장 구간은 추정이에요';
+
+/**
+ * 바꾼 두 구간을 **지금 실제로 묻고 있는 동안** 배너 뒤에 붙는 말(6단계 `measureSwap`).
+ * 요청이 나가 있지 않을 때 붙이면 없는 기능을 말하는 것이다 — 예산을 넘겨 아예 안 부르는
+ * 고르기나 `provider_direct_only` 계획에서는 호출부가 `measuring` 을 세우지 않는다.
+ *
+ * 모드마다 말이 다르다. '시간표'는 대중교통에만 있다 — 자동차 경로에 시간표 조회라고 쓰면
+ * 맞는 등급을 틀린 근거로 말하는 것이고, 그건 이 파일이 막으려는 바로 그 종류의 거짓말이다
+ */
+const MEASURING: Record<Mode, string> = {
+  transit: '시간표 조회 중',
+  car: '다시 재는 중',
+  walk: '다시 재는 중',
+};
+
+/**
+ * 계획 등급 위에 얹히는 지금 상태.
+ * - legEstimated 지금 고른 후보 중 구간이 추정인 것이 있나
+ * - measuring    그 구간을 재는 요청이 **지금 나가 있나**(6단계)
+ *
+ * 불리언을 자리로 이어 붙이지 않는다 — `timingCopy(src, mode, true, false)` 는 읽는 사람이
+ * 두 값을 뒤바꿔도 타입이 안 잡아 준다. 호출부 여섯 곳이 전부 이름을 적게 한다
+ */
+export type TimingFlags = { legEstimated?: boolean; measuring?: boolean };
+
+/** 재는 중이면 배너 뒤에 한 마디. 배너가 없으면(전부 실측) 붙일 자리가 없다 */
+const withMeasuring = (c: TimingCopy, mode: Mode, measuring: boolean): TimingCopy =>
+  measuring && c.banner ? { ...c, banner: `${c.banner} · ${MEASURING[mode]}` } : c;
 
 const BANNER_DIRECT_ONLY: Record<Mode, string> = {
   transit: '직행은 시간표 조회 · 경유 추가시간은 추정',
@@ -36,13 +65,18 @@ const BANNER_DIRECT_ONLY: Record<Mode, string> = {
   car: '직행은 실측 · 경유 추가시간은 추정',
 };
 
-export function timingCopy(source: TimingSource | undefined, mode: Mode, legEstimated = false): TimingCopy {
+export function timingCopy(source: TimingSource | undefined, mode: Mode, flags: TimingFlags = {}): TimingCopy {
+  const { legEstimated = false, measuring = false } = flags;
   // 추정 구간이 하나라도 있으면 출처가 무엇이든 '약'이고 판정은 없다 — 등급은 낮은 쪽이 이긴다.
   // provider_legs 가 이 인자를 버려서 매장을 바꾼 계획이 '약' 없이 "23:15 도착 경로로 계속"을
   // 내놨고(2026-09-20), provider 는 '약'을 붙이고도 판정을 해 머리말이 금한 일을 했다.
   // 아래 두 등급(직행만 실측·추정)은 legEstimated 와 무관하게 이미 '약'·판정 없음이다
-  if (legEstimated && source === 'provider') return { approx: '약 ', banner: BANNER_SWAPPED, showVerdict: false };
-  if (legEstimated && source === 'provider_legs') return { approx: '약 ', banner: BANNER_LEGS_SWAPPED, showVerdict: false };
+  // 재는 동안에도 등급은 추정 그대로다 — 응답이 와야 `legEstimated` 가 내려가고 위 행으로 올라간다.
+  // '조회 중'이 붙었다고 판정을 켜면, 아직 모르는 값 위에서 "3분 여유"를 말하게 된다
+  if (legEstimated && source === 'provider')
+    return withMeasuring({ approx: '약 ', banner: BANNER_SWAPPED, showVerdict: false }, mode, measuring);
+  if (legEstimated && source === 'provider_legs')
+    return withMeasuring({ approx: '약 ', banner: BANNER_LEGS_SWAPPED, showVerdict: false }, mode, measuring);
   if (source === 'provider') return { approx: '', banner: null, showVerdict: true };
   // 구간마다 실측 — 숫자는 진짜로 쟀으니 '약'을 안 붙인다. 다만 2구간 이후가 계획 출발 시각으로
   // 조회돼(체류 뒤 배차는 다르다) 판정은 못 한다. 같은 O→D 가 출발 시각만 달라져 20% 흔들린 적이 있고,

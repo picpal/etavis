@@ -260,7 +260,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
         if (!notifiedRef.current.dest) {
           notifiedRef.current.dest = true;
           const p = planRef.current;
-          const copy = timingCopy(p.timingSource, p.mode, p.legEstimated);
+          const copy = timingCopy(p.timingSource, p.mode, { legEstimated: p.legEstimated });
           logTrack({ k: 'notify', kind: 'dest', id: 'D' });
           void notifyDestinationArrival(
             destinationDisplay,
@@ -301,7 +301,7 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           logTrack({ k: 'notify', kind: 'nextLeg', id: after?.id ?? 'D' });
           void notifyNextLeg(
             after?.name ?? destinationDisplay,
-            `${timingCopy(planRef.current.timingSource, planRef.current.mode, planRef.current.legEstimated).approx}${formatEta(after?.arriveAt ?? planRef.current.destArriveAt)}`,
+            `${timingCopy(planRef.current.timingSource, planRef.current.mode, { legEstimated: planRef.current.legEstimated }).approx}${formatEta(after?.arriveAt ?? planRef.current.destArriveAt)}`,
             planRef.current.mode === 'transit',
           );
         }

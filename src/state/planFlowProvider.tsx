@@ -26,6 +26,8 @@ type PlanFlowApi = {
   start: (request: PlanRequest, opts?: { timeoutMs?: number }) => void;
   select: (idx: number) => void;
   setOverride: (optionIdx: number, slotId: string, candidateId: string) => void;
+  /** 고른 매장의 두 구간이 실측으로 들어왔다 — 파생(`effectiveVisits`·`slotCandidates`)을 다시 돌린다 */
+  legsLearned: () => void;
   reset: () => void;
   /** 결과가 있는데 지금 입력과 다르면 true — A5 배너 */
   isStale: (request: PlanRequest) => boolean;
@@ -174,6 +176,7 @@ export function PlanFlowProvider({ children }: { children: React.ReactNode }) {
     },
     select: idx => dispatch({ type: 'SELECT_OPTION', idx }),
     setOverride: (optionIdx, slotId, candidateId) => dispatch({ type: 'SET_OVERRIDE', optionIdx, slotId, candidateId }),
+    legsLearned: () => dispatch({ type: 'LEGS_LEARNED' }),
     reset: () => dispatch({ type: 'RESET' }),
     isStale: request => !!state.request && requestKey(state.request) !== requestKey(request),
     usingServer: deps.usingServer,

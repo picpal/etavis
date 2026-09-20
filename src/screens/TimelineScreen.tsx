@@ -21,6 +21,7 @@ import { TabBar } from '../components/TabBar';
 import { CandidateSheet } from '../sheets/CandidateSheet';
 import { TaskSheet } from '../sheets/TaskSheet';
 import { timingCopy } from '../lib/timingCopy';
+import { useSwapMeasureA6 } from '../state/useSwapMeasure';
 import type { RootStackParamList } from '../../App';
 import type { Candidate } from '../data/mockData';
 
@@ -33,7 +34,13 @@ const NO_CANDIDATES: Candidate[] = [];
 export function TimelineScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { state, reorderStops, removeStop, replaceStop, destinationDisplay, originDisplay, slackMin, arriveByLabel, confirmPlan, departAtLabel } = usePlan();
-  const copy = timingCopy(state.dataset.timingSource, state.mode, state.dataset.legEstimated);
+  /* 확정 뒤에도 매장을 바꾸면 두 구간을 뒤에서 잰다(6단계) — A5 와 같은 길이어야 한다.
+     한 화면만 고치면 다른 화면이 거짓말한다 */
+  const swapMeasure = useSwapMeasureA6();
+  const copy = timingCopy(state.dataset.timingSource, state.mode, {
+    legEstimated: state.dataset.legEstimated,
+    measuring: swapMeasure.measuring,
+  });
   const [taskStopId, setTaskStopId] = useState<string | null>(null);
   const [candidateStopId, setCandidateStopId] = useState<string | null>(null);
 
@@ -365,7 +372,11 @@ export function TimelineScreen({ navigation, route }: Props) {
         currentId={candidateCurrentId}
         mode={state.dataset.mode}
         timingSource={state.dataset.timingSource}
-        onPick={candId => candidateStop && replaceStop(candidateStop.id, candId)}
+        onPick={candId => {
+          if (!candidateStop) return;
+          replaceStop(candidateStop.id, candId);
+          swapMeasure.measureReplace(candidateStop.id, candId);
+        }}
         onClose={() => setCandidateStopId(null)}
       />
     </View>

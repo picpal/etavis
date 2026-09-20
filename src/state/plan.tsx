@@ -494,6 +494,11 @@ export type PlanAction =
   | { type: 'REPORT_STOP_CONGESTION'; stopId: string; level: CongestionKey }
   | { type: 'REMOVE_LOCAL'; stopId: string }
   | { type: 'REPLACE_LOCAL'; stopId: string; candidateId: string }
+  /**
+   * 고른 매장의 두 구간이 실측으로 들어왔다(6단계 `measureSwap`). 실은 leg 표와 후보 목록을
+   * **지금 고른 매장이 '현재'인 상태로 다시 낸 것**이라, 스톱에 얹어 둔 교체 차이는 여기서 0 이 된다.
+   */
+  | { type: 'LEGS_LEARNED'; legs: NonNullable<Dataset['legs']>; candidates: Dataset['candidates'] }
   | { type: 'RECALC' }
   | { type: 'TOGGLE_TASK'; stopId: string; taskId: string }
   | { type: 'UPDATE_TASK'; stopId: string; taskId: string; text: string }
@@ -676,6 +681,22 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       // 체인은 RECALC 가 600ms 뒤에 돌지만, 등급은 그 사이에도 새 선택 것이어야 한다 —
       // 배너가 잠깐이라도 옛 등급을 말하면 안 된다
       return { ...state, stops, dataset: syncLegEstimated(state.dataset, stops), recalcPending: true };
+    }
+    case 'LEGS_LEARNED': {
+      /* **교체 차이를 0 으로 되돌린다.** 새 표는 고른 매장이 '현재'인 상태에서 다시 낸 것이라
+         교체가 이미 표 안에 들어 있다. 스톱의 `replaceDeltaMin` 을 남겨 두면 같은 교체가 두 번
+         더해져, 실측을 사서 도착 시각을 더 틀리게 만드는 꼴이 된다. 확정 직후(`toLegacyPlan`)가
+         0 인 것과 같은 상태로 돌려놓는 것이다. */
+      const stops = state.stops.map(s => ({ ...s, replaceDeltaMin: 0, replaceDeltaInMin: 0 }));
+      /* 표는 덮어쓰지 않고 겹친다 — 뺀 경유지의 leg 가 표에서 사라지면 되돌릴 근거가 없어진다 */
+      const dataset: Dataset = {
+        ...state.dataset,
+        legs: { ...state.dataset.legs, ...action.legs },
+        candidates: { ...state.dataset.candidates, ...action.candidates },
+      };
+      /* 여기서 체인을 바로 돌린다. RECALC 를 기다리면 600ms 동안 새 등급(실측)과 옛 숫자(추정)가
+         같은 화면에 선다 — 한 카드의 두 숫자가 다른 등급을 말하면 하나는 거짓이다 */
+      return { ...state, ...computeChain(stops, dataset, state.departMin), recalcPending: false };
     }
     case 'RECALC': {
       const next = computeChain(state.stops, state.dataset, state.departMin);
@@ -960,6 +981,8 @@ type PlanApi = {
   reorderStops: (stops: StopState[]) => void;
   removeStop: (stopId: string) => void;
   replaceStop: (stopId: string, candidateId: string) => void;
+  /** 6단계 — 고른 매장의 두 구간을 실측한 뒤, 그걸로 다시 낸 leg 표·후보 목록을 확정본에 얹는다 */
+  applyLearnedLegs: (legs: NonNullable<Dataset['legs']>, candidates: Dataset['candidates']) => void;
   toggleTask: (stopId: string, taskId: string) => void;
   updateTask: (stopId: string, taskId: string, text: string) => void;
   addTask: (stopId: string, taskId: string) => void;
@@ -1078,6 +1101,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'REPLACE_LOCAL', stopId, candidateId });
         scheduleRecalc();
       },
+      applyLearnedLegs: (legs, candidates) => dispatch({ type: 'LEGS_LEARNED', legs, candidates }),
       toggleTask: (stopId, taskId) => dispatch({ type: 'TOGGLE_TASK', stopId, taskId }),
       updateTask: (stopId, taskId, text) => dispatch({ type: 'UPDATE_TASK', stopId, taskId, text }),
       addTask: (stopId, taskId) => dispatch({ type: 'ADD_TASK', stopId, taskId }),

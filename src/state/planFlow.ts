@@ -56,6 +56,14 @@ export type PlanFlowState = {
   result: PlanResult | null;
   selectedOptionIdx: number;
   overrides: Record<number, Record<string, string>>;
+  /**
+   * 고른 매장의 두 구간을 실측해 `result` 안의 leg 저장소가 바뀐 횟수(6단계 `measureSwap`).
+   *
+   * `measureSwap` 은 값을 안 돌려주고 저장소만 채운다. `result` 객체 참조는 그대로라
+   * 참조 동일성에 기대는 화면 `useMemo` 는 절대 다시 돌지 않는다 — 돈은 나가고 화면은
+   * 그대로 '약'이다. 이 숫자가 그 파생들을 무효화하는 유일한 손잡이다
+   */
+  legsVersion: number;
   error: PlanFlowError | null;
 };
 
@@ -67,6 +75,8 @@ export type PlanFlowAction =
   | { type: 'FAIL'; error: PlanFlowError }
   | { type: 'SELECT_OPTION'; idx: number }
   | { type: 'SET_OVERRIDE'; optionIdx: number; slotId: string; candidateId: string }
+  /** 바꾼 두 구간이 실측으로 들어왔다 — `result` 는 그대로고 그 안의 leg 저장소만 바뀌었다 */
+  | { type: 'LEGS_LEARNED' }
   | { type: 'RESET' };
 
 const STEPS: { key: ProgressKey; label: string }[] = [
@@ -84,6 +94,7 @@ export const initialPlanFlow: PlanFlowState = {
   result: null,
   selectedOptionIdx: 0,
   overrides: {},
+  legsVersion: 0,
   error: null,
 };
 
@@ -176,6 +187,8 @@ export function planFlowReducer(state: PlanFlowState, action: PlanFlowAction): P
            가리킬 추천안이 없고, 그때만 최단안으로 떨어진다 */
         selectedOptionIdx: action.result.comfortIdx ?? 0,
         overrides: {},
+        // 새 result 는 새 저장소다. 안 되돌리면 옛 계획에서 센 횟수가 남아 첫 파생이 한 번 헛돈다
+        legsVersion: 0,
         error: null,
         progress: state.progress.map(p => ({ ...p, done: true })),
       };
@@ -190,6 +203,8 @@ export function planFlowReducer(state: PlanFlowState, action: PlanFlowAction): P
         overrides: { ...state.overrides, [action.optionIdx]: { ...cur, [action.slotId]: action.candidateId } },
       };
     }
+    case 'LEGS_LEARNED':
+      return { ...state, legsVersion: state.legsVersion + 1 };
     case 'RESET':
       return initialPlanFlow;
     default:

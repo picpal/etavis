@@ -85,6 +85,9 @@ export function toFix(loc: Location.LocationObject): Fix {
   return {
     latitude,
     longitude,
+    /* 받은 시각이 아니라 **OS 가 찍은 시각**이다 — 배경 위치는 이벤트가 몰아서 도착해서,
+       수신 시각으로 Δt 를 재면 실효 속도가 0 에 가까워지고 지나가는 차가 '멈춤'이 된다 */
+    atMs: typeof loc.timestamp === 'number' ? loc.timestamp : Date.now(),
     accuracyM: accuracy ?? null,
     speedMps: speed == null || speed < 0 ? null : speed,
   };

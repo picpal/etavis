@@ -92,7 +92,7 @@ export function TaskSheet({ stopId, onClose }: { stopId: string | null; onClose:
     사용자에겐 없다. 가보지 않은 곳을 막는 규칙은 그대로다(그건 제보가 아니라 소음이다).
     devAnyCongestion은 개발 메뉴의 테스트 스위치 — 도착 전에도 열어 본다
   */
-  const visited = hasVisitedStop(stopIdx, state.passedCount, state.atStop);
+  const visited = stop != null && hasVisitedStop(stop.id, state.visitedStopIds);
   const askCongestion = (visited || state.devAnyCongestion) && !stop?.congestion;
 
   /* 제보하면 그 자리에서 고맙다고 하고 시트가 닫힌다.

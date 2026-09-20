@@ -123,6 +123,8 @@ export type PlanState = {
   congestionReport: string | null;
   /** 이미 지나온 경유지 수 — stops[passedCount]가 다음(또는 체류 중) 경유지 */
   passedCount: number;
+  /** 실제로 들른 경유지 id — 스쳐 지나간 곳과 가르려면 순서로는 안 되고 집합이어야 한다 */
+  visitedStopIds: string[];
   /** 다음 경유지에 도착해 체류 중인지 */
   atStop: boolean;
   /** 최종 목적지 도착 — 경유지를 다 지난 뒤의 마지막 지오펜스 */
@@ -271,6 +273,7 @@ function initState(ds: Dataset, seed = false): PlanState {
     planConfirmed: false,
     congestionReport: null,
     passedCount: 0,
+    visitedStopIds: [],
     atStop: false,
     arrivedAtDest: false,
     stopCount: null,
@@ -449,6 +452,7 @@ export type PlanAction =
   | { type: 'CONFIRM_PLAN' }
   | { type: 'ARRIVE_AT_STOP' }
   | { type: 'DEPART_STOP' }
+  | { type: 'VISIT_STOP'; id: string }
   | { type: 'ARRIVE_AT_DESTINATION' }
   | { type: 'SET_STOP_COUNT'; count: number }
   /* `source` 는 상태로 가지 않는다 — 행동 로그만 읽는다(actionLog.ts). 안 실어 보내는
@@ -554,6 +558,8 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
            방문한 곳을 빼고 이어서 계산하려면 그건 usePlanRequest·runPlan 의 일이지
            리듀서가 숫자로 흉내낼 일이 아니다 */
         passedCount: 0,
+        // 방문 기록도 같이 비운다 — 안 비우면 옛 계획에서 들른 곳이 새 계획에 묻어난다
+        visitedStopIds: [],
         atStop: false,
         arrivedAtDest: false,
         ...computeChain(stops, dataset, departMin),
@@ -583,6 +589,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         departMin: depart,
         // 여기도 stops 를 처음부터 다시 만든다 — 확정이면 진행 상태도 새 계획 것이다(근거는 APPLY_LIVE)
         passedCount: 0,
+        visitedStopIds: [],
         atStop: false,
         arrivedAtDest: false,
         ...(untouched
@@ -660,11 +667,10 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
     case 'SET_CONGESTION':
       return { ...state, congestionReport: action.value };
     case 'REPORT_STOP_CONGESTION': {
-      /* 가 본 곳에서만 받는다 — 체류 중이거나 이미 지나온 곳.
+      /* 실제로 들른 곳에서만 받는다 — 스쳐 지나간 곳의 혼잡도는 본 적이 없으니 제보가 아니라 소음이다.
          화면에서도 막지만, 여기서 한 번 더 막아야 다른 경로로 들어와도 오제보가 안 생긴다.
          판단은 hasVisitedStop 한 곳에서 한다 — 화면과 조건이 어긋나면 제보가 조용히 버려진다 */
-      const idx = state.stops.findIndex(s => s.id === action.stopId);
-      if (!hasVisitedStop(idx, state.passedCount, state.atStop) && !state.devAnyCongestion) return state;
+      if (!hasVisitedStop(action.stopId, state.visitedStopIds) && !state.devAnyCongestion) return state;
       const stops = state.stops.map(s =>
         s.id === action.stopId ? { ...s, congestion: action.level } : s,
       );
@@ -676,6 +682,11 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       return { ...state, atStop: true };
     case 'DEPART_STOP':
       return { ...state, atStop: false, passedCount: Math.min(state.stops.length, state.passedCount + 1) };
+    case 'VISIT_STOP':
+      // 같은 지점에서 이벤트가 두 번 와도 한 번만 남긴다
+      return state.visitedStopIds.includes(action.id)
+        ? state
+        : { ...state, visitedStopIds: [...state.visitedStopIds, action.id] };
     case 'ARRIVE_AT_DESTINATION':
       return state.arrivedAtDest ? state : { ...state, arrivedAtDest: true };
     case 'APPLY_INTENT': {
@@ -907,6 +918,8 @@ type PlanApi = {
   confirmPlan: () => void;
   arriveAtStop: () => void;
   departStop: () => void;
+  /** 체류 시간을 채워 '들렀다'로 확정 — 지나친 곳과 가르는 유일한 신호다 */
+  visitStop: (id: string) => void;
   arriveAtDestination: () => void;
   /** 목 데이터 경유지 개수 변경 — 채팅에서 'N개'를 말했을 때 */
   setStopCount: (count: number) => void;
@@ -1026,6 +1039,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
       departStop: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         dispatch({ type: 'DEPART_STOP' });
+      },
+      visitStop: id => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        dispatch({ type: 'VISIT_STOP', id });
       },
       arriveAtDestination: () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

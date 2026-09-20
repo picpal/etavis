@@ -87,7 +87,7 @@ type TrackerApi = TrackerState & {
 const TrackerContext = createContext<TrackerApi | null>(null);
 
 export function TrackerProvider({ children }: { children: React.ReactNode }) {
-  const { state, destinationDisplay, arriveAtStop, departStop, arriveAtDestination } = usePlan();
+  const { state, destinationDisplay, arriveAtStop, departStop, visitStop, arriveAtDestination } = usePlan();
   const { usingServer } = usePlanFlow();
 
   // 인터벌 안에서 최신 계획 상태·액션을 읽기 위한 ref (인터벌 재생성을 피한다)
@@ -111,8 +111,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
     arriveByMin: state.arriveByMin,
     timingSource: state.dataset.timingSource,
   };
-  const actionsRef = useRef({ arriveAtStop, departStop, arriveAtDestination });
-  actionsRef.current = { arriveAtStop, departStop, arriveAtDestination };
+  const actionsRef = useRef({ arriveAtStop, departStop, visitStop, arriveAtDestination });
+  actionsRef.current = { arriveAtStop, departStop, visitStop, arriveAtDestination };
   const [mode, setModeRaw] = useState<SimMode>('off');
   const [tracker, setTracker] = useState<TrackerState>({
     mode: 'off',
@@ -303,6 +303,11 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
             planRef.current.mode === 'transit',
           );
         }
+      } else if (ev.kind === 'visit') {
+        /* 체류 시간을 채웠다 — 여기서만 '들렀다'가 된다. 알림은 안 울린다:
+           도착 알림은 이미 arrive 에서 나갔고, 같은 자리에서 또 울릴 이유가 없다.
+           목적지는 여정의 끝이라 체류를 따질 일이 없으므로 무시한다 */
+        if (ev.id !== 'D') actionsRef.current.visitStop(ev.id);
       } else {
         // skip — 도착을 못 본 채 지나간 경유지. 알림 없이 다음으로 넘긴다
         actionsRef.current.departStop();
@@ -403,7 +408,8 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           ? offsetPerpendicular(polyline, base.index, base.point, deviationRef.current + jitter)
           : base.point;
 
-      detectRef.current({ ...position, accuracyM: null, speedMps: null }, 'sim', mode === 'stuck');
+      // 가상 주행은 OS 가 준 시각이 없다 — 틱이 도는 지금이 곧 샘플 시각이다
+      detectRef.current({ ...position, atMs: Date.now(), accuracyM: null, speedMps: null }, 'sim', mode === 'stuck');
     }, TICK_MS);
     return () => clearInterval(timer);
   }, [mode, polyline, routeLengthM, state.stops]);

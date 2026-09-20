@@ -87,6 +87,40 @@ test('체류 중에 새 계획을 확정해도 되돌린다 — 새 계획의 �
   assert.equal(after.atStop, false);
 });
 
+/*
+  방문은 '몇 번째까지 지나왔나'와 다른 것이다.
+
+  예전엔 `stopIdx < passedCount` 로 방문을 판단했는데, 스쳐 지나간 경유지(skip)도
+  passedCount 를 올리기 때문에 차로 가게 옆을 지나가기만 해도 '가 봤다'가 됐다.
+  이제는 체류 시간을 채운 지점만 VISIT_STOP 으로 들어온다.
+*/
+test('VISIT_STOP 은 들른 경유지를 기록한다', () => {
+  const after = planReducer(fresh(), { type: 'VISIT_STOP', id: 's1' });
+
+  assert.deepEqual(after.visitedStopIds, ['s1']);
+});
+
+test('같은 경유지를 두 번 방문해도 한 번만 남는다 — 판정부가 재시도로 같은 이벤트를 낼 수 있다', () => {
+  const after = run(fresh(), [{ type: 'VISIT_STOP', id: 's1' }, { type: 'VISIT_STOP', id: 's1' }]);
+
+  assert.deepEqual(after.visitedStopIds, ['s1']);
+});
+
+test('스쳐 지나가기만 한 경유지는 방문이 아니다 — 100m 옆을 지나간 가게가 들른 곳이 되던 버그', () => {
+  const after = run(fresh(), [{ type: 'DEPART_STOP' }, { type: 'DEPART_STOP' }]);
+
+  assert.equal(after.passedCount, 2, '전제: 두 곳을 지나오긴 했다');
+  assert.deepEqual(after.visitedStopIds, [], '지나온 것과 들른 것은 다르다');
+});
+
+test('새 계획을 확정하면 방문 기록이 비워진다 — 옛 계획에서 들른 곳이 묻어나면 안 된다', () => {
+  const before = run(arrived(), [{ type: 'VISIT_STOP', id: 's1' }, { type: 'VISIT_STOP', id: 's2' }]);
+  assert.equal(before.visitedStopIds.length, 2, '전제: 두 곳을 들른 계획이어야 한다');
+
+  assert.deepEqual(planReducer(before, { type: 'APPLY_LIVE', payload: newPlan() }).visitedStopIds, []);
+  assert.deepEqual(planReducer(before, { type: 'APPLY_OPTION', id: before.options[0].id }).visitedStopIds, []);
+});
+
 test('APPLY_OPTION 도 같은 자리다 — 확정이면(planConfirmed) 진행 상태도 새 계획 것이어야 한다', () => {
   const before = arrived();
   const after = planReducer(before, { type: 'APPLY_OPTION', id: before.options[0].id });
@@ -139,11 +173,19 @@ test('두 번째 RESET_CHAT 은 아무것도 바꾸지 않는다 — 진입할 �
   assert.equal(twice.destinationName, once.destinationName, '목적지는 A1에서 고른 것이라 대화와 무관하다');
 });
 
-test('체류 중인 경유지의 혼잡도 제보는 그대로 남는다', () => {
+test('들른 경유지의 혼잡도 제보는 그대로 남는다', () => {
   const s = dwelling();
   const target = s.stops[s.passedCount];
-  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' });
+  const visited = planReducer(s, { type: 'VISIT_STOP', id: target.id });
+  const after = planReducer(visited, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' });
   assert.equal(after.stops[s.passedCount].congestion, 'high');
+});
+
+test('체류 중이기만 하고 아직 방문이 아니면 제보를 버린다 — 체류 시간을 채워야 들른 것이다', () => {
+  const s = dwelling();
+  const target = s.stops[s.passedCount];
+
+  assert.equal(planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' }), s);
 });
 
 test('이미 떠나온 경유지의 제보도 받는다 — 안 받으면 시트가 계속 다시 묻는다', () => {
@@ -152,7 +194,8 @@ test('이미 떠나온 경유지의 제보도 받는다 — 안 받으면 시트
   const s = arrived();
   const first = s.stops[0];
   assert.ok(s.passedCount > 0, '전제: 이미 지나온 경유지가 있어야 한다');
-  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: first.id, level: 'low' });
+  const visited = planReducer(s, { type: 'VISIT_STOP', id: first.id });
+  const after = planReducer(visited, { type: 'REPORT_STOP_CONGESTION', stopId: first.id, level: 'low' });
   assert.equal(after.stops[0].congestion, 'low');
 });
 

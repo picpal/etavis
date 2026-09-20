@@ -1,0 +1,15 @@
+# 웹 데모(정적 자산 워커) 전용 설정
+# 배포: npx wrangler deploy --config deploy/wrangler.demo.toml
+#
+# 루트에 두지 않는다. 이유는 server/wrangler.toml 머리말에 있다 — 레포 루트의
+# wrangler.* 가 API 워커 배포를 가로채 정적 데모로 덮어쓴 사고가 있었다.
+name = "etavia-demo"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "../dist"
+
+# 앱이 클라이언트 라우팅을 쓰는데 빌드 산출물의 HTML 은 index.html 하나뿐이다.
+# 이걸 켜지 않으면 /home·/plan·/today 같은 앱 URL 을 직접 열거나 **새로고침만 해도
+# 404** 가 난다. 앱은 로드 직후 URL 을 /home 으로 바꾸므로 첫 새로고침부터 걸린다.
+not_found_handling = "single-page-application"

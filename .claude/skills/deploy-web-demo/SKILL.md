@@ -138,9 +138,17 @@ grep -c 'ucc28.ub2e8.uae30' "$J"                          # 회로차단기, 1 �
 
 ## 5. 배포
 
+**`--name` · `--assets` 로 직접 배포하지 마라.** 그러면 `not_found_handling` 이 기본값으로
+돌아가 `/home` · `/today` 같은 앱 URL 이 다시 404 가 된다.
+
 ```bash
-npx wrangler deploy --name etavia-demo --assets=./dist --latest
+npx wrangler deploy --config deploy/wrangler.demo.toml
 ```
+
+앱은 클라이언트 라우팅을 쓰는데 빌드 산출물의 HTML 은 `index.html` **하나뿐**이다. SPA
+폴백이 없으면 그 URL 들을 직접 열거나 **새로고침만 해도 404** 다 — 앱이 로드 직후 URL 을
+`/home` 으로 바꾸므로 **첫 새로고침부터** 걸린다. 2026-09-20 에 사용자가 그대로 밟았다.
+설정을 루트가 아니라 `deploy/` 에 둔 이유는 6번(루트 오염)과 같다.
 
 서버(`etavia`)는 건드리지 않는다. 서버 코드(`server/`)를 고쳤을 때만, 그리고 그때는
 **반드시 `--config` 를 명시한다**:
@@ -191,6 +199,18 @@ done
 기대: `/route`·`/places`·`/extract` 가 **400/422**(스키마 거부 = 라우트 살아 있음).
 **404 면 그 라우트가 사라진 것** — 예전 코드가 배포됐다는 뜻이니 소스에서 다시 배포한다.
 **401 이면 토큰이 안 실린 것**, **501 이면 해당 공급자 키가 서버에 없는 것**이다.
+
+앱 URL 이 직접 열리는지도 본다. **전부 200 이어야 한다** — 하나라도 404 면 5번을
+`--config` 없이 배포한 것이다:
+
+```bash
+for p in home plan today nearby history settings options timeline; do
+  printf '/%-9s ' "$p"; curl -s -o /dev/null -H 'Cache-Control: no-cache' -w '%{http_code}\n' "$D/$p"
+done
+```
+
+배포 직후에는 **엣지가 예전 404 를 잠깐 더 준다.** `Cache-Control: no-cache` 를 붙여
+확인하고, 그래도 404 면 몇 초 뒤 다시 본다.
 
 CORS 도 본다 — 허용 오리진은 헤더가 붙고, 아무 오리진은 0 이어야 한다:
 

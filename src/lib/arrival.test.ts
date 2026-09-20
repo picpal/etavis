@@ -4,6 +4,7 @@ import {
   initialArrivalState,
   profileFor,
   stepArrival,
+  NOISE_FLOOR_M,
   type ArrivalContext,
   type ArrivalState,
   type Fix,
@@ -19,7 +20,22 @@ const T: Point = { id: 'olive', coord: O };
 const N: Point = { id: 'hcard', coord: north(O, 200) };
 const D: Point = { id: 'D', coord: north(O, 3000) };
 
-const fix = (p: LatLng, speedMps: number | null = 0.5, accuracyM: number | null = 30): Fix => ({ ...p, speedMps, accuracyM });
+/** 시각이 명시되지 않은 샘플은 1초 간격으로 들어온 것으로 본다 */
+let clock = 0;
+const fix = (p: LatLng, speedMps: number | null = 0.5, accuracyM: number | null = 30): Fix => ({
+  ...p,
+  speedMps,
+  accuracyM,
+  atMs: (clock += 1000),
+});
+/** 시각이 판정에 쓰이는 테스트용 — 실효 속도·체류 시계 */
+const fixAt = (p: LatLng, atMs: number, speedMps: number | null = 0.5, accuracyM: number | null = 30): Fix => ({
+  ...p,
+  speedMps,
+  accuracyM,
+  atMs,
+});
+
 const car = profileFor(false, 'car');
 const walk = profileFor(false, 'walk');
 
@@ -42,8 +58,10 @@ test('프로필: car 150/250, walk·transit 80, sim 400/600 1샘플', () => {
   assert.equal(car.departSamples, 2);
   assert.equal(car.maxAccuracyM, 100);
   assert.equal(car.stationaryMps, 2);
+  assert.equal(car.visitDwellMs, 90_000);
   assert.equal(walk.arriveBaseM, 80);
   assert.equal(walk.stationaryMps, 1);
+  assert.equal(walk.visitDwellMs, 90_000);
   assert.equal(profileFor(false, 'transit').arriveBaseM, 80);
   const sim = profileFor(true, 'car');
   assert.equal(sim.arriveBaseM, 400);
@@ -51,6 +69,8 @@ test('프로필: car 150/250, walk·transit 80, sim 400/600 1샘플', () => {
   assert.equal(sim.arriveSamples, 1);
   assert.equal(sim.departSamples, 1);
   assert.equal(sim.maxAccuracyM, null);
+  // 가상 주행은 틱이 1.5초라 90초를 요구하면 시뮬레이션이 영영 안 끝난다
+  assert.equal(sim.visitDwellMs, 3_000);
 });
 
 test('지나치기: 반경 안이라도 속도 8m/s면 도착 아님', () => {
@@ -165,10 +185,11 @@ test('중복: 선행 도착을 낸 뒤 같은 상태의 샘플이 더 와도 다
   assert.deepEqual(rs.map(kinds), [[], [], ['skip:olive', 'arrive:hcard'], [], []]);
 });
 
-test('속도를 모르면(null) 멈춘 것으로 본다', () => {
+test('속도를 모르면 좌표로 잰다 — 첫 샘플은 기준점이 없으니 이동 중으로 보고 한 박자 늦게 도착한다', () => {
+  // 예전엔 speed=null이 곧 '멈춤'이라 3샘플로 끝났다. 이제 근거가 없는 첫 샘플은 이동 중이다.
   const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
-  const rs = run([fix(O, null), fix(O, null), fix(O, null)], ctx);
-  assert.deepEqual(rs.map(kinds), [[], [], ['arrive:olive']]);
+  const rs = run([fix(O, null), fix(O, null), fix(O, null), fix(O, null)], ctx);
+  assert.deepEqual(rs.map(kinds), [[], [], [], ['arrive:olive']]);
 });
 
 test('sim 프로필: 1샘플로 도착, 속도 검사 없음, 정확도 무시 없음', () => {
@@ -178,4 +199,107 @@ test('sim 프로필: 1샘플로 도착, 속도 검사 없음, 정확도 무시 �
   assert.equal(r.ignored, null);
   assert.equal(r.arriveR, 500); // 정확도가 반경보다 나쁘면 반경이 그만큼 넓어진다
   assert.deepEqual(kinds(r), ['arrive:olive']);
+});
+
+/* ── 회귀: 속도를 모를 때 좌표로 직접 잰다 ───────────────────────────── */
+
+test('회귀: 속도 null이어도 좌표가 시속 50km로 움직이면 반경 안 3샘플이라도 도착이 아니다', () => {
+  // 실기기 버그 — iOS의 -1이 null이 되어 정지 방어선이 통째로 꺼졌고, 가게 100m 옆을
+  // 차로 지나가기만 해도 방문 처리됐다.
+  const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
+  const rs = run(
+    [
+      fixAt(north(O, 140), 0, null),
+      fixAt(north(O, 70), 5_000, null), // 5초에 70m = 14m/s ≈ 시속 50km
+      fixAt(O, 10_000, null),
+      fixAt(north(O, -70), 15_000, null),
+    ],
+    ctx,
+  );
+  assert.deepEqual(rs.map(kinds), [[], [], [], []]);
+});
+
+test('속도 null이어도 감속해 좌표가 거의 안 움직이면 도착을 잡는다', () => {
+  const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
+  const rs = run(
+    [
+      fixAt(north(O, 40), 0, null), // 기준점 없음 → 이동 중
+      fixAt(north(O, 38), 5_000, null),
+      fixAt(north(O, 39), 10_000, null),
+      fixAt(north(O, 37), 15_000, null),
+    ],
+    ctx,
+  );
+  assert.deepEqual(rs.map(kinds), [[], [], [], ['arrive:olive']]);
+});
+
+test('회귀: 정차 중 GPS 지터(20m, 정확도 30)는 이동이 아니다 — 노이즈 바닥이 없으면 시속 72km로 읽힌다', () => {
+  const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
+  const jitter = [north(O, 0), north(O, 20), north(O, 0), north(O, 20)];
+  const rs = run(jitter.map((p, i) => fixAt(p, i * 1_000, null, 30)), ctx);
+  assert.deepEqual(rs.map(kinds), [[], [], [], ['arrive:olive']]);
+  assert.equal(NOISE_FLOOR_M, 25);
+});
+
+test('speedMps가 실려 있으면 좌표로 잰 값보다 그 값을 우선한다', () => {
+  // 좌표만 보면 1초에 100m(시속 360km)지만, 기기가 0.5m/s라고 하면 그 말을 믿는다
+  const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
+  const rs = run([fixAt(north(O, 140), 0, 0.5), fixAt(north(O, 40), 1_000, 0.5), fixAt(north(O, -60), 2_000, 0.5)], ctx);
+  assert.deepEqual(rs.map(kinds), [[], [], ['arrive:olive']]);
+});
+
+test('정확도로 버린 샘플은 실효 속도의 기준점이 되지 않는다', () => {
+  const ctx: ArrivalContext = { target: T, next: null, atStop: false, profile: car };
+  const good = fixAt(north(O, 40), 0, null, 30);
+  const bad = fixAt(north(O, -2_000), 1_000, null, 180); // 버려질 샘플
+  const rs = run(
+    [good, bad, fixAt(north(O, 41), 2_000, null, 30), fixAt(north(O, 39), 3_000, null, 30), fixAt(north(O, 40), 4_000, null, 30)],
+    ctx,
+  );
+  assert.equal(rs[1].ignored, 'accuracy');
+  // 버린 샘플이 기준점이 됐다면 3번째 샘플이 2km를 1초에 간 셈이 되어 도착을 못 잡는다
+  assert.deepEqual(rs[1].state.prev, { coord: { latitude: good.latitude, longitude: good.longitude }, atMs: 0, accuracyM: 30 });
+  assert.deepEqual(rs.map(kinds), [[], [], [], [], ['arrive:olive']]);
+});
+
+/* ── 방문 확정(visit) ─────────────────────────────────────────────── */
+
+/** 도착까지 진행한 상태를 만들어 준다 (atStop=false 구간) */
+function arriveAt(profile = car) {
+  const ctx: ArrivalContext = { target: T, next: N, atStop: false, profile };
+  const rs = run([fixAt(O, 1_000), fixAt(O, 2_000), fixAt(O, 3_000)], ctx);
+  assert.deepEqual(kinds(rs[2]), ['arrive:olive']);
+  return rs[2].state;
+}
+
+test('방문: 잠정 도착 뒤 90초를 더 머물러야 visit이 난다', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const rs = run([fixAt(O, 60_000), fixAt(O, 92_999), fixAt(O, 93_000)], ctx, s);
+  assert.deepEqual(rs.map(kinds), [[], [], ['visit:olive']]);
+});
+
+test('방문: visit은 한 번만 난다 — 계속 머물러도 다시 내지 않는다', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const rs = run([fixAt(O, 93_000), fixAt(O, 94_000), fixAt(O, 200_000)], ctx, s);
+  assert.deepEqual(rs.map(kinds), [['visit:olive'], [], []]);
+  assert.equal(rs[2].state.visitedId, 'olive');
+});
+
+test('방문: 체류 시간을 채우기 전에 떠나면 depart만 나고 visit은 없다 — 스쳐 간 것과 들른 것의 구분', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const rs = run([fixAt(north(O, -130), 10_000, 3), fixAt(north(O, -130), 11_000, 3), fixAt(north(O, -130), 120_000, 3)], ctx, s);
+  assert.deepEqual(rs.map(kinds), [[], ['depart:olive'], []]);
+  assert.equal(rs[1].state.dwellId, null);
+  assert.equal(rs[2].state.visitedId, null);
+});
+
+test('방문: 한 샘플이 노이즈로 반경을 벗어나도 체류 시계는 초기화되지 않는다', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  // 60초쯤에 160m 튄 샘플 하나(반경 150m 밖) — departSamples=2라 출발로 굳지 않는다
+  const rs = run([fixAt(north(O, 160), 60_000, 0.5), fixAt(O, 93_000)], ctx, s);
+  assert.deepEqual(rs.map(kinds), [[], ['visit:olive']]);
 });

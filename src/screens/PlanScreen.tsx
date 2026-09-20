@@ -10,7 +10,7 @@ import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
 import { knownPlacesSnapshot } from '../lib/placesStore';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
-import { calcPromptVisible } from '../state/chatPrompt';
+import { assistantSay, calcPromptVisible, promptKind } from '../state/chatPrompt';
 import { chipLabel } from '../state/chips';
 import { Chevron, SparkIcon } from '../components/primitives';
 import { ModeSheet } from '../sheets/ModeSheet';
@@ -601,7 +601,7 @@ export function PlanScreen({ navigation }: Props) {
             state.chat.length > 0 && (
               <AssistantShell>
                 <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 15, lineHeight: 21, color: color.body }}>
-                  {reply ?? '이렇게 알아들었어요. 틀린 건 지워주세요.'}
+                  {assistantSay({ reply, chipCount: state.chips.length })}
                 </Text>
                 {fellBack && (
                   /* A5의 '서버 없이 추정한 값이에요'와 같은 약속 — 추정이면 추정이라고 말한다 */
@@ -675,8 +675,9 @@ export function PlanScreen({ navigation }: Props) {
           )}
 
           {promptVisible &&
-            (state.chat.length === 0 ? (
-              /* 말이 오간 뒤에야 "조건은 준비됐어요"가 참이 된다. 그 전에는 조용한 줄 하나 */
+            (promptKind({ chatLength: state.chat.length, chipCount: state.chips.length }) === 'direct' ? (
+              /* 말이 오간 뒤에야 "조건은 준비됐어요"가 참이 된다. 그 전에는, 그리고
+                 말했는데 아무것도 안 잡혔을 때도, 조용한 줄 하나 */
               <DirectPrompt onPress={startSearch} />
             ) : (
               <CalculatePrompt onYes={startSearch} onNo={() => setDismissedAt(state.chat.length)} />

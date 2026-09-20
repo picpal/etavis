@@ -18,3 +18,35 @@ export function calcPromptVisible(o: { pending: boolean; chatLength: number; dis
   // 대화가 없을 때(0 > -1)도 참이다 — 직행 경로는 말 없이도 찾을 수 있다
   return o.chatLength > o.dismissedAt;
 }
+
+/** 칩이 하나라도 있을 때의 말풍선 — 보여준 칩을 지우라는 안내다 */
+export const HEARD_TEXT = '이렇게 알아들었어요. 틀린 건 지워주세요.';
+
+/**
+ * 아무것도 못 건졌을 때. 음성 오인식(`요 DJ Font 스파리 호호호`)이 그대로 넘어오면
+ * 추출이 비는데, 그때도 화면은 '알아들었어요'라고 말했다 — 지울 칩이 하나도 없는데.
+ */
+export const NOTHING_HEARD_TEXT = '들를 곳을 못 찾았어요. ‘올리브영 들러서’ 처럼 말해 보세요.';
+
+/**
+ * 말풍선에 쓸 한 줄.
+ *
+ * 서버가 할 말(되묻기·거절)이 있으면 칩이 비어도 그게 우선이다 — 그건 못 알아들은
+ * 게 아니라 되묻는 중이라서, 여기서 덮으면 사용자가 답할 질문이 사라진다.
+ */
+export function assistantSay(o: { reply: string | null; chipCount: number }): string {
+  if (o.reply != null) return o.reply;
+  return o.chipCount === 0 ? NOTHING_HEARD_TEXT : HEARD_TEXT;
+}
+
+/**
+ * 프롬프트를 어느 쪽으로 보여줄까. `'direct'`는 '들를 곳 없이 바로 찾기',
+ * `'calculate'`는 "조건은 준비됐어요".
+ *
+ * 칩에는 경유지뿐 아니라 도착 시각·이동수단도 들어간다 — 칩이 0이면 정말로 건진 게
+ * 없다는 뜻이다. 말은 했는데 칩이 0인 경우가 여태 둘 사이로 샜다: 준비된 조건이
+ * 하나도 없는데 '준비됐다'고 물었다. 직행으로 가는 길은 남기되 거짓말은 안 한다.
+ */
+export function promptKind(o: { chatLength: number; chipCount: number }): 'direct' | 'calculate' {
+  return o.chatLength === 0 || o.chipCount === 0 ? 'direct' : 'calculate';
+}

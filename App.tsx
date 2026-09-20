@@ -2,6 +2,8 @@ import React from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { UsageBeacon } from './src/components/UsageBeacon';
 import { NavigationContainer, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFonts } from 'expo-font';
@@ -84,6 +86,7 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <PlanProvider>
+          <UsageBeacon />
           <PlanFlowProvider>
           <TrackerProvider>
           <NotificationBridge navigationRef={navigationRef} />

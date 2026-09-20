@@ -17,5 +17,7 @@ module.exports = () => ({
     // Workers 프록시. 비어 있으면 앱은 라우팅을 목 공급자로 돌린다
     serverUrl: process.env.SERVER_URL ?? '',
     appToken: process.env.APP_TOKEN ?? '',
+    // 데모 사용 집계 워커. 비어 있으면 비콘이 무동작이라 앱 빌드엔 영향이 없다
+    metricsUrl: process.env.METRICS_URL ?? '',
   },
 });

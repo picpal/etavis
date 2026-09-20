@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { color, HIT_SLOP, type } from '../theme/tokens';
 import { arriveByText, MODE_TEXT, usePlan } from '../state/plan';
 import { knownPlacesSnapshot } from '../lib/placesStore';
+import { track } from '../lib/metricsClient';
 import { Bubble, haptic, PrimaryButton } from '../components/common';
 import { Sheet } from '../components/Sheet';
 import { assistantSay, calcPromptVisible, promptKind } from '../state/chatPrompt';
@@ -378,6 +379,7 @@ export function PlanScreen({ navigation }: Props) {
   const seqRef = useRef(0);
 
   const applyChat = (text: string) => {
+    track('ask'); // 대화로 조건을 말한 횟수 — 시간당 리포트의 '질문'
     pushChat(text);
     const seq = (seqRef.current += 1);
     setPending(true);

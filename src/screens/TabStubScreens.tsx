@@ -12,6 +12,8 @@ import { Card, haptic, MicroLabelRow } from '../components/common';
 import { CheckCircle, Chevron, Hairline, HeartIcon, PencilIcon, PersonPlusIcon } from '../components/primitives';
 import { Connector, StateBadge, TimelineRow } from '../components/TimelineRow';
 import { formatDistanceM, formatEta } from '../lib/geo';
+import { buildNearbyFeed, type NearbyPost } from '../lib/nearbyFeed';
+import { useCurrentPlace } from '../lib/currentPlace';
 import { useRouteLegs } from '../lib/routeLegs';
 import { CONGESTION } from '../lib/congestion';
 import { notifyDeadlineRisk, scheduleThanksNotification } from '../notifications';
@@ -887,34 +889,33 @@ export function HistoryScreen() {
 }
 
 /** 주변 — 현재 위치 혼잡도 제보 + 커뮤니티 한줄 소식 */
-type NearbyPost = {
-  id: string;
-  text: string;
-  place: string;
-  when: string;
-  author: string;
-  avatarColor: string;
-  likes: number;
-  likedByMe?: boolean;
-  /** 관련 경유지 이름 — 경로 필터·방문 순서 정렬의 앵커 */
-  anchor?: string;
-  /** 그 경유지로 가는 구간(도로) 소식 — 경유지 소식보다 먼저 정렬 */
-  road?: boolean;
-};
-
-const NEARBY_POSTS: NearbyPost[] = [
-  { id: 'p1', text: '올리브영 평창점 웨이팅 없어요', place: '올리브영 평창점', when: '3분 전', author: '민지', avatarColor: color.primary, likes: 4, anchor: '올리브영 평창점' },
-  { id: 'p2', text: '대관령 방면 안개, 서행하세요', place: '대관령IC', when: '12분 전', author: '준호', avatarColor: '#0F5C3E', likes: 12, anchor: '올리브영 평창점', road: true },
-  { id: 'p3', text: '교촌 평창점 포장 20분 정도 걸린대요', place: '교촌치킨 평창점', when: '25분 전', author: '수현', avatarColor: color.amber, likes: 7, anchor: '교촌치킨 평창점' },
-];
-
 
 export function NearbyScreen() {
   const insets = useSafeAreaInsets();
   const { state, setCongestionReport } = usePlan();
   const myReport = state.congestionReport;
   const setMyReport = setCongestionReport;
-  const [posts, setPosts] = useState<NearbyPost[]>(NEARBY_POSTS);
+
+  // 소식은 지금 화면이 아는 장소에서 나온다 — 확정된 경유지가 있으면 거기서, 없으면 지역 단위로.
+  // 고정 배열이던 시절엔 앵커('올리브영 평창점')가 실제 경유지 이름과 안 맞아 늘 빈 목록이었다.
+  const here = useCurrentPlace();
+  const region = here.area ?? null;
+  // 위치를 아직 모를 수 있다 — 그때는 동네 이름 없이 '내 주변'으로 말한다
+  const areaLabel = region ? `${region} 일대` : '내 주변';
+  const nearMeLabel = region ? `${region} · 내 주변` : '내 주변';
+  const seed = React.useMemo(
+    () =>
+      buildNearbyFeed({
+        stops: state.planConfirmed ? state.stops.map(s => ({ name: s.name })) : [],
+        region,
+      }),
+    [state.planConfirmed, state.stops, region],
+  );
+  const [posts, setPosts] = useState<NearbyPost[]>(seed);
+  // 계획이나 지역이 바뀌면 시드를 갈아끼운다. 내가 쓴 글(`me-`)은 남긴다
+  React.useEffect(() => {
+    setPosts(prev => [...prev.filter(p => p.id.startsWith('me-')), ...seed]);
+  }, [seed]);
   const [pickedPlace, setPickedPlace] = useState<string | null>(null);
   // 내 제보 수정 모드 — 연필 탭 시 글이 입력창에 실린다
   const [editing, setEditing] = useState<NearbyPost | null>(null);
@@ -926,7 +927,7 @@ export function NearbyScreen() {
   };
 
   // 혼잡도 대상 장소: 도착한 경유지(진행 중) 또는 지역. 장소 단위는 제보가 없을 수 있다.
-  const congestionPlace = state.planConfirmed && state.stops[0] ? state.stops[0].name : '평창 일대';
+  const congestionPlace = state.planConfirmed && state.stops[0] ? state.stops[0].name : areaLabel;
   const baseReportCount = state.planConfirmed && state.stops[0] ? 0 : 12;
   const reportCount = baseReportCount + (myReport ? 1 : 0);
   const level = myReport
@@ -940,9 +941,9 @@ export function NearbyScreen() {
   const placeOptions: { name: string; postable: boolean }[] = state.planConfirmed
     ? [
         ...state.stops.map((s, i) => ({ name: s.name, postable: i === 0 })),
-        { name: '평창 · 내 주변', postable: true },
+        { name: nearMeLabel, postable: true },
       ]
-    : [{ name: '평창 · 내 주변', postable: true }];
+    : [{ name: nearMeLabel, postable: true }];
   const autoPlace = placeOptions[0].name;
   const effectivePlace =
     pickedPlace && placeOptions.some(o => o.name === pickedPlace && o.postable) ? pickedPlace : autoPlace;
@@ -974,7 +975,7 @@ export function NearbyScreen() {
           zIndex: 10,
         }}
       >
-        <Text style={[type.title, { color: color.ink }]}>주변 · 평창</Text>
+        <Text style={[type.title, { color: color.ink }]}>{region ? `주변 · ${region}` : '주변'}</Text>
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

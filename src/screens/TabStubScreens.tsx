@@ -4,7 +4,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, Text, Vie
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { color, shadow, type } from '../theme/tokens';
+import { color, layer, shadow, type } from '../theme/tokens';
 import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { useTracker } from '../state/tracker';
 import { trackerBadge } from '../state/trackerBadge';
@@ -57,7 +57,7 @@ function TabPage({
           flexDirection: 'row',
           alignItems: 'center',
           ...shadow.header,
-          zIndex: 10,
+          zIndex: layer.header,
         }}
       >
         <View style={{ width: 44 }} />
@@ -972,7 +972,7 @@ export function NearbyScreen() {
           paddingBottom: 14,
           alignItems: 'center',
           ...shadow.header,
-          zIndex: 10,
+          zIndex: layer.header,
         }}
       >
         <Text style={[type.title, { color: color.ink }]}>{region ? `주변 · ${region}` : '주변'}</Text>

@@ -12,7 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { color, radius, shadow } from '../theme/tokens';
+import { color, layer, radius, shadow } from '../theme/tokens';
 
 const OPEN_MS = 300;
 const CLOSE_MS = 220;
@@ -117,7 +117,10 @@ export function Sheet({
   if (!mounted) return null;
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    /* 층을 직접 든다 — 헤더가 `layer.header` 를 들고 있어서, 무지정(=0)으로 두면
+       형제인 헤더가 시트 위에 그려진다. 키보드로 시트가 떠오르면 시트 머리가
+       헤더 밑으로 잘렸다(2026-09-19 실기기 제보). `tokens.ts` 의 `layer` 참고 */
+    <View style={[StyleSheet.absoluteFill, { zIndex: layer.sheet }]} pointerEvents="box-none">
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: scrim }, scrimStyle]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={requestClose} />
       </Animated.View>

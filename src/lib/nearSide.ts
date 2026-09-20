@@ -56,6 +56,18 @@ export type StopTags = { loadBefore: Load; loadAfter: Load; needWhen: NeedWhen }
  *   아이스크림은 들고 가기 어렵지만 도착 전에 없어진다. 부담이 시점을 무조건 이기면 틀린다.
  * - `mode === 'car'` 는 일찍 빠진다. 차는 near 가 아니라 정차 용이성이 지배 축이고,
  *   그건 다음 단계다. 그래서 "차로 회 포장"을 못 잡는다 — 알려진 한계다(설계 §12).
+ *
+ * **"LLM 태그가 사용자 답을 이기는 것 아닌가"** — 한 번 제기됐고, 재 보니 반대였다.
+ * `loadAfter` 는 사용자가 탭으로 답하고(`bulkyAsk.ts`), `needWhen` 은 LLM 이 뱉는다.
+ * 그래서 4번 줄이 5번 줄을 덮는 게 뒤집힌 우선순위처럼 보인다. 그런데 실측
+ * (2026-09-19, `run-llm.mjs` tags 9건 × 5회, 경유지 0건 회차 제외)에서 흔들린 건
+ * `loadAfter` 쪽이다 — needWhen 0%, near 0%, loadBefore 11%, **loadAfter 22%**.
+ * `loadAfter` 를 LLM 에게서 뺏어 사용자에게 물은 이유가 바로 그 22% 다.
+ *
+ * 그리고 덮는 경우는 `beforeArrival` 하나뿐이다. `afterArrival`·`unknown` 이면
+ * 사용자 답이 그대로 방향을 정한다(장보기가 그 경로다). 도착 전에 필요한 것을
+ * 도착해서 사면 무게와 무관하게 쓸모가 없으니, 그 하나는 덮는 게 맞다.
+ * 결론: 순서는 그대로 둔다. 다시 열려면 위 숫자부터 다시 재라.
  */
 export function decideNear(stated: NearSide | undefined, mode: Mode, tags: StopTags): NearSide {
   if (stated === 'start' || stated === 'end') return stated;

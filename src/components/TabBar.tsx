@@ -93,9 +93,9 @@ export function TabBar() {
           backgroundColor: color.surface,
           borderTopWidth: 1,
           borderTopColor: color.hairline,
-          paddingTop: 10,
+          paddingTop: 6,
           paddingHorizontal: 24,
-          paddingBottom: Math.max(insets.bottom, 10),
+          paddingBottom: Math.max(insets.bottom - 4, 6),
           flexDirection: 'row',
           justifyContent: 'space-between',
         }}
@@ -106,10 +106,18 @@ export function TabBar() {
             <Pressable
               key={tab.key}
               onPress={() => onPressTab(tab.key)}
-              hitSlop={{ top: 6, bottom: 6, left: 10, right: 10 }}
-              style={({ pressed }) => ({ width: 64, alignItems: 'center', gap: 5, opacity: pressed ? 0.6 : 1 })}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              style={({ pressed }) => ({
+                width: 64,
+                paddingVertical: 7,
+                borderRadius: 16,
+                backgroundColor: active ? color.primaryTint : 'transparent',
+                alignItems: 'center',
+                gap: 5,
+                opacity: pressed ? 0.6 : 1,
+              })}
             >
-              <TabIcon name={tab.key} size={22} tint={active ? color.primary : color.stroke} />
+              <TabIcon name={tab.key} size={22} tint={active ? color.primary : color.body} />
               <Text
                 style={{
                   fontFamily: active ? 'Pretendard-SemiBold' : 'Pretendard-Medium',

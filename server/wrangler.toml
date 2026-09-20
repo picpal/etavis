@@ -8,6 +8,15 @@ name = "etavia"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
 
+# 로그 보존. 이게 없으면 console.error 는 `wrangler tail` 로 붙어 있는 동안에만 보인다 —
+# kvWrite.ts 가 남기는 `[kv.put failed] site=... ` 는 드물게 터지는 것이라 붙어 있을 때
+# 터져 줄 리가 없다. 켜야 대시보드에서 뒤늦게 셀 수 있다.
+# 키는 로그에 절대 안 들어간다(`rlip:<path>:<ip>:<minute>` 에 사용자 IP 가 들어 있다 —
+# kvWrite.test.ts 가 회귀를 막는다). 그래서 보존해도 안전하다.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # 웹 데모 오리진 허용 목록. 비어 있으면 CORS 헤더를 안 붙인다 = 네이티브 전용.
 # 데모를 배포하면 그 도메인을 여기 추가할 것 — 와일드카드로 열지 않는다.
 [vars]

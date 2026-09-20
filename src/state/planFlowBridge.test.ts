@@ -69,6 +69,20 @@ test('toLegacyPlan — stops·legs·candidates·options가 기존 형식으로',
   assert.equal(p.selectedOptionId, p.dataset.options[0].id);
 });
 
+/* 스톱은 **자기가 어느 가게인지**를 공급자 id 그대로 들고 나온다.
+   `id`·`baseId` 는 '자리'(슬롯)의 id 라 여기에 쓸 수 없고, 합성 id 를 만들어서도 안 된다 —
+   `enumerate.ts:37` 이 후보 id 로 중복 방문을 막으므로, 같은 가게는 어느 슬롯에서 와도
+   같은 id 여야 한다. 이 계약 위에 '정해진 가게 지키기'가 올라간다(요청의 `fixed`). */
+test('toLegacyPlan — 스톱이 진짜 장소 id 를 들고 온다. 자리 id 가 아니다', async () => {
+  const s = await ready();
+  const { visits } = effectiveVisits(s.result!, slots, 0, {});
+  const p = toLegacyPlan({ flow: s, departMin: 480 });
+  p.stops.forEach((st, i) => {
+    assert.equal(st.selectedCandidateId, visits[i].candidate.id, '스톱이 든 id 가 방문한 후보의 id 여야 한다');
+    assert.notEqual(st.selectedCandidateId, st.baseId, '자리 id 를 장소 id 로 쓰면 안 된다');
+  });
+});
+
 /* 할 일 — 추출이 잡은 용무(slot.why)가 **장소가 정해지는 이 시점에** 경유지의
    할 일로 내려앉는다. toLegacyPlan 은 후보가 확정된 visits 로만 돌기 때문에,
    여기서 붙이면 "수선집이 선택됐을 때 수선 맡기기가 생긴다"가 그대로 성립한다. */

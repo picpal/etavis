@@ -2,7 +2,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { color, radius, shadow, type } from '../theme/tokens';
+import { color, layer, radius, shadow, type } from '../theme/tokens';
 import { Chevron } from './primitives';
 import { haptic } from './common';
 
@@ -27,7 +27,7 @@ export function NavHeader({
         paddingBottom: 14,
         gap: 12,
         ...shadow.header,
-        zIndex: 10,
+        zIndex: layer.header,
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>

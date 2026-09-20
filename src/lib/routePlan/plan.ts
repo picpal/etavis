@@ -215,6 +215,10 @@ export async function plan(
   // 슬롯 status
   const slotStatus: Record<string, SlotStatus> = {};
   for (const slot of input.slots) {
+    // 반드시 0건 검사보다 먼저 본다 — 못 본 슬롯도 후보가 0건이라,
+    // 순서를 바꾸면 'none'(= 찾아봤는데 없음)이 덮어쓰면서
+    // 아예 검색한 적 없는 곳을 "못 찾았다"고 말하게 된다
+    if (slot.searchStatus === 'unchecked') { slotStatus[slot.id] = 'unchecked'; continue; }
     if (slot.candidates.length === 0) { slotStatus[slot.id] = 'none'; continue; }
     if (slot.searchStatus === 'far' || slot.searchStatus === 'short') { slotStatus[slot.id] = slot.searchStatus; continue; }
     const ofSlot = best ? best.visits.map((v, i) => ({ v, i })).filter(x => x.v.slotId === slot.id) : [];

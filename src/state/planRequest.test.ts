@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { requestStopsFromChips } from './planRequest';
-import type { IntentChip } from './plan';
+import type { IntentChip, StopState } from './plan';
 
 const stop = (over: Partial<Extract<IntentChip, { kind: 'stop' }>> = {}): IntentChip => ({
   id: 's-1',
@@ -125,4 +125,47 @@ test('requestStopsFromChips — 칩의 검색어 후보를 전부 나르고 업�
   ];
   const [s] = requestStopsFromChips(chips as never);
   assert.deepEqual(s.queries, ['샌드위치 파는 카페', '카페']);
+});
+
+/* ── 정해진 가게를 요청에 싣는다 ─────────────────────────────────────────
+   확정된 계획의 가게는 `state.stops` 에 있는데 요청은 칩만 봤다. 그래서 경유지를
+   하나 추가할 때마다 세 슬롯이 전부 새로 검색됐고, 손도 안 댄 약국이 바뀌었다
+   (2026-09-19 실측). `fixed` 가 그 가게를 슬롯까지 들고 간다 — 무엇을 고정할지는
+   여기서 정하고, 어떻게 이기게 할지는 runPlan 이 한다.
+
+   **붙이는 키는 `baseId` 다.** 라이브 확정에서 `baseId` 가 곧 칩 id 이기 때문이다
+   (`planFlowBridge.ts` 의 `baseId: v.slotId`, 슬롯 id 는 아래 `id: c.id`). */
+const resolved = (over: Partial<StopState> = {}): StopState => ({
+  id: 's-1', baseId: 's-1', name: '봄빛온누리약국', category: '약국',
+  coord: { latitude: 37.5285, longitude: 126.9245 },
+  dwellMin: 10, arriveAt: '17:53', legMin: 12, legKm: 3.1,
+  openState: 'open', openNote: '체류 10분 · 영업 중', tasks: [],
+  replaceDeltaMin: 0, selectedCandidateId: 'k-77', ...over,
+});
+
+test('정해진 스톱이 있는 칩은 그 가게를 요청에 싣는다', () => {
+  const [s] = requestStopsFromChips([stop()], [resolved()]);
+  assert.deepEqual(s.fixed, {
+    placeId: 'k-77', name: '봄빛온누리약국', coord: { latitude: 37.5285, longitude: 126.9245 },
+  });
+});
+
+test('스톱이 없는 칩에는 fixed 가 없다 — 아직 안 정해진 곳은 자유롭게 찾는다', () => {
+  assert.equal(requestStopsFromChips([stop()], [])[0].fixed, undefined);
+  assert.equal(requestStopsFromChips([stop()])[0].fixed, undefined, '스톱을 안 넘겨도 터지지 않는다');
+});
+
+test('다른 칩의 스톱을 끌어오지 않는다 — baseId 가 맞아야 붙는다', () => {
+  const [s] = requestStopsFromChips([stop({ id: 's-2' })], [resolved({ baseId: 's-1' })]);
+  assert.equal(s.fixed, undefined);
+});
+
+/* 목 데이터셋에서 온 스톱(`asStopState`)은 장소 id 가 없다. 그런 스톱을 고정하면
+   목의 좌표와 이름을 실제 검색에 박아 넣게 된다 — 개발 메뉴에서 만든 가짜 가게가
+   진짜 경로에 눌러앉는다. **장소 id 가 없으면 고정하지 않는다.**
+   runPlan 이 검색 결과에 없는 고정을 후보로 끼워 넣어야 하는데(과제 4), 이 계획은
+   후보 id 합성을 금지한다 — 진짜 id 가 없으면 끼워 넣을 방법 자체가 없다. */
+test('장소 id 가 없는 스톱은 고정하지 않는다 — 목에서 온 가짜 가게가 실제 검색에 박히면 안 된다', () => {
+  const [s] = requestStopsFromChips([stop()], [resolved({ selectedCandidateId: undefined })]);
+  assert.equal(s.fixed, undefined);
 });

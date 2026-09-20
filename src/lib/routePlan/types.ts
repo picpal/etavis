@@ -26,8 +26,14 @@ export type PlaceCandidate = {
   signals?: import('../enrich/types').PlaceSignals;
 };
 
-/** 검색 단계가 붙이는 상태. 플래너는 이걸 슬롯 status로 승격한다 */
-export type SearchStatus = 'ok' | 'far' | 'none' | 'short';
+/**
+ * 검색 단계가 붙이는 상태. 플래너는 이걸 슬롯 status로 승격한다
+ *
+ * 'none' 과 'unchecked' 를 섞지 않는다: 'none' 은 찾아봤는데 없는 것,
+ * 'unchecked' 는 검색이 죽어 아예 보지 못한 것이다. 둘을 같은 말로 묶으면
+ * 사용자에게 없는 사실을 말하게 된다.
+ */
+export type SearchStatus = 'ok' | 'far' | 'none' | 'short' | 'unchecked';
 
 export type Slot = {
   id: string;
@@ -69,6 +75,14 @@ export type Slot = {
   searchRadiusM?: number;
   /** 이 슬롯이 부른 장소 검색 횟수. 로그 판정용 */
   searchCalls?: number;
+  /** 사용자가 이미 정한 가게로 닫힌 슬롯. `candidates[0]` 가 이 가게고 `flexible` 은 false 다.
+   *
+   *  `source` 는 **그 가게가 어디서 왔는지 사실대로** 적는다 — 검색·near 메타데이터를
+   *  빌려 쓰지 않는다(`nearRelaxedRaw` 는 `applyNear` 가 완화했을 때만 true 다).
+   *  - `search`   검색 결과 안에 있었다. 영업시간·신호가 다른 후보와 같은 수준이다
+   *  - `filtered` 검색은 찾았는데 주차 정책·near·상한에서 떨어진 것을 되살렸다
+   *  - `request`  검색이 못 찾아 요청에 실린 이름·좌표로 세웠다. **신호도 영업시간도 없다** */
+  fixed?: { placeId: string; source: 'search' | 'filtered' | 'request' };
 };
 
 export type PlanInput = {
@@ -133,7 +147,7 @@ export type Visit = { slotId: string; candidate: PlaceCandidate; dwellMin: numbe
 /** 경유지가 경로의 어느 쪽 끝에 붙어야 하나. 'any'면 제약 없음 — 규칙은 src/lib/nearSide.ts */
 export type NearSide = 'start' | 'end' | 'any';
 
-export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short';
+export type SlotStatus = 'ok' | 'far' | 'none' | 'closed' | 'short' | 'unchecked';
 
 export type PlanOption = {
   visits: Visit[];

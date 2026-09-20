@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ApplyLivePayload, PlanAction, PlanState } from './plan';
+import type { ApplyLivePayload, PlanAction, PlanState, StopState } from './plan';
 
 (globalThis as Record<string, unknown>).__DEV__ = false;
 
@@ -87,6 +87,40 @@ test('체류 중에 새 계획을 확정해도 되돌린다 — 새 계획의 �
   assert.equal(after.atStop, false);
 });
 
+/*
+  방문은 '몇 번째까지 지나왔나'와 다른 것이다.
+
+  예전엔 `stopIdx < passedCount` 로 방문을 판단했는데, 스쳐 지나간 경유지(skip)도
+  passedCount 를 올리기 때문에 차로 가게 옆을 지나가기만 해도 '가 봤다'가 됐다.
+  이제는 체류 시간을 채운 지점만 VISIT_STOP 으로 들어온다.
+*/
+test('VISIT_STOP 은 들른 경유지를 기록한다', () => {
+  const after = planReducer(fresh(), { type: 'VISIT_STOP', id: 's1' });
+
+  assert.deepEqual(after.visitedStopIds, ['s1']);
+});
+
+test('같은 경유지를 두 번 방문해도 한 번만 남는다 — 판정부가 재시도로 같은 이벤트를 낼 수 있다', () => {
+  const after = run(fresh(), [{ type: 'VISIT_STOP', id: 's1' }, { type: 'VISIT_STOP', id: 's1' }]);
+
+  assert.deepEqual(after.visitedStopIds, ['s1']);
+});
+
+test('스쳐 지나가기만 한 경유지는 방문이 아니다 — 100m 옆을 지나간 가게가 들른 곳이 되던 버그', () => {
+  const after = run(fresh(), [{ type: 'DEPART_STOP' }, { type: 'DEPART_STOP' }]);
+
+  assert.equal(after.passedCount, 2, '전제: 두 곳을 지나오긴 했다');
+  assert.deepEqual(after.visitedStopIds, [], '지나온 것과 들른 것은 다르다');
+});
+
+test('새 계획을 확정하면 방문 기록이 비워진다 — 옛 계획에서 들른 곳이 묻어나면 안 된다', () => {
+  const before = run(arrived(), [{ type: 'VISIT_STOP', id: 's1' }, { type: 'VISIT_STOP', id: 's2' }]);
+  assert.equal(before.visitedStopIds.length, 2, '전제: 두 곳을 들른 계획이어야 한다');
+
+  assert.deepEqual(planReducer(before, { type: 'APPLY_LIVE', payload: newPlan() }).visitedStopIds, []);
+  assert.deepEqual(planReducer(before, { type: 'APPLY_OPTION', id: before.options[0].id }).visitedStopIds, []);
+});
+
 test('APPLY_OPTION 도 같은 자리다 — 확정이면(planConfirmed) 진행 상태도 새 계획 것이어야 한다', () => {
   const before = arrived();
   const after = planReducer(before, { type: 'APPLY_OPTION', id: before.options[0].id });
@@ -139,11 +173,19 @@ test('두 번째 RESET_CHAT 은 아무것도 바꾸지 않는다 — 진입할 �
   assert.equal(twice.destinationName, once.destinationName, '목적지는 A1에서 고른 것이라 대화와 무관하다');
 });
 
-test('체류 중인 경유지의 혼잡도 제보는 그대로 남는다', () => {
+test('들른 경유지의 혼잡도 제보는 그대로 남는다', () => {
   const s = dwelling();
   const target = s.stops[s.passedCount];
-  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' });
+  const visited = planReducer(s, { type: 'VISIT_STOP', id: target.id });
+  const after = planReducer(visited, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' });
   assert.equal(after.stops[s.passedCount].congestion, 'high');
+});
+
+test('체류 중이기만 하고 아직 방문이 아니면 제보를 버린다 — 체류 시간을 채워야 들른 것이다', () => {
+  const s = dwelling();
+  const target = s.stops[s.passedCount];
+
+  assert.equal(planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: target.id, level: 'high' }), s);
 });
 
 test('이미 떠나온 경유지의 제보도 받는다 — 안 받으면 시트가 계속 다시 묻는다', () => {
@@ -152,7 +194,8 @@ test('이미 떠나온 경유지의 제보도 받는다 — 안 받으면 시트
   const s = arrived();
   const first = s.stops[0];
   assert.ok(s.passedCount > 0, '전제: 이미 지나온 경유지가 있어야 한다');
-  const after = planReducer(s, { type: 'REPORT_STOP_CONGESTION', stopId: first.id, level: 'low' });
+  const visited = planReducer(s, { type: 'VISIT_STOP', id: first.id });
+  const after = planReducer(visited, { type: 'REPORT_STOP_CONGESTION', stopId: first.id, level: 'low' });
   assert.equal(after.stops[0].congestion, 'low');
 });
 
@@ -223,6 +266,164 @@ test('다른 곳은 그대로 더한다 — 중복만 막지, 새 경유지를 �
     addStop(['약국']),
   ]);
   assert.deepEqual(stopQueries(s), ['카페', '약국']);
+});
+
+/* ── 대화 편집이 이미 정해진 가게를 갈아치우면 안 된다 ────────────────────
+   실측(2026-09-19, 여의도→용왕산 대중교통): `마트 들러서 장 보고 약국 갔다 집에 갈게`
+   로 확정한 뒤 "빵집도 들러줘" 한 마디에 약국이 봄빛온누리약국 → 은하약국으로 바뀌었다.
+   사용자는 약국을 건드린 적이 없다.
+
+   원인은 여기다. `APPLY_INTENT` 가 칩을 고친 뒤 `stopsForChips(state.dataset, keep)` 로
+   **스톱 전체를 목 데이터셋에서 다시 매칭**했다. 라이브로 정해진 가게(`state.stops`)는
+   쳐다보지도 않으니 매번 새로 뽑혔고, `asStopState` 가 `selectedCandidateId` 와
+   `replaceDeltaMin` 까지 지워서 사용자가 교체 시트에서 고른 매장도 같이 날아갔다.
+
+   고침: 기존 스톱을 `baseId` 로 집어 **그대로 재사용**하고, 스톱이 없는 새 칩만
+   데이터셋에서 찾는다. 라이브 경로에서 `baseId` 는 곧 칩 id 다
+   (`planFlowBridge.ts:258` 의 `baseId: v.slotId`, 슬롯 id 는 `planRequest.ts:22` 에서 `c.id`). */
+
+/** 라이브 확정이 내려놓은 모양의 스톱 — `baseId` 가 칩 id 이고 장소 id 를 들고 있다 */
+const resolveChips = (s: PlanState, names: string[], extra: Partial<StopState> = {}): PlanState => ({
+  ...s,
+  stops: s.chips
+    .filter(c => c.kind === 'stop')
+    .map((c, i) => ({
+      id: c.id, baseId: c.id, name: names[i], category: c.label,
+      coord: { latitude: 37.52 + i / 1000, longitude: 126.92 },
+      dwellMin: 10, arriveAt: '17:53', legMin: 12, legKm: 3.1,
+      openState: 'open' as const, openNote: '체류 10분 · 영업 중', tasks: [],
+      replaceDeltaMin: 0, selectedCandidateId: `k-${i}`, ...extra,
+    })),
+});
+
+const stopNames = (s: PlanState) => s.stops.map(x => x.name);
+
+test('대화로 경유지를 추가해도 이미 정해진 가게는 그대로다', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } }]),
+    ['봄빛온누리약국'],
+  );
+  assert.deepEqual(stopNames(before), ['봄빛온누리약국'], '전제: 약국이 정해져 있다');
+
+  const after = planReducer(before, addStop(['빵집']));
+  const pharmacy = after.stops.find(s => s.baseId === before.chips[0].id);
+  assert.equal(pharmacy?.name, '봄빛온누리약국', '사용자가 안 건드린 약국이 바뀌면 안 된다');
+});
+
+test('사용자가 교체한 매장이 대화 편집에서 살아남는다 — asStopState 가 지우던 것', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['마트']).intent, resetStops: true } }]),
+    ['한청할인마트'],
+    { selectedCandidateId: 'k-99', replaceDeltaMin: 4 },
+  );
+
+  const after = planReducer(before, addStop(['빵집']));
+  const mart = after.stops.find(s => s.baseId === before.chips[0].id);
+  assert.equal(mart?.selectedCandidateId, 'k-99', '고른 매장의 id 가 남아야 교체 시트가 그걸 현재로 안다');
+  assert.equal(mart?.replaceDeltaMin, 4, '교체로 늘어난 시간까지 같이 남아야 한다');
+});
+
+test('지운 경유지의 스톱은 안 남는다 — 보존이 삭제를 이기면 안 된다', () => {
+  const before = resolveChips(
+    run(fresh(), [
+      { type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } },
+      addStop(['마트']),
+    ]),
+    ['봄빛온누리약국', '한청할인마트'],
+  );
+  assert.equal(before.stops.length, 2, '전제: 두 곳이 정해져 있다');
+
+  const after = planReducer(before, {
+    ...addStop(['약국']),
+    intent: { ...addStop(['약국']).intent, stops: [{ ...addStop(['약국']).intent.stops[0], op: 'remove' as const }] },
+  });
+  assert.deepEqual(stopNames(after), ['한청할인마트'], '지운 약국의 스톱이 남으면 안 된다');
+});
+
+test('새로 추가한 칩은 스톱이 없다 — 검색해서 채울 자리다', () => {
+  const before = resolveChips(
+    run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } }]),
+    ['봄빛온누리약국'],
+  );
+
+  const after = planReducer(before, addStop(['빵집']));
+  const bakeryChip = after.chips.find(c => c.kind === 'stop' && c.label === '빵집')!;
+  assert.equal(after.stops.some(s => s.baseId === bakeryChip.id), false, '아직 안 정해진 곳에 스톱이 있으면 안 된다');
+  assert.equal(after.stopCount, after.stops.length, 'stopCount 는 stops 를 따라간다');
+});
+
+test('같은 곳을 두 번 들르는 계획을 만들지 않는다 — 칩을 하나씩 찾아도 중복 제거는 살아 있다', () => {
+  /* 보존을 넣으면서 `stopsForChips` 를 칩마다 부르고 싶어지는데, 그러면 함수 안의
+     `used` 집합이 매번 새로 생겨 같은 풀 항목이 여러 슬롯에 붙는다. 스톱 id 가 겹치면
+     LEGS 체인 키와 화면 키가 같이 무너진다 — 풀에 은행이 하나뿐인 목 데이터셋으로 잰다 */
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...addStop(['은행']).intent, resetStops: true } },
+    addStop(['은행'], 3),
+  ]);
+  assert.equal(stopQueries(s).length, 3, '전제: 칩은 count 만큼 선다');
+  assert.equal(new Set(s.stops.map(x => x.id)).size, s.stops.length, '같은 스톱이 두 번 들어가면 안 된다');
+  assert.equal(s.stops.length, 1, '풀에 은행이 하나뿐이면 못 채운 칩은 스톱 없이 남는다');
+});
+
+/* ── 고정을 푸는 길 ──────────────────────────────────────────────────────
+   정해진 가게를 지키는 것과 **그걸 풀 수 있는 것**은 같은 기능의 양면이다. 풀 수
+   없으면 "약국 다른 데로 바꿔줘"가 영영 안 먹는 상태가 된다 — 지키기만 올리면
+   사용자는 고장으로 읽는다. 그래서 과제 4와 한 묶음으로 올린다. */
+
+const removeStop = (queries: string[]): PlanAction => ({
+  ...addStop(queries),
+  intent: { ...addStop(queries).intent, stops: [{ ...addStop(queries).intent.stops[0], op: 'remove' as const }] },
+});
+
+const withPharmacy = () => resolveChips(
+  run(fresh(), [{ type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } }]),
+  ['봄빛온누리약국'],
+);
+
+test('가게 이름으로 지워도 그 칩이 걸린다 — 추출은 가게명을 주고 칩은 업종을 든다', () => {
+  /* "봄빛온누리약국 말고 다른 데로" → remove(['봄빛온누리약국']) + add(['약국']).
+     제거는 질의 겹침으로만 걸렀는데 칩의 queries 는 ['약국'] 이라 안 걸리고,
+     이어지는 add 는 중복으로 걸러진다 — 고정이 영영 안 풀린다. */
+  const before = withPharmacy();
+  const after = planReducer(before, removeStop(['봄빛온누리약국']));
+  assert.equal(after.chips.filter(c => c.kind === 'stop').length, 0, '가게 이름으로도 칩이 지워져야 한다');
+  assert.equal(after.stops.length, 0, '칩이 갔으면 스톱도 간다');
+});
+
+test('편집에서 경유지를 지우면 대화로 돌아가도 안 살아난다', () => {
+  /* REMOVE_LOCAL 이 stops 만 지웠다. 칩이 남아 다음 요청이 그 경유지를 되살렸다 —
+     고정 이전에도 있던 결함인데, 고정이 붙으면 "지워도 지워지지 않는" 경로가 된다 */
+  const before = withPharmacy();
+  const after = planReducer(before, { type: 'REMOVE_LOCAL', stopId: before.stops[0].id });
+  assert.equal(after.stops.length, 0);
+  assert.equal(after.chips.filter(c => c.kind === 'stop' && c.id === before.chips[0].id).length, 0, '칩도 같이 지워져야 한다');
+});
+
+test('칩 하나를 지워도 남은 가게는 그대로다 — REMOVE_CHIP 이 전부 다시 매칭하면 안 된다', () => {
+  /* REMOVE_CHIP 도 stopsForChips 를 맨손으로 불러 스톱 전체를 데이터셋에서 다시
+     매칭했다. 경유지 하나를 빼려고 ✕ 를 눌렀을 뿐인데 나머지 가게가 전부 날아간다 */
+  const before = resolveChips(
+    run(fresh(), [
+      { type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } },
+      addStop(['마트']),
+    ]),
+    ['봄빛온누리약국', '한청할인마트'],
+  );
+  const after = planReducer(before, { type: 'REMOVE_CHIP', id: before.chips[0].id });
+  assert.deepEqual(stopNames(after), ['한청할인마트'], '지운 건 약국뿐인데 마트까지 날아가면 안 된다');
+});
+
+test('되묻기로 질의를 좁히면 그 칩의 가게만 버린다 — 검색어가 바뀌었으니 다시 찾아야 한다', () => {
+  const before = resolveChips(
+    run(fresh(), [
+      { type: 'APPLY_INTENT', intent: { ...addStop(['약국']).intent, resetStops: true } },
+      addStop(['마트']),
+    ]),
+    ['봄빛온누리약국', '한청할인마트'],
+  );
+  const after = planReducer(before, { type: 'NARROW_STOP', chipId: before.chips[0].id, query: '온누리약국' });
+  assert.equal(after.stops.some(x => x.name === '봄빛온누리약국'), false, '질의가 바뀐 칩의 가게는 버린다');
+  assert.deepEqual(stopNames(after), ['한청할인마트'], '건드리지 않은 칩의 가게는 그대로다');
 });
 
 test('목적지를 고르면 주소도 같이 실린다 — 최근 목록의 둘째 줄이 여기서 온다', () => {

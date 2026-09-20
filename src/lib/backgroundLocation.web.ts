@@ -24,11 +24,16 @@ export async function startBackgroundLocation(): Promise<BackgroundStartResult> 
 export async function stopBackgroundLocation(): Promise<void> {}
 
 /** 네이티브와 같은 순수 변환. iOS 는 속도를 모르면 -1 을 준다 */
-export function toFix(loc: { coords: { latitude: number; longitude: number; accuracy?: number | null; speed?: number | null } }): Fix {
+export function toFix(loc: {
+  timestamp?: number | null;
+  coords: { latitude: number; longitude: number; accuracy?: number | null; speed?: number | null };
+}): Fix {
   const { latitude, longitude, accuracy, speed } = loc.coords;
   return {
     latitude,
     longitude,
+    // 네이티브와 같은 이유로 OS 시각을 쓴다(backgroundLocation.ts 주석)
+    atMs: typeof loc.timestamp === 'number' ? loc.timestamp : Date.now(),
     accuracyM: accuracy ?? null,
     speedMps: speed == null || speed < 0 ? null : speed,
   };

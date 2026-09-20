@@ -57,6 +57,27 @@ export const shadow = {
   amberCard: { shadowColor: '#B26A0A', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
 } as const;
 
+/**
+ * z축 층. **같은 부모 안에서 누가 위에 그려지는가**를 한 곳에서 정한다.
+ *
+ * 왜 토큰으로 빼나: 헤더는 `zIndex: 10` 을 직접 들고 있었고 시트는 아무것도 안 들고
+ * 있어서(=0) 헤더가 시트 위에 그려졌다. 키보드가 올라와 시트가 그만큼 떠오르면
+ * 시트 머리 — 손잡이·'경유지' 라벨·제목 윗부분 — 가 불투명한 헤더 밑으로 들어가
+ * 잘렸고, 딤도 헤더를 못 덮어 헤더만 환하게 남았다
+ * (2026-09-19 실기기 제보, 1.3.0, A2 되묻기 시트).
+ *
+ * 두 숫자가 서로 다른 파일에 흩어져 있어서 눈으로만 찾을 수 있었다. 그래서 값을
+ * 여기 모으고, 날숫자 `zIndex` 는 `layer.test.ts` 가 막는다.
+ */
+export const layer = {
+  /** 화면 상단 고정 헤더. 스크롤 내용 위로 그림자를 떨궈야 해서 0 이면 안 된다 */
+  header: 10,
+  /** 바텀시트와 그 딤. **화면 크롬보다 항상 위다** — 모달은 화면을 덮는 것이다 */
+  sheet: 50,
+  /** 사용 안내 스포트라이트. 시트 안을 가리킬 때가 있어 시트보다도 위다 */
+  spotlight: 100,
+} as const;
+
 const F = {
   r: 'Pretendard-Regular',
   m: 'Pretendard-Medium',

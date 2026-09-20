@@ -184,3 +184,5 @@
 {"g":"tags","text":"밀폐 텀블러에 커피 받아서 지하철 탈게","expect":{"nw":"beforeArrival"}}
 {"g":"tags","text":"은행 들렀다 가자","expect":{"lb":"none","la":"none","nw":"unknown"}}
 {"g":"near","text":"회사 근처 카페 들렀다 가자","expect":{"near":"end"}}
+{"g":"near","text":"마트 가서 사과 사고 목적지 근처 카페에서 커피 사서 가자","expect":{"nstops":2,"qhas":["카페"],"near":"end","note":"'목적지 근처'라는 말 그대로를 쓴 경우. 실기기에서 카페가 현재 위치 근처로 제안됐다(2026-09-20)"}}
+{"g":"near","text":"출발지 근처 은행 들렀다 갈게","expect":{"nstops":1,"qhas":["은행"],"near":"start","note":"'출발지 근처'라는 말 그대로. 프롬프트 예시는 '집 앞'뿐이라 이 표현을 못 잡을 수 있다"}}

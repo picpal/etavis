@@ -79,6 +79,35 @@ const base = (): PlanRequest => ({
   order: 'auto',
 });
 
+/* 고정을 키에 넣지 않으면, 정해진 가게가 바뀌어도 `isStale` 이 false 라
+   재계산이 아예 안 돈다 — 고정을 실어 보내도 아무 일이 일어나지 않는다.
+   이름은 안 넣는다: 표시용이고, 같은 가게가 다른 이름으로 오면 키가 흔들린다
+   (이 파일의 기존 원칙 — 위 '이름·출발시각은 아니다'). */
+const FIXED = { placeId: 'k-77', name: '봄빛온누리약국', coord: { latitude: 37.5285, longitude: 126.9245 } };
+
+test('requestKey 가 고정을 본다 — 안 그러면 바꿔도 재계산을 건너뛴다', () => {
+  const a = base();
+  const b = base();
+  b.stops[0].fixed = FIXED;
+  assert.notEqual(requestKey(a), requestKey(b));
+});
+
+test('고정된 가게가 다른 곳으로 바뀌면 키도 바뀐다', () => {
+  const a = base();
+  a.stops[0].fixed = FIXED;
+  const b = base();
+  b.stops[0].fixed = { ...FIXED, placeId: 'k-99' };
+  assert.notEqual(requestKey(a), requestKey(b));
+});
+
+test('고정된 가게의 표시 이름만 달라지면 같은 요청이다 — 이름은 계산을 안 바꾼다', () => {
+  const a = base();
+  a.stops[0].fixed = FIXED;
+  const b = base();
+  b.stops[0].fixed = { ...FIXED, name: '봄빛온누리약국 여의도점' };
+  assert.equal(requestKey(a), requestKey(b));
+});
+
 test('near 가 바뀌면 다른 요청이다', () => {
   const a = base();
   const b = base();

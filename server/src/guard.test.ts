@@ -291,3 +291,58 @@ test('transitCacheKey — 좌표 4자리, 출발 10분 버킷, 옵션·공급자
   assert.notEqual(transitCacheKey({ ...base, preferSubway: true }, 'google'), transitCacheKey(base, 'google'));
   assert.notEqual(transitCacheKey(base, 'tmap'), transitCacheKey(base, 'google'));
 });
+
+
+/* ── KV 쓰기가 죽어도 앱은 살아 있어야 한다 ─────────────────────────────────
+   2026-09-19 프로덕션 실측: 무료 플랜의 KV 하루 쓰기 한도(1,000회)를 다 쓰자
+   가드의 카운터 쓰기가 던졌고, `index.ts` 의 포괄 catch 가 그걸 503 으로 바꿨다.
+   `/places` 도 `/route` 도 전부 죽었다 — **앱이 통째로 먹통이었다.**
+
+     (error) [kv.put failed] site=guard:rl:ip:/places mode=required
+             err=Error: KV put() limit exceeded for the day.
+     (error) [fetch] unhandled Error: KV put() limit exceeded for the day.
+
+   던져서 얻는 게 없다. 쓰기가 막힌 순간 카운터는 어차피 못 올라가므로 상한은
+   이미 작동을 멈춘 것이고, 던지는 선택은 "상한 없음"을 "서비스 없음"으로 바꿀 뿐이다.
+   **막는 쪽이 아니라 통과시키는 쪽으로 넘어진다.** 잃는 것은 아래 주석에 적었다. */
+function throwingKV(seed: Record<string, string> = {}, err = 'KV put() limit exceeded for the day.') {
+  const store = new Map<string, string>(Object.entries(seed));
+  const kv: KVLike & { attempted: number } = {
+    attempted: 0,
+    async get(k) { return store.get(k) ?? null; },
+    async put() { kv.attempted += 1; throw new Error(err); },
+  };
+  return kv;
+}
+
+test('분당 카운터를 못 써도 요청을 막지 않는다 — 쓰기 한도가 앱 전체를 죽이면 안 된다', async () => {
+  const kv = throwingKV();
+  const blocked = await rateLimited(kv, '/places', 'dev-1', '1.2.3.4', new Date('2026-09-19T09:46:00Z'));
+  assert.equal(blocked, false, '던지지도, 막지도 않는다');
+  assert.ok(kv.attempted > 0, '전제: 쓰기를 실제로 시도했다');
+});
+
+test('하루 상한 카운터를 못 써도 요청을 막지 않는다', async () => {
+  const kv = throwingKV();
+  const over = await overDailyCap(kv, '/places:native', new Date('2026-09-19T09:46:00Z'));
+  assert.equal(over, false);
+});
+
+/* 쓰기가 죽어도 **이미 적혀 있는 값은 그대로 읽힌다.** 상한에 이미 닿아 있었다면
+   그 판정은 살아 있다 — 잃는 건 "여기서부터 더 세는 것"뿐이다 */
+test('쓰기가 죽어도 이미 상한에 닿아 있으면 여전히 막는다 — 읽기는 살아 있다', async () => {
+  const now = new Date('2026-09-19T09:46:00Z');
+  const cap = PER_DAY['/places:native'];
+  assert.ok(cap !== undefined, '전제: 이 버킷에 상한이 있다');
+  const kv = throwingKV({ [dayKey('/places:native', now)]: String(cap) });
+  assert.equal(await overDailyCap(kv, '/places:native', now), true);
+});
+
+test('분당 상한도 이미 닿아 있으면 쓰기 없이 막는다', async () => {
+  const now = new Date('2026-09-19T09:46:00Z');
+  const minute = Math.floor(now.getTime() / 60000);
+  const cap = PER_MIN_IP['/places'] ?? 30;
+  const kv = throwingKV({ [`rlip:/places:1.2.3.4:${minute}`]: String(cap) });
+  assert.equal(await rateLimited(kv, '/places', 'dev-1', '1.2.3.4', now), true);
+  assert.equal(kv.attempted, 0, '상한에 닿은 카운터에는 쓰지 않는다');
+});

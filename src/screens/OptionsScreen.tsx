@@ -316,6 +316,17 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           ))}
 
+        {/* 검색이 죽어 아예 못 본 슬롯 — 위의 '못 찾아 뺐어요'와 반드시 다른 말을 쓴다.
+            찾아봤는데 없는 것과 아예 못 본 것은 다른 사실이고, 섞으면 사용자에게
+            없는 사실을 말하게 된다 */}
+        {state.slots
+          .filter(s => result.slotStatus[s.id] === 'unchecked')
+          .map(s => (
+            <Text key={`unchecked-${s.id}`} style={[type.caption, { color: color.muted }]}>
+              {s.query}{josa(s.query, '이/가') === '이' ? '은' : '는'} 이번엔 확인하지 못했어요 · 다시 계산하면 다시 찾아볼게요
+            </Text>
+          ))}
+
         {/* near 로 좁혀 봤지만 그쪽에 한 곳도 없어 제약을 푼 슬롯 — 위치가 어긋난 걸 말해 준다.
             빠진 것도 아니고 요청대로도 아닌 중간 상태라, 말하지 않으면 사용자는 앱이 말을
             흘린 줄 안다 */}

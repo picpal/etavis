@@ -7,7 +7,7 @@ import { color, shadow, type } from '../theme/tokens';
 import { MODE_KEYS, MODE_TEXT, usePlan } from '../state/plan';
 import { useCurrentPlace } from '../lib/currentPlace';
 import { Card, haptic, PrimaryButton, SegmentControl } from '../components/common';
-import { Chevron, DashedLineV, Hairline, PinIcon, SwapIcon } from '../components/primitives';
+import { Chevron, Hairline, PinIcon, SwapIcon } from '../components/primitives';
 import { TabBar } from '../components/TabBar';
 import { Sheet } from '../components/Sheet';
 import { DevSheet } from '../sheets/DevSheet';
@@ -102,92 +102,62 @@ export function HomeScreen({ navigation }: Props) {
             </Text>
           </View>
           <Pressable onLongPress={() => setDevOpen(true)} delayLongPress={600}>
-            <Text style={[type.display, { color: color.ink }]}>어디로 가시나요?</Text>
+            <Text style={[type.display, { color: color.ink }]}>오늘의 길을 그려볼까요?</Text>
           </Pressable>
         </View>
 
-        {/* 출발–목적지 카드 (각 행 탭 → 선택 시트, 우측 아이콘으로 맞바꾸기) */}
-        <Card style={{ padding: 18, flexDirection: 'row', gap: 14 }}>
-          <View style={{ width: 12, alignItems: 'center', paddingVertical: 6 }}>
-            <View style={{ width: 11, height: 11, borderRadius: 5.5, borderWidth: 3, borderColor: color.primary }} />
-            <DashedLineV style={{ flex: 1, marginVertical: 6 }} />
-            <View style={{ width: 11, height: 11, borderRadius: 5.5, backgroundColor: color.green }} />
-          </View>
-          <View style={{ flex: 1, gap: 14, paddingRight: 54 }}>
+        {/* 출발–목적지 카드 (각 행 탭 → 선택 시트, 경계선 위 버튼으로 맞바꾸기) */}
+        <Card style={{ paddingVertical: 4 }}>
+          <EndpointRow
+            kind="origin"
+            label={state.originName ? '출발' : '출발 · 현재 위치'}
+            title={originTitle}
+            sub={originSub}
+            onPress={() => {
+              haptic();
+              setOriginOpen(true);
+            }}
+          />
+          {/* 경계선은 아이콘 뒤에서 시작한다. 맞바꾸기 버튼은 그 선 위, 두 행의 정확한 가운데 */}
+          <View style={{ justifyContent: 'center', marginLeft: 60 }}>
+            <Hairline />
             <Pressable
+              // 목적지가 비어 있으면 바꿀 게 없다
+              disabled={!state.destinationName}
               onPress={() => {
                 haptic();
-                setOriginOpen(true);
+                swapEndpoints();
               }}
-              style={({ pressed }) => ({ gap: 3, opacity: pressed ? 0.7 : 1 })}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={({ pressed }) => ({
+                position: 'absolute',
+                right: 16,
+                alignSelf: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                backgroundColor: color.surface,
+                borderWidth: 1,
+                borderColor: color.track,
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: !state.destinationName ? 0.35 : pressed ? 0.6 : 1,
+              })}
             >
-              <Text style={[type.labelPlain, { color: color.muted }]}>
-                {state.originName ? '출발' : '출발 · 현재 위치'}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[type.title, { flex: 1, color: color.ink }]} numberOfLines={1}>
-                  {originTitle}
-                </Text>
-                <Chevron size={9} thickness={2} color={color.stroke} dir="down" style={{ marginTop: -4 }} />
-              </View>
-              <Text
-                style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 18, color: color.muted }}
-                numberOfLines={1}
-              >
-                {originSub}
-              </Text>
-            </Pressable>
-            {/* 경계선 위에 얹어 두 행의 정확한 가운데에 오게 한다 — 카드 기준 50%로는 텍스트 높이 차이로 쏠린다 */}
-            <View style={{ justifyContent: 'center' }}>
-              <Hairline />
-              <Pressable
-                // 목적지가 비어 있으면 바꿀 게 없다
-                disabled={!state.destinationName}
-                onPress={() => {
-                  haptic();
-                  swapEndpoints();
-                }}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                style={({ pressed }) => ({
-                  position: 'absolute',
-                  // 경계선 끝에서 떨어뜨려, 카드 안쪽 여백 경계에 맞춘다
-                  right: -54,
-                  alignSelf: 'center',
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  backgroundColor: color.bg,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: !state.destinationName ? 0.35 : pressed ? 0.6 : 1,
-                })}
-              >
-                <SwapIcon size={22} tint={color.body} />
-              </Pressable>
-            </View>
-            <Pressable
-              onPress={() => {
-                haptic();
-                setContinueAfterPick(false);
-                setDestOpen(true);
-              }}
-              style={({ pressed }) => ({ gap: 3, opacity: pressed ? 0.7 : 1 })}
-            >
-              <Text style={[type.labelPlain, { color: color.muted }]}>최종 목적지</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text
-                  style={[
-                    type.title,
-                    { flex: 1, color: state.destinationName ? color.ink : color.placeholder },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {state.destinationName ?? '최종 목적지를 입력하세요'}
-                </Text>
-                <Chevron size={9} thickness={2} color={color.stroke} dir="down" style={{ marginTop: -4 }} />
-              </View>
+              <SwapIcon size={18} tint={color.body} />
             </Pressable>
           </View>
+          <EndpointRow
+            kind="destination"
+            label="최종 목적지"
+            title={state.destinationName ?? '최종 목적지를 입력하세요'}
+            empty={!state.destinationName}
+            onPress={() => {
+              haptic();
+              setContinueAfterPick(false);
+              setDestOpen(true);
+            }}
+          />
         </Card>
 
         {/* 계산 조건 — 이동수단 + 도착 목표 시각 */}
@@ -313,5 +283,78 @@ export function HomeScreen({ navigation }: Props) {
         }}
       />
     </View>
+  );
+}
+
+/** 출발·도착 한 행 — 왼쪽 표식(출발 링 / 도착 점) + 라벨·이름·부제 + 오른쪽 화살표 */
+function EndpointRow({
+  kind,
+  label,
+  title,
+  sub,
+  empty,
+  onPress,
+}: {
+  kind: 'origin' | 'destination';
+  label: string;
+  title: string;
+  sub?: string;
+  /** 아직 고르지 않음 — 이름을 자리표시 색으로 */
+  empty?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+        paddingVertical: 14,
+        paddingLeft: 18,
+        paddingRight: 16,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          backgroundColor: kind === 'origin' ? color.primaryTint : color.greenBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {kind === 'origin' ? (
+          <View style={{ width: 10, height: 10, borderRadius: 5, borderWidth: 2.5, borderColor: color.primary }} />
+        ) : (
+          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color.green }} />
+        )}
+      </View>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 11, lineHeight: 13, color: color.muted, letterSpacing: 0.2 }}>
+          {label}
+        </Text>
+        <Text
+          style={{
+            fontFamily: 'Pretendard-SemiBold',
+            fontSize: 17,
+            lineHeight: 22,
+            letterSpacing: -0.2,
+            color: empty ? color.placeholder : color.ink,
+          }}
+          numberOfLines={1}
+        >
+          {title}
+        </Text>
+        {sub ? (
+          <Text style={{ fontFamily: 'Pretendard-Regular', fontSize: 13, lineHeight: 17, color: color.muted }} numberOfLines={1}>
+            {sub}
+          </Text>
+        ) : null}
+      </View>
+      <Chevron size={8} thickness={1.8} color={color.stroke} dir="right" />
+    </Pressable>
   );
 }

@@ -131,7 +131,18 @@ export async function overDailyCap(kv: KVLike, bucket: string, now: Date): Promi
   const key = dayKey(bucket, now);
   const used = Number((await kv.get(key)) ?? 0) + 1;
   if (used > cap) return true;
-  await kvPut(kv, `guard:daily:${bucket}`, key, String(used), { expirationTtl: DAY_TTL_S }, 'required');
+  /* **쓰기가 죽어도 통과시킨다.** 2026-09-19 프로덕션에서 계정의 KV 하루 쓰기 한도를
+     다 쓰자 이 줄이 던졌고, index.ts 의 포괄 catch 가 그걸 503 으로 바꿔 **앱이 통째로
+     먹통이 됐다**. 던져서 얻는 게 없다 — 쓰기가 막힌 순간 카운터는 어차피 못 올라가므로
+     상한은 이미 작동을 멈춘 것이고, 던지는 선택은 '상한 없음'을 '서비스 없음'으로
+     바꿀 뿐이다.
+
+     **잃는 것을 분명히 해 둔다:** 이 시점부터 그날의 공급자 호출은 사실상 무제한이 된다.
+     이미 적힌 값은 계속 읽히므로 **이미 상한에 닿아 있었다면 그 판정은 살아 있고**,
+     잃는 건 '여기서부터 더 세는 것'이다. 진짜 고칠 자리는 여기가 아니라 **쓰기 총량**이다 —
+     계획 한 건이 /places 를 수백 번 부르고 그때마다 분당 카운터를 쓰면 무료 플랜의
+     1,000회가 계획 서너 건에 사라진다. */
+  await kvPut(kv, `guard:daily:${bucket}`, key, String(used), { expirationTtl: DAY_TTL_S }, 'best-effort');
   return false;
 }
 
@@ -167,7 +178,8 @@ export async function rateLimited(
       over = true;
       continue; // 상한에 닿은 카운터에는 더 쓰지 않는다 — 막느라 쓰는 쓰기가 예산을 태운다
     }
-    await kvPut(kv, site, key, String(hit), { expirationTtl: MIN_TTL_S }, 'required');
+    // 쓰기가 죽어도 막지 않는다 — 위 overDailyCap 과 같은 이유다(그 주석에 근거를 적었다)
+    await kvPut(kv, site, key, String(hit), { expirationTtl: MIN_TTL_S }, 'best-effort');
   }
   return over;
 }

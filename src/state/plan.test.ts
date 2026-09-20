@@ -9,6 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { ApplyLivePayload, PlanAction, PlanState, StopState } from './plan';
+import type { Candidate, Dataset } from '../data/mockData';
 
 (globalThis as Record<string, unknown>).__DEV__ = false;
 
@@ -580,4 +581,113 @@ test('없는 칩 id 면 상태를 바꾸지 않는다 — 같은 참조를 돌�
   const before = withMart();
 
   assert.equal(planReducer(before, { type: 'SET_CHIP_LOAD', chipId: 'nope', loadAfter: 'hard' }), before);
+});
+
+/* ── 확정 뒤 매장 교체 — 경유지 하나의 숫자는 경유지 하나의 재계산에서 온다 ─────────
+   기기(2026-09-20, 서교동→코엑스 대중교통): 타임라인에서 CU 를 바꾸자 그 가게 도착이
+   여행 전체 차이만큼 통째로 밀렸다. `applyCandidate` 가 전체 차이(addedMin)를
+   `replaceDeltaMin` 에 더하고 `computeChain` 이 그걸 **들어오는 구간 하나**에 붙였다 —
+   총합은 맞는데 그 경유지 도착과 다음 구간이 틀린다. 시트의 후보 도착도 같은 셈이었다.
+
+   나눔의 근거는 후보의 `arriveAt` 이다. 브리지가 후보마다 rescore 로 낸 그 경유지 도착이라,
+   현재 후보와의 차이가 곧 앞 구간의 몫이고 나머지는 뒷 구간이다. */
+
+/** 확정 직후 모양의 라이브 계획. s1 후보 k2 는 전체 +39분인데 s1 도착은 +7분만 움직인다 */
+const livePlan = (): ApplyLivePayload => {
+  const base = datasets.find(d => d.key === 'commute')!;
+  const cand = (over: Partial<Candidate>): Candidate => ({
+    ...base.candidates[base.stops[0].id][0], parking: '모름', openState: 'open', openNote: '영업 중', disabled: false, ...over,
+  });
+  const stops: StopState[] = [
+    { id: 's1', baseId: 's1', name: 'CU 홍대점', category: '편의점', coord: { latitude: 37.55, longitude: 126.92 },
+      dwellMin: 10, arriveAt: '10:12', legMin: 12, legKm: 3.1, openState: 'open', openNote: '체류 10분 · 영업 중', tasks: [],
+      replaceDeltaMin: 0, selectedCandidateId: 'k1' },
+    { id: 's2', baseId: 's2', name: '이마트', category: '마트', coord: { latitude: 37.56, longitude: 126.93 },
+      dwellMin: 20, arriveAt: '10:31', legMin: 9, legKm: 2.2, openState: 'open', openNote: '체류 20분 · 영업 중', tasks: [],
+      replaceDeltaMin: 0, selectedCandidateId: 'k3' },
+  ];
+  const dataset: Dataset = {
+    ...base,
+    key: 'live',
+    timingSource: 'provider_legs',
+    legEstimated: false,
+    stops: stops.map(({ baseId: _b, replaceDeltaMin: _r, selectedCandidateId: _s, ...rest }) => rest),
+    legs: {
+      'origin>s1': { min: 12, km: 3.1 }, 's1>s2': { min: 9, km: 2.2 }, 's2>dest': { min: 8, km: 2.0 },
+      'origin>s2': { min: 14, km: 3.6 }, 's1>dest': { min: 15, km: 4.0 }, 'origin>dest': { min: 20, km: 6.0 },
+    },
+    candidates: {
+      s1: [
+        cand({ id: 'k1', name: 'CU 홍대점', addedMin: 0, arriveAt: '10:12', cls: 'measured', recommended: true }),
+        cand({ id: 'k2', name: 'CU 삼성역점', addedMin: 39, arriveAt: '10:19', cls: 'estimated', recommended: false }),
+      ],
+      s2: [cand({ id: 'k3', name: '이마트', addedMin: 0, arriveAt: '10:31', dwellMin: 20, cls: 'measured', recommended: true })],
+    },
+  };
+  return { stops, dataset, departMin: 10 * 60, selectedOptionId: base.options[0].id };
+};
+
+const swapS1 = (to: string) => (s: PlanState) =>
+  run(s, [{ type: 'REPLACE_LOCAL', stopId: 's1', candidateId: to }, { type: 'RECALC' }]);
+
+test('확정 뒤 매장을 바꾸면 그 경유지 도착은 후보 간 도착 차이만큼만 움직인다 — 전체 차이가 아니다', () => {
+  const before = planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() });
+  assert.equal(before.stops[0].arriveAt, '10:12', '전제: 10:00 출발 + 12분');
+  assert.equal(before.destArriveAt, '10:59', '전제: 12+10+9+20+8');
+
+  const after = swapS1('k2')(before);
+  assert.equal(after.stops[0].arriveAt, '10:19', '앞 구간의 몫 +7 만 — 39 를 다 얹으면 10:51 이 된다');
+  assert.equal(after.stops[0].legMin, 19);
+  assert.equal(after.stops[1].arriveAt, '11:10', '나머지 +32 는 다음 구간에 — 10:19 + 체류 10 + (9+32)');
+  assert.equal(after.stops[1].legMin, 41);
+  assert.equal(after.destArriveAt, '11:38', '총합은 그대로 +39');
+  assert.equal(after.totals.deltaMin, before.totals.deltaMin + 39);
+});
+
+test('마지막 경유지를 바꾸면 나머지 차이는 목적지 구간에 붙는다', () => {
+  const p = livePlan();
+  p.dataset.candidates.s2.push({ ...p.dataset.candidates.s2[0], id: 'k4', name: '이마트 삼성점', addedMin: 20, arriveAt: '10:36', cls: 'estimated', recommended: false });
+  const before = planReducer(fresh(), { type: 'APPLY_LIVE', payload: p });
+  const after = run(before, [{ type: 'REPLACE_LOCAL', stopId: 's2', candidateId: 'k4' }, { type: 'RECALC' }]);
+  assert.equal(after.stops[1].arriveAt, '10:36', '앞 구간 +5');
+  assert.equal(after.finalLegMin, 8 + 15, '뒷 구간 +15');
+  assert.equal(after.destArriveAt, '11:19', '10:59 + 20');
+});
+
+test('교체를 되돌리면 나눔도 같이 0 으로 돌아온다 — 누적이 어긋나면 두 번째 교체부터 틀린다', () => {
+  const before = planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() });
+  const back = swapS1('k1')(swapS1('k2')(before));
+  assert.equal(back.stops[0].replaceDeltaMin, 0);
+  assert.equal(back.stops[0].replaceDeltaInMin, 0);
+  assert.equal(back.stops[0].arriveAt, '10:12');
+  assert.equal(back.destArriveAt, '10:59');
+});
+
+/* ── 확정 뒤 매장 교체 — 등급도 선택을 따라간다 ─────────────────────────────
+   `toLegacyPlan` 이 확정 시점에 `dataset.legEstimated` 를 한 번 세우고 끝이었다. A6 에서
+   추정 후보로 바꾸면 그 구간은 추정인데 값은 false 그대로라, 트래커·진행중·타임라인이
+   `timingCopy` 에 그 값을 넘겨 '약' 없이 실측인 척 말했다 — 1단계가 A5 에서 걷어낸
+   거짓말이 한 화면 뒤에 그대로 살아 있었다. 등급은 지금 고른 후보들의 `cls` 에서 낸다. */
+
+test('확정 뒤 추정 후보로 바꾸면 dataset.legEstimated 가 참이 된다 — 확정 시점 값이 눌러앉으면 안 된다', () => {
+  const before = planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() });
+  assert.equal(before.dataset.legEstimated, false, '전제: 시드끼리는 실측');
+
+  const swapped = planReducer(before, { type: 'REPLACE_LOCAL', stopId: 's1', candidateId: 'k2' });
+  assert.equal(swapped.dataset.legEstimated, true, 'RECALC 를 기다리지 않는다 — 배너가 그 사이 옛 등급을 말하면 안 된다');
+  assert.equal(planReducer(swapped, { type: 'RECALC' }).dataset.legEstimated, true);
+  assert.equal(swapped.dataset.timingSource, 'provider_legs', '출처는 그대로 — 낮추는 건 legEstimated 몫이다');
+});
+
+test('실측 후보로 되돌리면 legEstimated 도 거짓으로 돌아온다 — 한 번 추정이 영영 추정이면 안 된다', () => {
+  const before = planReducer(fresh(), { type: 'APPLY_LIVE', payload: livePlan() });
+  const back = swapS1('k1')(swapS1('k2')(before));
+  assert.equal(back.dataset.legEstimated, false);
+  assert.equal(planReducer(back, { type: 'RECALC' }).dataset, back.dataset, '등급이 안 바뀌면 참조도 그대로 — 화면 memo 가 헛돌지 않게');
+});
+
+test('cls 가 없는 목 데이터셋 후보는 등급을 못 낮춘다 — 계획 등급이 정한다', () => {
+  const s = run(fresh(), [{ type: 'REPLACE_LOCAL', stopId: 's2', candidateId: 'k3' }, { type: 'RECALC' }]);
+  assert.equal(s.stops[1].selectedCandidateId, 'k3', '전제: 교체가 됐다');
+  assert.equal(s.dataset.legEstimated ?? false, false);
 });

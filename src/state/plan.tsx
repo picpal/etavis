@@ -75,8 +75,19 @@ export type StopState = Stop & {
   baseId: string;
   /** 이 경유지에서 남긴 혼잡도 제보. 실제로 도착해 체류 중일 때만 기록된다 */
   congestion?: CongestionKey;
-  /** 후보 교체 누적 추가시간(분). 추천 후보 대비 */
+  /** 후보 교체 누적 추가시간(분) — **여행 전체** 기준. 추천 후보 대비 */
   replaceDeltaMin: number;
+  /**
+   * `replaceDeltaMin` 중 **들어오는 구간**에 붙는 몫(분). 나머지(나가는 구간)는 뺄셈으로 낸다 —
+   * 둘을 따로 들면 합이 어긋난다. 없으면 0 이다: 확정 시점(`toLegacyPlan`)은 교체가 없어
+   * 안 쓴다.
+   *
+   * 전체 차이를 들어오는 구간 하나에 다 얹으면 그 경유지 도착 시각이 통째로 밀린다 —
+   * 기기에서 +39분짜리 후보를 고르자 그 가게 도착이 39분 늦어졌다(2026-09-20). 실제로는
+   * 앞 구간 몇 분·뒷 구간 몇 분으로 갈리고, 그 나눔은 브리지가 후보마다 다시 잰
+   * `Candidate.arriveAt` 이 안다(`candidateArriveDelta`)
+   */
+  replaceDeltaInMin?: number;
   selectedCandidateId?: string;
 };
 
@@ -162,6 +173,40 @@ const legBetween = (a: string, b: string, ds?: Dataset) => {
   return table[`${a}>${b}`] ?? table[`${b}>${a}`] ?? { min: 10, km: 5.0 };
 };
 
+/** 'HH:mm' 두 값의 차이(분). 자정을 넘긴 도착도 −720~720 안으로 접는다 */
+const hhmmDiff = (a: string, b: string) => ((toMin(a) - toMin(b) + 720) % 1440 + 1440) % 1440 - 720;
+
+/**
+ * 스톱이 지금 가리키는 후보. 고른 게 없으면 추천, 그것도 없으면 첫 후보 —
+ * `applyCandidate`·`legEstimatedOf`·A6 시트가 같은 규칙으로 '현재'를 정해야 한다
+ */
+export const selectedCandidate = (stop: Pick<StopState, 'selectedCandidateId'>, cands: Candidate[]) =>
+  cands.find(c => c.id === stop.selectedCandidateId) ?? cands.find(c => c.recommended) ?? cands[0];
+
+/**
+ * 후보를 고르면 **그 경유지 도착**이 몇 분 움직이나 — 여행 전체 차이(`addedMin`)가 아니다.
+ * 브리지가 후보마다 rescore 해 낸 `arriveAt` 의 차이라, 경유지 하나의 숫자는 경유지 하나의
+ * 재계산에서 온다. 전체 차이를 여기 더하면 출발보다 이른 도착이 나온다(2026-09-20 기기).
+ */
+export const candidateArriveDelta = (cand: Candidate, current: Candidate | undefined) =>
+  current ? hhmmDiff(cand.arriveAt, current.arriveAt) : 0;
+
+/**
+ * 지금 고른 후보 중 추정 구간이 있나 — `dataset.legEstimated` 의 유일한 출처(확정 뒤).
+ * 확정 시점의 값은 브리지가 세우지만, A6 에서 매장을 바꾸면 그 값은 옛 선택의 것이다 —
+ * 추정으로 떨어진 계획이 트래커·진행중·타임라인에서 계속 실측인 척했다(1단계가 A5 에서
+ * 걷어낸 그 거짓말). 그래서 선택이 바뀌는 자리마다 여기서 다시 낸다.
+ * `cls` 가 없는 후보(목 데이터셋)는 계획 등급이 정하므로 셈에 안 넣는다.
+ */
+const legEstimatedOf = (stops: StopState[], ds: Dataset) =>
+  stops.some(s => selectedCandidate(s, ds.candidates[s.baseId] ?? [])?.cls === 'estimated');
+
+/** `legEstimated` 를 지금 선택에 맞춘다. 값이 같으면 같은 참조 — 화면 memo 를 헛돌리지 않게 */
+const syncLegEstimated = (ds: Dataset, stops: StopState[]): Dataset => {
+  const next = legEstimatedOf(stops, ds);
+  return (ds.legEstimated ?? false) === next ? ds : { ...ds, legEstimated: next };
+};
+
 
 /** 이동수단 라벨은 여기 하나뿐이다 — A1 세그먼트·A2 헤더·시트가 같은 말을 써야 한다 */
 export const MODE_KEYS = ['car', 'walk', 'transit'] as const;
@@ -193,13 +238,18 @@ function deriveFromDataset(ds: Dataset, departMin: number) {
  * 타임라인(체인 재계산)이 서로 다른 시각을 말했다.
  *
  * 화면에 내보내는 `legMin`·`totalMin`만 정수로 깎는다.
+ *
+ * **교체 차이는 두 구간에 나눠 붙는다.** 들어오는 구간에 `replaceDeltaInMin`, 나가는
+ * 구간(다음 스톱의 앞 구간 또는 목적지 구간)에 나머지. 전부 앞 구간에 얹던 시절엔 총합만
+ * 맞고 그 경유지 도착과 다음 구간이 틀렸다(2026-09-20).
  */
 function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
+  const outDelta = (s: StopState | undefined) => (s ? s.replaceDeltaMin - (s.replaceDeltaInMin ?? 0) : 0);
   let clock = departMin;
   const out = stops.map((s, i) => {
-    const prevKey = i === 0 ? 'origin' : stops[i - 1].baseId;
-    const base = legBetween(prevKey, s.baseId, ds);
-    const legMin = base.min + s.replaceDeltaMin;
+    const prev = i === 0 ? undefined : stops[i - 1];
+    const base = legBetween(prev?.baseId ?? 'origin', s.baseId, ds);
+    const legMin = base.min + (s.replaceDeltaInMin ?? 0) + outDelta(prev);
     // base.min이 0이면 비율을 낼 수 없다 — 나눠 버리면 legKm이 NaN이 되어 화면에 "NaNkm"이 뜬다
     const legKm = round1(base.min > 0 ? base.km * (legMin / base.min) : base.km);
     clock += legMin; // 정밀 누적
@@ -207,14 +257,17 @@ function computeChain(stops: StopState[], ds: Dataset, departMin: number) {
     clock += s.dwellMin;
     return { ...s, legMin: Math.round(legMin), legKm, arriveAt };
   });
-  const lastKey = stops.length ? stops[stops.length - 1].baseId : 'origin';
-  const fin = legBetween(lastKey, 'dest', ds);
-  clock += fin.min;
+  const last = stops[stops.length - 1];
+  const fin = legBetween(last?.baseId ?? 'origin', 'dest', ds);
+  const finMin = fin.min + outDelta(last);
+  clock += finMin;
   const totalMin = clock - departMin;
   return {
     stops: out,
-    finalLegMin: Math.round(fin.min),
-    finalLegKm: fin.km,
+    // 선택이 바뀐 뒤의 체인은 여기서만 나온다 — 등급도 같은 자리에서 따라간다
+    dataset: syncLegEstimated(ds, stops),
+    finalLegMin: Math.round(finMin),
+    finalLegKm: round1(fin.min > 0 ? fin.km * (finMin / fin.min) : fin.km),
     destArriveAt: toHHMM(clock),
     totals: {
       totalMin: Math.round(totalMin),
@@ -253,7 +306,7 @@ function initState(ds: Dataset, seed = false): PlanState {
   return {
     departMin,
     chips: seedChips,
-    dataset: ds,
+    // dataset 은 deriveFromDataset(computeChain) 이 등급을 맞춰 넘긴다
     mode: ds.mode,
     arriveByMin: null, // 마감은 선택 — 기본은 '상관없어요'
     destinationName: null,
@@ -336,9 +389,7 @@ function stopsForOption(ds: Dataset, option: RouteOption): StopState[] {
 }
 
 function applyCandidate(stop: StopState, cand: Candidate, cands: Candidate[]): StopState {
-  const current = cands.find(c => c.id === stop.selectedCandidateId)
-    ?? cands.find(c => c.recommended)
-    ?? cands[0];
+  const current = selectedCandidate(stop, cands);
   const openLabel = cand.openNote.split(' · ')[0];
   return {
     ...stop,
@@ -348,7 +399,9 @@ function applyCandidate(stop: StopState, cand: Candidate, cands: Candidate[]): S
     openState: cand.openState,
     openNote: `체류 ${cand.dwellMin}분 · ${openLabel}`,
     selectedCandidateId: cand.id,
+    // 전체 차이는 총합에, 그중 이 경유지 도착이 움직이는 몫만 앞 구간에. 나머지는 computeChain 이 뒷 구간에 붙인다
     replaceDeltaMin: stop.replaceDeltaMin + (cand.addedMin - (current?.addedMin ?? 0)),
+    replaceDeltaInMin: (stop.replaceDeltaInMin ?? 0) + candidateArriveDelta(cand, current),
   };
 }
 
@@ -540,7 +593,7 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
       const { stops, dataset, departMin, selectedOptionId } = action.payload;
       return {
         ...state,
-        dataset,
+        // dataset 은 아래 computeChain 이 넘긴다 — 등급(legEstimated)을 지금 선택에 맞춰서
         options: dataset.options,
         selectedOptionId,
         optionOverrides: {},
@@ -620,7 +673,9 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
         const cand = cands.find(c => c.id === action.candidateId);
         return cand ? applyCandidate(s, cand, cands) : s;
       });
-      return { ...state, stops, recalcPending: true };
+      // 체인은 RECALC 가 600ms 뒤에 돌지만, 등급은 그 사이에도 새 선택 것이어야 한다 —
+      // 배너가 잠깐이라도 옛 등급을 말하면 안 된다
+      return { ...state, stops, dataset: syncLegEstimated(state.dataset, stops), recalcPending: true };
     }
     case 'RECALC': {
       const next = computeChain(state.stops, state.dataset, state.departMin);

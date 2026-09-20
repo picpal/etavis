@@ -11,7 +11,7 @@ import {
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import * as Haptics from 'expo-haptics';
 import { color, radius, shadow, type } from '../theme/tokens';
-import { StopState, toHHMM, toMin, usePlan } from '../state/plan';
+import { candidateArriveDelta, selectedCandidate, StopState, toHHMM, toMin, usePlan } from '../state/plan';
 import { Card, haptic, MicroLabelRow, PrimaryButton, SmallChip } from '../components/common';
 import { DashedLineV, TrashIcon } from '../components/primitives';
 import { StateBadge, TimelineRow } from '../components/TimelineRow';
@@ -22,11 +22,13 @@ import { CandidateSheet } from '../sheets/CandidateSheet';
 import { TaskSheet } from '../sheets/TaskSheet';
 import { timingCopy } from '../lib/timingCopy';
 import type { RootStackParamList } from '../../App';
+import type { Candidate } from '../data/mockData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Timeline'>;
 
 /** 가이드는 앱 실행당 한 번만 보여준다 */
 let guideSeen = false;
+const NO_CANDIDATES: Candidate[] = [];
 
 export function TimelineScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
@@ -36,22 +38,21 @@ export function TimelineScreen({ navigation, route }: Props) {
   const [candidateStopId, setCandidateStopId] = useState<string | null>(null);
 
   const candidateStop = state.stops.find(s => s.id === candidateStopId);
-  const candidateCands = candidateStop ? state.dataset.candidates[candidateStop.baseId] ?? [] : [];
-  const candidateCurrentId =
-    candidateStop?.selectedCandidateId ??
-    (candidateCands.find(c => c.recommended) ?? candidateCands[0])?.id;
-  const currentCand = candidateStop
-    ? (state.dataset.candidates[candidateStop.baseId] ?? []).find(c => c.id === candidateCurrentId)
-    : undefined;
+  // `?? []` 를 매 렌더 새로 만들면 아래 useMemo 가 매번 헛돈다 — 빈 목록은 하나로
+  const candidateCands = (candidateStop && state.dataset.candidates[candidateStop.baseId]) || NO_CANDIDATES;
+  const currentCand = candidateStop ? selectedCandidate(candidateStop, candidateCands) : undefined;
+  const candidateCurrentId = currentCand?.id;
   // 매 렌더 새 배열을 만들지 않는다 — CandidateSheet 안의 sorted useMemo가 실제로 캐시되게
   const candidateSheetCands = useMemo(
     () =>
-      (candidateStop ? state.dataset.candidates[candidateStop.baseId] ?? [] : []).map(c => ({
+      candidateCands.map(c => ({
         ...c,
-        // 목 데이터의 아침 시각 대신 지금 경로의 도착시각 + 후보 간 차이
-        arriveAt: candidateStop ? toHHMM(toMin(candidateStop.arriveAt) + (c.addedMin - (currentCand?.addedMin ?? 0))) : c.arriveAt,
+        // 후보의 arriveAt 은 계산 시계(확정 전 출발 시각) 위의 값이라 그대로는 못 쓴다 —
+        // 지금 경로의 이 경유지 도착에 **이 경유지 도착이 움직이는 몫**만 더한다.
+        // 여행 전체 차이(addedMin)를 더하던 자리다: 그러면 39분 늦은 도착이 떴다(2026-09-20)
+        arriveAt: candidateStop ? toHHMM(toMin(candidateStop.arriveAt) + candidateArriveDelta(c, currentCand)) : c.arriveAt,
       })),
-    [candidateStop, state.dataset, candidateCurrentId],
+    [candidateStop, candidateCands, currentCand],
   );
 
   // 최초 진입 가이드 — 앱 실행당 한 번만 (목: 영구 저장은 생략)

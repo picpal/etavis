@@ -233,6 +233,20 @@ export type PlanResult = {
    * 브리지와 플래너의 대안 목록이 이 하나를 쓴다. 호출부에 합계 둘을 주지 않는 것이 관문이다
    */
   alternativeAt: (base: Visit[], idx: number, candidate: PlaceCandidate) => Alternative;
+  /**
+   * `visits[idx]` 로 들어오고 나가는 **두 구간만** 공급자에 물어 leg 저장소에 넣는다.
+   * 성공하면 다음 `rescoreFrom`·`rescore` 부터 그 구간이 `measured` 로 올라가 '약'이 지워진다 —
+   * 값을 돌려주지 않는 건 화면이 이미 그 둘로 숫자를 만들기 때문이다(합계를 두 개 쥐여 주지 않는다).
+   *
+   * 왜 "고르면 계획을 다시 계산"이 아니라 이 모양인가: 다시 계산은 `/transit` 10 + `/places` 10~20 +
+   * 12초인데다 **고른 후보를 재 준다는 보장이 없다**(시드는 estC 로 뽑힌다). 바뀌는 구간은 정확히
+   * 둘이므로 2회면 진실을 산다. 예산은 계획당 `TRANSIT_SWAP_BUDGET` 누적이고, 넘으면 아무것도
+   * 부르지 않고 `false` — 못 고르는 게 아니라 '약'이 붙은 채로 남는다.
+   *
+   * 이미 잰 구간(시드였던 구간)은 묻지 않는다. 그래서 `false` 는 "예산을 넘었거나 공급자가 실패했다"고만
+   * 읽는다. 던지지 않는다 — 실패가 매장 고르기를 막을 이유가 없다.
+   */
+  measureSwap: (visits: Visit[], idx: number) => Promise<boolean>;
   /** 선택된 후보 전부 × 출발·도착의 leg 표. 키 'O>c1' · 'c1>D'. 확정 변환이 쓴다 */
   legTable: Record<string, { min: number; km: number; measured: boolean }>;
   /** 성공한 라우팅 호출 수(직행 포함). "실측 6회" */

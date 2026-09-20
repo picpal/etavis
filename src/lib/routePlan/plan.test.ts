@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mockRouteProvider } from './mockProvider';
 import { plan } from './plan';
-import { TRANSIT_CALL_BUDGET, transitCallCost, transitSeedFloor } from './transitBudget';
+import { TRANSIT_CALL_BUDGET, TRANSIT_SWAP_BUDGET, transitCallCost, transitSeedFloor } from './transitBudget';
 import type { PlaceCandidate, PlanInput, Slot } from './types';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -344,4 +344,119 @@ test('alternativeAt — 우회는 회랑 수직거리다 — 추정 km 에서 �
   assert.equal(alt.addedMin.cls, 'estimated');
   assert.equal(alt.arriveMin.cls, 'estimated');
   assert.ok(alt.arriveMin.min >= 1343);
+});
+
+// --- 신뢰성 6단계: 고른 매장 하나만 실제로 재서 '약'을 지운다(measureSwap) ---
+
+/** 구간 호출을 세는 공급자 — 2점짜리 호출 하나가 구간 하나다 */
+function legWatch(inner = mockRouteProvider()) {
+  const self = {
+    legCalls: 0,
+    pointCounts: [] as number[],
+    async route(points: { latitude: number; longitude: number }[], departAtMin: number, mode: 'car' | 'walk' | 'transit') {
+      self.legCalls += points.length - 1;
+      self.pointCounts.push(points.length);
+      return inner.route(points, departAtMin, mode);
+    },
+  };
+  return self;
+}
+const transitPlanWith = (cands: PlaceCandidate[], p: { route: ReturnType<typeof mockRouteProvider>['route'] }) => plan(
+  { origin: tO, destination: tD, departAtMin: 1343, mode: 'transit', slots: [slot('a', cands)], order: 'auto' },
+  p,
+);
+
+test('measureSwap — 고른 후보의 두 구간만 /transit 2회로 재고 시드였던 구간은 다시 묻지 않는다', async () => {
+  const p = legWatch();
+  const r = await transitPlanWith([tc1, tc3, tc5, tc7, ghost], p);
+  const seeded = p.legCalls;
+  const budgeted = r.apiCalls;
+
+  assert.equal(await r.measureSwap([visit(ghost)], 0), true);
+  assert.equal(p.legCalls - seeded, 2, '들어오는 구간·나가는 구간 둘뿐이다 — 계획을 다시 계산하지 않는다');
+  assert.deepEqual(p.pointCounts.slice(-2), [2, 2], '구간 하나씩 물어야 공급자가 다시 쪼갤 일이 없다');
+  assert.equal(r.apiCalls, budgeted + 2, 'apiCalls 는 실제 나간 수다 — 계획이 끝난 뒤의 호출도 센다');
+
+  // tc3 은 시드라 두 구간이 이미 저장소에 있다. 같은 시각으로 찾히면 한 번도 안 나간다
+  const afterSwap = p.legCalls;
+  assert.equal(await r.measureSwap([visit(tc3)], 0), true);
+  assert.equal(p.legCalls, afterSwap, '시드였던 구간을 다시 물으면 돈만 나가고 얻는 게 없다');
+  assert.equal(r.apiCalls, budgeted + 2);
+});
+
+test('measureSwap — 계획당 TRANSIT_SWAP_BUDGET 을 넘는 고르기는 추정으로 남고 apiCalls 는 실제 나간 수다', async () => {
+  const g2 = c('ghost2', at(37.5027, 127.034));
+  const g3 = c('ghost3', at(37.5027, 127.0567));
+  const p = legWatch();
+  const r = await transitPlanWith([tc1, tc3, tc5, tc7, ghost, g2, g3], p);
+  const budgeted = r.apiCalls;
+
+  assert.equal(await r.measureSwap([visit(ghost)], 0), true, '고르기 1회 = 구간 2개');
+  assert.equal(await r.measureSwap([visit(g2)], 0), true, '고르기 2회까지가 예산 4다');
+  const spent = p.legCalls;
+  assert.equal(await r.measureSwap([visit(g3)], 0), false, '세 번째는 예산 밖이다');
+  assert.equal(p.legCalls, spent, '예산을 넘으면 반쪽도 안 부른다 — 반만 재면 돈은 쓰고 약은 남는다');
+  assert.equal(r.apiCalls, budgeted + TRANSIT_SWAP_BUDGET, '장부는 나간 4회까지만 말한다');
+  assert.equal(r.rescoreFrom([visit(tc1)], [visit(g3)]).estimated, true, '못 잰 후보는 추정으로 남는다');
+});
+
+test('measureSwap — 재고 나면 같은 후보의 rescoreFrom 이 measured 로 올라간다', async () => {
+  // 들어오는 구간만 추정이 크게 틀리는 동네여야 이 테스트가 무언가를 가른다. LegStore 의 창은
+  // 15분이라(legs.ts PROVISIONAL_MIN), 실측과 추정이 그 안에서만 벌어지면 나가는 구간을 **어느**
+  // 시계에 넣든 조회가 성공한다 — 구현이 틀려도 초록인 테스트가 된다. 그래서 O→ghost 만 가로지르는
+  // 장벽을 두고 20km 를 얹는다: 실측 ≈ 64분 대 추정 ≈ 4분, 창의 네 배다
+  const barrier = { a: at(37.5015, 127.005), b: at(37.5015, 127.018), penaltyKm: 20 };
+  const p = legWatch(mockRouteProvider({ barrier }));
+  const r = await transitPlanWith([tc1, tc3, tc5, tc7, ghost], p);
+  const from = [visit(tc1)];
+  const to = [visit(ghost)];
+  assert.deepEqual(r.rescoreFrom(from, to).legCls, ['estimated', 'estimated'], '전제 — 시드 밖이라 두 구간 다 추정');
+  // 틀린 구현이 나가는 구간을 넣을 시계 = scorePlan 의 추정 도착. 맞는 구현은 실측 도착에 넣는다
+  const estArrive = r.rescore(to).arrivals[0];
+
+  assert.equal(await r.measureSwap(to, 0), true);
+
+  const f = r.rescoreFrom(from, to);
+  assert.ok(f.arrivals[0] - estArrive > 15, `전제 — 들어오는 구간의 실측이 추정보다 창(15분) 넘게 늦어야 시계 오류가 드러난다: ${(f.arrivals[0] - estArrive).toFixed(1)}분`);
+  // 나가는 구간을 들어오는 구간의 **실측값으로 고친 시계**에 넣지 않으면 그 차이만큼 어긋나
+  // LegStore 가 못 찾는다 — 호출만 나가고 '약'이 그대로 남는 자리다
+  assert.deepEqual(f.legCls, ['measured', 'measured'], '잰 시각과 조회하는 시각이 같아야 실측으로 선다');
+  assert.equal(f.estimated, false);
+  assert.equal(f.delta.totalMin.cls, 'measured', '두 구간이 다 실측이면 차이도 실측이다');
+  assert.equal(r.alternativeAt(from, 0, ghost).arriveMin.cls, 'measured');
+  assert.ok(f.arrivals[0] >= 1343);
+});
+
+test('measureSwap — 자동차·도보도 같은 천장을 쓴다. 구간 하나는 어느 모드에서나 2점짜리 호출 하나다', async () => {
+  // 대중교통 판과 같은 이유로 장벽을 둔다 — 없으면 legCls 단언이 시계를 안 가른다(창 15분).
+  // 이 선은 O→outsider 만 가로지른다: 시드(on·near·far)도 outsider→D 도 안 닿는다
+  const barrier = { a: at(37.504, 127.005), b: at(37.504, 127.03), penaltyKm: 20 };
+  const p = legWatch(mockRouteProvider({ barrier }));
+  const r = await plan(base([slot('a', [on, near, far])]), p);
+  const seeded = p.legCalls;
+  const outsider = c('outsider', at(37.508, 127.052));
+  const swapped = [{ slotId: 'a', candidate: outsider, dwellMin: 10 }];
+  const estArrive = r.rescore(swapped).arrivals[0];
+  assert.equal(await r.measureSwap(swapped, 0), true);
+  assert.equal(p.legCalls - seeded, 2);
+  const f = r.rescoreFrom([visit(on)], swapped);
+  assert.ok(f.arrivals[0] - estArrive > 15, `전제 — 실측이 추정보다 창(15분) 넘게 늦어야 한다: ${(f.arrivals[0] - estArrive).toFixed(1)}분`);
+  assert.deepEqual(f.legCls, ['measured', 'measured']);
+});
+
+test('measureSwap — 구간 하나가 실패하면 false 고, 나간 요청은 장부에 남는다', async () => {
+  const inner = mockRouteProvider();
+  let n = 0;
+  const flaky = {
+    route: (pts: typeof O[], t: number, m: 'car' | 'walk' | 'transit') => {
+      n++;
+      return n === 6 ? Promise.reject(new Error('timeout')) : inner.route(pts, t, m);
+    },
+  };
+  const r = await transitPlanWith([tc1, tc3, tc5, tc7, ghost], flaky);
+  assert.equal(n, 5, '전제 — 직행 1 + 시드 4안. 목은 구간을 안 쪼개니 route() 는 5번이다');
+  assert.equal(r.apiCalls, 9, '전제 — 장부는 구간 단위라 1 + 4×2 = 9');
+  assert.equal(await r.measureSwap([visit(ghost)], 0), false, '삼키되 거짓말하지 않는다');
+  assert.equal(r.apiCalls, 11, '나간 요청은 둘 다 셈한다 — 실패했다고 장부에서 지우지 않는다');
+  assert.equal(r.measuredCount, 6, '성공한 호출만 실측으로 센다 — 직행 1 + 시드 4 + 성공한 구간 1');
 });

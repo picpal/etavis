@@ -13,7 +13,7 @@ import { enumeratePlans, totalVisits } from './enumerate';
 import { DEST_ID, LegStore, learnLegs, ORIGIN_ID } from './legs';
 import { allClosedAtArrival, comfortMin, estimateLegKm, scorePlan, type ScoreContext, type Scored } from './score';
 import { pickOptions, pickSeeds, planKey, round2Plan, type Ranked } from './select';
-import { TRANSIT_SEED_BUDGET, transitCallCost } from './transitBudget';
+import { TRANSIT_SEED_BUDGET, TRANSIT_SWAP_BUDGET, transitCallCost } from './transitBudget';
 import type { Alternative, LatLng, PlaceCandidate, PlanInput, PlanOption, PlanResult, Rescored, RescoredFrom, RouteProvider, RouteResult, SlotStatus, TimeClass, Timed, Visit } from './types';
 
 const DEFAULT_R = 4;
@@ -52,6 +52,8 @@ export async function plan(
   };
   /** 경유 조합이 더 쓸 수 있는 공급자 호출 수. 직행 몫은 이미 빠져 있다 */
   let callBudget = transit ? TRANSIT_SEED_BUDGET : Infinity;
+  /** 고른 매장을 다시 재는 몫. 계획 하나에서 누적으로 깎인다 — measureSwap 호출마다 초기화하지 않는다 */
+  let swapBudget = TRANSIT_SWAP_BUDGET;
   let apiCalls = 0;
   let measuredCount = 0; // 성공한 라우팅 호출 수(직행 포함) — call() 성공 시마다 +1
   const call = async (visits: Visit[], cost = callCost(visits)) => {
@@ -303,6 +305,61 @@ export async function plan(
     };
   };
 
+  /**
+   * 고른 후보의 두 구간만 실측해 `legs` 에 넣는다. 성공하면 다음 `rescoreFrom` 부터 그 두 구간이
+   * `measured` 로 올라가고 화면의 '약'이 지워진다 — 이 함수는 값을 돌려주지 않고 저장소만 채운다.
+   *
+   * **가장 틀리기 쉬운 자리는 출발 시각이다.** `LegStore` 는 (from, to, mode, 출발시각)으로 찾고
+   * 15분을 넘게 어긋나면 못 찾은 것으로 친다. `rescoreFrom` 은 안 바뀐 구간을 굴려 얻은 시계로
+   * 바뀐 구간을 조회하므로, 여기서 다른 시각에 넣으면 **호출만 나가고 '약'은 그대로 남는다**.
+   * 그래서 들어오는 구간은 `scorePlan` 이 낸 앞 구간 시계(= rescoreFrom 의 시계와 같은 값)로,
+   * 나가는 구간은 **들어오는 구간의 실측값으로 고친 시계**로 넣는다. 나가는 구간을 보낼 때의
+   * 조회 시각은 아직 추정이지만(두 구간을 한 파도에 보내므로), 저장 시각은 응답이 다 온 뒤에 정한다.
+   *
+   * 실패는 삼킨다 — 값이 추정으로 남을 뿐이고, 매장을 고르는 동작 자체를 막을 이유가 없다.
+   */
+  const measureSwap = async (visits: Visit[], idx: number): Promise<boolean> => {
+    if (!visits[idx]) throw new Error(`measureSwap: idx ${idx} 가 안 밖이다`);
+    const mctx = ctxFor(visits);
+    const s = scorePlan(visits, mctx);
+    const ids = [ORIGIN_ID, ...visits.map(v => v.candidate.id), DEST_ID];
+    const coords = [input.origin, ...visits.map(v => v.candidate.coord), input.destination];
+    // 바뀌는 구간은 정확히 둘이다 — 들어오는 idx, 나가는 idx+1. idx ≤ 방문 수-1 이라 둘 다 늘 있다
+    const inClock = idx === 0 ? input.departAtMin : s.arrivals[idx - 1] + visits[idx - 1].dwellMin;
+    const targets = [
+      { k: idx, clock: inClock },
+      { k: idx + 1, clock: s.arrivals[idx] + visits[idx].dwellMin },
+    ];
+    // 시드였던 구간은 이미 저장소에 있다 — 같은 시각으로 찾히면 묻지 않는다(설계 §5 의 "시드였으면 0")
+    const todo = targets.filter(t => !legs.lookup(ids[t.k], ids[t.k + 1], input.mode, t.clock));
+    if (todo.length === 0) return true;
+    // 예산은 계획당 누적이다. 모자라면 **한 구간도 안 부른다** — 반쪽만 재면 돈은 쓰고 '약'은 남는다
+    if (todo.length > swapBudget) return false;
+    swapBudget -= todo.length;
+    apiCalls += todo.length; // 실제로 나간 요청 수. 구간 하나 = 2점짜리 호출 하나(모드 무관)
+    const done = new Map<number, RouteResult>();
+    await Promise.all(todo.map(async t => {
+      try {
+        const route = await provider.route([coords[t.k], coords[t.k + 1]], t.clock, input.mode);
+        measuredCount++;
+        done.set(t.k, route);
+      } catch {
+        // 삼킨다 — 이 구간은 추정으로 남는다
+      }
+    }));
+    const inRoute = done.get(idx);
+    if (inRoute) learnLegs(legs, [ids[idx], ids[idx + 1]], inRoute, inClock, [], input.mode);
+    // 들어오는 구간을 못 쟀으면 그 구간은 추정으로 남고, rescoreFrom 도 추정 위에서 시계를 굴린다.
+    // 그때의 추정기는 여기와 미세하게 다르지만(같은-자 차이) 어차피 이 반환은 false 다
+    const inMin = inRoute ? (inRoute.sections[0]?.durationMin ?? inRoute.durationMin) : s.legsMin[idx];
+    const outRoute = done.get(idx + 1);
+    if (outRoute) {
+      const outClock = inClock + inMin + visits[idx].dwellMin;
+      learnLegs(legs, [ids[idx + 1], ids[idx + 2]], outRoute, outClock, [], input.mode);
+    }
+    return todo.every(t => done.has(t.k));
+  };
+
   // 대안 — 1안에서 슬롯 하나만 바꿔 관문으로 잰다
   const alternatives: Alternative[] = [];
   if (best) {
@@ -348,5 +405,12 @@ export async function plan(
     direct.source !== 'provider' ? 'estimate'
       : seedEstimated ? 'provider_direct_only'
         : seedLegJoined ? 'provider_legs' : 'provider';
-  return { directMin, directKm, options, comfortIdx, alternatives, slotStatus, apiCalls, rescore, rescoreFrom, alternativeAt, legTable, measuredCount, timingSource };
+  // apiCalls·measuredCount 는 **게터**다. measureSwap 이 plan() 이 끝난 뒤에도 호출을 더하므로,
+  // 여기서 숫자를 베껴 두면 로그가 "9회"에 얼어붙어 사용량을 축소해서 말하게 된다
+  return {
+    directMin, directKm, options, comfortIdx, alternatives, slotStatus,
+    get apiCalls() { return apiCalls; },
+    get measuredCount() { return measuredCount; },
+    rescore, rescoreFrom, alternativeAt, measureSwap, legTable, timingSource,
+  };
 }

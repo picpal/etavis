@@ -6,6 +6,7 @@ import type { PlaceCandidate, Slot } from '../lib/routePlan/types';
 import { effectiveVisits, optionTitle, slotCandidates, toLegacyPlan } from './planFlowBridge';
 import { initialPlanFlow, planFlowReducer, type PlanFlowState, type PlanRequest } from './planFlow';
 import { toMin } from '../lib/clock';
+import { isSelectable } from '../lib/candidateRank';
 
 const O = { latitude: 37.5, longitude: 127.0 };
 const D = { latitude: 37.5, longitude: 127.1136 };
@@ -453,4 +454,35 @@ test('경로에서 Nm 는 회랑 수직거리다 — 추정 km 에서 실측 km 
   const g0 = list.find(x => x.id === 'g0')!;
   assert.match(g0.note, /경로에서 (29\d|30\d)m/, g0.note);
   assert.ok(g0.detourKm >= 0.3 && g0.detourKm <= 0.31, `${g0.detourKm}`);
+});
+
+// ── 영업 상태 ────────────────────────────────────────────────────────────────
+
+test('영업시간을 못 받은 후보는 영업 중이 아니라 모름이다 — 안 받은 것과 열려 있는 것은 다른 말이다', async () => {
+  // 카카오가 영업시간을 안 주는 곳이 많다(편의점이 특히). 그걸 'open' 으로 뭉치면
+  // 화면이 "영업 중"이라고 단언하게 된다 — 시간 값에 '약'을 붙이는 것과 같은 자리다
+  const s = await ready();
+  const { visits } = effectiveVisits(s.result!, slots, 0, {});
+  const list = slotCandidates(s.result!, slots, visits, 0);
+  const noHours = list.find(x => x.id === 'oy2')!; // 픽스처에서 hours 가 없다
+  assert.equal(noHours.openState, 'unknown');
+  assert.equal(noHours.openNote, '영업 시간 모름');
+});
+
+test('영업시간을 모르는 곳도 고를 수 있다 — 모른다고 막으면 마감한 곳과 같은 취급이 된다', async () => {
+  const s = await ready();
+  const { visits } = effectiveVisits(s.result!, slots, 0, {});
+  const list = slotCandidates(s.result!, slots, visits, 0);
+  const noHours = list.find(x => x.id === 'oy2')!;
+  assert.notEqual(noHours.disabled, true);
+  assert.ok(isSelectable(noHours), '목록에서 빠지면 안 된다');
+});
+
+test('영업시간을 받은 곳은 모름으로 떨어지지 않는다 — unknown 이 모든 걸 삼키면 상태가 무의미하다', async () => {
+  const s = await ready();
+  const { visits } = effectiveVisits(s.result!, slots, 0, {});
+  const list = slotCandidates(s.result!, slots, visits, 0);
+  const withHours = list.find(x => x.id === 'oy3')!; // hours 10:00~22:00
+  assert.notEqual(withHours.openState, 'unknown');
+  assert.notEqual(withHours.openNote, '영업 시간 모름');
 });

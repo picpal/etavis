@@ -65,6 +65,19 @@ test('반경은 인자로 열려 있고 기본값은 제품 문장인 250m 다',
   assert.equal(clusterCandidates([cand('a', 0), cand('b', 120)], 100).length, 2);
 });
 
+test('영업이 확인된 곳이 모르는 곳보다 앞이다 — 시간이 같으면 남는 차이는 들를 수 있나다', () => {
+  const out = clusterCandidates([cand('가모름', 0, { openState: 'unknown' }), cand('나영업', 60, { openState: 'open' })]);
+  assert.deepEqual(out[0].members.map(c => c.id), ['나영업', '가모름']);
+});
+
+test('모름은 곧 마감보다 앞이다 — 30분 뒤 닫는 게 확실한 곳보다 헛걸음 확률이 낮다', () => {
+  const out = clusterCandidates([
+    cand('가곧마감', 0, { openState: 'closing_soon' }),
+    cand('나모름', 60, { openState: 'unknown' }),
+  ]);
+  assert.deepEqual(out[0].members.map(c => c.id), ['나모름', '가곧마감']);
+});
+
 test('대표와 묶음 안 순서는 같은 규칙을 쓴다 — 곧 마감하는 곳이 대표로 맨 위에 서지 않는다', () => {
   // 규칙을 따로 두었더니 이름순에 걸려 '곧 마감'이 대표가 되고, 바로 아래 목록에서는 뒤로
   // 밀려 있었다. 같은 화면에서 한 곳이 1등이자 꼴등이 된다

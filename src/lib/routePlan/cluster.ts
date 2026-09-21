@@ -26,8 +26,8 @@ export type Clusterable = {
   /** 시간 등급. 없으면 계획 등급을 따르는 값이라 '실측 아님'으로 본다 */
   cls?: TimeClass;
   trend?: { score: number };
-  /** 마감한 곳은 호출부가 이미 뺀다(`isSelectable`). 여기서 보는 건 '곧 마감'뿐이다 */
-  openState?: 'open' | 'closing_soon' | 'closed';
+  /** 마감한 곳은 호출부가 이미 뺀다(`isSelectable`). 여기서 가르는 건 영업 확인·모름·곧 마감이다 */
+  openState?: 'open' | 'closing_soon' | 'closed' | 'unknown';
 };
 
 export type Cluster<T extends Clusterable> = {
@@ -47,13 +47,20 @@ export type Cluster<T extends Clusterable> = {
  * 다르게 만들지 않으려는 것이다(정렬이 안정적이어야 화면이 안 깜빡인다)
  */
 export function preferenceOrder(a: Clusterable, b: Clusterable): number {
-  const soon = (c: Clusterable) => (c.openState === 'closing_soon' ? 1 : 0);
   return (
     (b.trend?.score ?? -Infinity) - (a.trend?.score ?? -Infinity) ||
-    soon(a) - soon(b) ||
+    openRank(a) - openRank(b) ||
     a.name.localeCompare(b.name)
   );
 }
+
+/**
+ * 영업 확인 → 모름 → 곧 마감. 시간이 같은 자리에서 남는 차이는 "들를 수 있나"이고,
+ * 확인된 곳이 확인 못 한 곳보다 낫다. 다만 모름을 곧 마감보다 뒤로 보내지는 않는다 —
+ * 30분 뒤 닫는 게 확실한 곳보다는, 모르는 곳이 헛걸음할 확률이 낮다
+ */
+const openRank = (c: Clusterable): number =>
+  c.openState === 'closing_soon' ? 2 : c.openState === 'unknown' ? 1 : 0;
 
 /**
  * 대표 고르기. 지금 경로에 들어가 있는 곳이 있으면 무조건 그것 — 묶기 전에는 추가시간 0 이라

@@ -14,10 +14,25 @@ import { approxOf, classOf, deltaCopy } from '../lib/timingCopy';
 import type { TimingSource } from '../lib/routePlan/types';
 
 function OpenStateRow({ cand }: { cand: Candidate }) {
-  const tint = cand.openState === 'closed' ? color.muted : color.green;
+  /* 초록은 "확인했고 열려 있다"는 말이다. 영업시간을 못 받은 곳(`unknown`)에 초록을 주면
+     모르는 것을 안다고 말하게 된다 — 색까지 회색으로 내리고 점은 속을 비운다.
+     비워 두는 이유: 회색 점만으로는 마감한 곳과 구별이 안 되는데, 하나는 못 고르고
+     하나는 고를 수 있어 서로 다른 말이다 */
+  const known = cand.openState !== 'closed' && cand.openState !== 'unknown';
+  const tint = known ? color.green : color.muted;
+  const hollow = cand.openState === 'unknown';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tint }} />
+      <View
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 3,
+          backgroundColor: hollow ? 'transparent' : tint,
+          borderWidth: hollow ? 1 : 0,
+          borderColor: tint,
+        }}
+      />
       <Text style={{ fontFamily: 'Pretendard-Medium', fontSize: 13, lineHeight: 13, color: tint }}>
         {cand.openNote}
       </Text>

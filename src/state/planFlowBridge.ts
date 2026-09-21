@@ -111,14 +111,25 @@ export function josa(word: string, pair: '을/를' | '으로/로' | '이/가'): 
   return has && jong !== 8 ? '으로' : '로';
 }
 
+/**
+ * 도착 시각의 영업 상태. **시간을 못 받았으면 'open' 이 아니라 'unknown' 이다** —
+ * 예전엔 `!c.hours` 를 'open' 으로 돌려, 카카오가 영업시간을 안 준 편의점이 "영업 중"으로
+ * 나갔다(2026-09-20). 모르는 것을 안다고 말하는 자리라 시간 값의 '약'과 같은 종류다.
+ */
 function openStateOf(c: { hours?: { openMin: number; closeMin: number } }, arrivalMin: number): Stop['openState'] {
-  if (!c.hours) return 'open';
+  if (!c.hours) return 'unknown';
   if (!isOpenAt(c as never, arrivalMin)) return 'closed';
   const untilClose = ((c.hours.closeMin - arrivalMin) % 1440 + 1440) % 1440;
   return untilClose <= 30 ? 'closing_soon' : 'open';
 }
-const openNoteOf = (state: Stop['openState']) =>
-  state === 'closed' ? '영업 종료 · 선택 불가' : state === 'closing_soon' ? '곧 마감' : '영업 중';
+const OPEN_NOTE: Record<Stop['openState'], string> = {
+  open: '영업 중',
+  closing_soon: '곧 마감',
+  closed: '영업 종료 · 선택 불가',
+  // "확인 못 했다"까지 말한다 — '모름' 한 단어면 무엇을 모르는지가 안 남는다
+  unknown: '영업 시간 모름',
+};
+const openNoteOf = (state: Stop['openState']) => OPEN_NOTE[state];
 
 /**
  * 도착 시각은 `alt.arriveMin` 그대로다 — 여기서 기준 도착에 무언가를 더하지 않는다.

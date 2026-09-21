@@ -111,7 +111,8 @@ function pinFixed(
     return { candidates: [filtered, ...ranked], fixed: { placeId: fixed.placeId, source: 'filtered' } };
   }
   // 검색이 못 줬다 — 요청에 실린 것만으로 세운다. hours·signals 가 없으니 화면은
-  // 영업 여부를 모른다고 말하고(`score.ts` 의 hours 없음 경로), 트렌드 점수도 안 붙는다
+  // 영업 여부를 모른다고 말하고(`planFlowBridge.openStateOf` → `unknown`), 트렌드 점수도 안 붙는다.
+  // 이 주석은 오래 거짓이었다 — hours 가 없으면 화면이 "영업 중"이라고 단언했다(2026-09-21 고침)
   return {
     candidates: [{ id: fixed.placeId, name: fixed.name, coord: fixed.coord }, ...ranked],
     fixed: { placeId: fixed.placeId, source: 'request' },

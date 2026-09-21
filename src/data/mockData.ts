@@ -19,7 +19,14 @@ export type Stop = {
   arriveAt: string;          // 'HH:mm'
   legMin: number;            // 직전 구간 이동 시간
   legKm: number;
-  openState: 'open' | 'closing_soon' | 'closed';
+  /**
+   * `unknown` 은 "영업시간을 못 받았다"이지 "열려 있다"가 아니다. 예전엔 둘을 'open' 하나로
+   * 뭉쳐서, 카카오가 시간을 안 준 편의점이 "영업 중"으로 나갔다 — 시간 값에 '약'을 붙이는
+   * 것과 같은 종류의 정직함이 영업 상태에도 필요하다. 고르는 건 막지 않는다(모른다고
+   * 막으면 더 나쁘다). 상태를 안 나누고 문구만 바꾸면, 다음 화면이 `=== 'open'` 을 보고
+   * 같은 거짓말을 다시 한다
+   */
+  openState: 'open' | 'closing_soon' | 'closed' | 'unknown';
   openNote: string;          // '영업 중 · 22시 마감'
   tasks: Task[];
 };

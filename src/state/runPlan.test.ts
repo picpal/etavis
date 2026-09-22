@@ -1213,3 +1213,52 @@ test('검색이 죽어도 정해진 가게는 살아남는다 — 고정이 가�
   assert.equal(dead.fixed?.source, 'request', '검색이 아무것도 못 줬으니 요청에서 세운 것이다');
   assert.equal((dead as { searchStatus?: string }).searchStatus, 'unchecked', '못 본 건 못 봤다고 적는다');
 });
+
+/* ── 영업 창 — 출발~도착 기한 내내 닫힌 곳은 후보가 아니다 ───────────────────────── */
+
+/** 같은 자리에 세 곳. 하나는 이 시간에 닫히고, 하나는 열고, 하나는 영업시간을 모른다 */
+const hoursCatalog: PlaceCandidate[] = [
+  { id: 'h-closed', name: '약국 닫힘', coord: at(37.5, 127.05), hours: { openMin: 600, closeMin: 1260 } },
+  { id: 'h-open', name: '약국 열림', coord: at(37.5, 127.055), hours: { openMin: 0, closeMin: 1439 } },
+  { id: 'h-unknown', name: '약국 모름', coord: at(37.5, 127.06) },
+];
+const hoursSearch: SearchFn = async (q, near, r) =>
+  hoursCatalog.filter(c => c.name.startsWith(q) && haversineM(near, c.coord) <= r);
+const openSlotsOf = (actions: PlanFlowAction[]) =>
+  (actions.find(a => a.type === 'SLOTS') as { type: 'SLOTS'; slots: {
+    candidates: PlaceCandidate[]; closedDropped?: number; closedRelaxed?: boolean }[] }).slots;
+const pharmacy: PlanRequest['stops'] = [
+  { id: 's-1', queries: ['약국'], count: 1, flexible: true, openNow: false, stopKind: 'category' },
+];
+
+test('창 내내 닫힌 곳은 후보에서 빠진다 — 닫힌 문 앞에 세우는 계획은 어떤 순서로도 틀렸다', async () => {
+  const { actions, dispatch } = collect();
+  // 23:00 출발 · 23:40 도착 기한. 10:00~21:00 인 곳은 이 창 안에 한 번도 안 연다
+  await runPlan(req(pharmacy, { departAtMin: 23 * 60, arriveByMin: 23 * 60 + 40 }),
+    { provider: mockRouteProvider(), search: hoursSearch, dispatch });
+  const [s] = openSlotsOf(actions);
+  assert.deepEqual(s.candidates.map(c => c.id).sort(), ['h-open', 'h-unknown'],
+    '영업시간을 모르는 곳은 남는다 — 모름은 닫힘이 아니다');
+  assert.equal(s.closedDropped, 1);
+  assert.equal(s.closedRelaxed, false);
+});
+
+test('낮에 떠나면 아무도 안 빠진다 — 거르는 건 "내내 닫힘"뿐이다', async () => {
+  const { actions, dispatch } = collect();
+  await runPlan(req(pharmacy, { departAtMin: 12 * 60, arriveByMin: 13 * 60 }),
+    { provider: mockRouteProvider(), search: hoursSearch, dispatch });
+  const [s] = openSlotsOf(actions);
+  assert.equal(s.candidates.length, 3);
+  assert.equal(s.closedDropped, 0);
+});
+
+test('전부 닫혀 있으면 되돌린다 — 경유지를 통째로 잃는 것보다 닫힌 곳이라도 보여 주는 게 낫다', async () => {
+  const onlyClosed: SearchFn = async (q, near, r) =>
+    hoursCatalog.filter(c => c.id === 'h-closed' && haversineM(near, c.coord) <= r);
+  const { actions, dispatch } = collect();
+  await runPlan(req(pharmacy, { departAtMin: 23 * 60, arriveByMin: 23 * 60 + 40 }),
+    { provider: mockRouteProvider(), search: onlyClosed, dispatch });
+  const [s] = openSlotsOf(actions);
+  assert.deepEqual(s.candidates.map(c => c.id), ['h-closed']);
+  assert.equal(s.closedRelaxed, true, '화면이 "그 시간엔 여는 곳이 없어서"라고 말할 근거다');
+});

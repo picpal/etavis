@@ -149,3 +149,41 @@ export function allClosedAtArrival(s: Scored): boolean {
   if (s.visits.length === 0) return false;
   return s.visits.every((v, i) => !isOpenAt(v.candidate, s.arrivals[i]));
 }
+
+/**
+ * `fromMin`~`toMin` 내내 닫혀 있나 — **어떤 순서로 짜도 못 들르는 곳**을 가리는 판정이다.
+ *
+ * 도착 시각으로 거르지 못하는 이유가 있다: 도착 시각은 계획을 세워야 알고, 계획은 후보가
+ * 있어야 세운다(닭과 달걀). 그래서 도착 시각이 필요 없는 것만 묻는다 — 출발부터 도착 기한까지
+ * 한 번도 안 여는 곳이라면, 그 곳을 어디에 끼워 넣든 닫힌 문 앞에 선다.
+ *
+ * `hours` 가 없으면 **false** 다. 모름은 닫힘이 아니다 — 여기서 true 를 내면 영업시간을
+ * 못 받은 곳이 통째로 사라진다(F6 에서 화면이 저지른 것과 같은 거짓말의 반대편).
+ * `openMin === closeMin` 도 false 다. 0분 영업인지 24시간인지 모르므로 안 거르는 쪽으로 읽는다.
+ *
+ * 분은 정수다(앱의 모든 시계가 분 단위). 창과 영업 구간이 **정수 분 하나라도** 겹치면 열려 있다.
+ */
+export function closedThroughout(
+  c: Pick<PlaceCandidate, 'hours'>,
+  fromMin: number,
+  toMin: number,
+): boolean {
+  if (!c.hours) return false;
+  const { openMin, closeMin } = c.hours;
+  if (openMin === closeMin) return false;
+  if (toMin - fromMin >= 1440) return false; // 하루를 통째로 덮는 창이면 언젠가는 연다
+
+  // 창을 하루 안으로 내리고 길이를 유지한다. 영업 구간은 매일 반복되므로 0일·1일 뒤만 보면 된다
+  const from = ((fromMin % 1440) + 1440) % 1440;
+  const to = from + (toMin - fromMin);
+  // [열림, 닫힘) — 자정을 넘으면 두 토막이다
+  const spans: [number, number][] = openMin <= closeMin
+    ? [[openMin, closeMin]]
+    : [[openMin, 1440], [0, closeMin]];
+  for (const [a, b] of spans) {
+    for (const day of [0, 1440]) {
+      if (Math.max(from, a + day) <= Math.min(to, b + day - 1)) return false;
+    }
+  }
+  return true;
+}

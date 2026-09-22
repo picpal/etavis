@@ -384,6 +384,16 @@ export function OptionsScreen({ navigation }: Props) {
             </Text>
           ))}
 
+        {/* 출발~도착 기한 내내 닫힌 곳뿐이라 영업시간 제약을 푼 슬롯 — near 완화와 같은 자리다.
+            말하지 않으면 사용자는 앱이 닫힌 가게를 모르고 넣은 줄 안다 */}
+        {state.slots
+          .filter(s => s.closedRelaxed && result.slotStatus[s.id] !== 'none')
+          .map(s => (
+            <Text key={`closed-${s.id}`} style={[type.caption, { color: color.muted }]}>
+              그 시간엔 여는 {s.query}{josa(s.query, '이/가')} 없어서 영업시간은 빼고 잡았어요
+            </Text>
+          ))}
+
         {/* 2. 경유지 — 이 화면의 본문. 빼기·교체 모두 여기서, 바뀌면 위 도착 시각이 다시 계산된다 */}
         <StopList
           result={result}

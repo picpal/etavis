@@ -191,7 +191,9 @@ export function describeFlowAction(action: PlanFlowAction, before: PlanFlowState
             `${s.query} near=${s.near ?? 'any'}(${s.nearSource ?? 'none'})${s.nearRelaxedRaw ? '!' : ''}`
             + ` ${s.nearBefore ?? 0}→${s.nearAfter ?? 0} nr=${s.nearRadiusM ?? '-'}`
             + ` r=${s.searchRadiusM ?? 0} calls=${s.searchCalls ?? 0}`
-            + (s.fixed ? ` fix=${s.fixed.placeId}(${s.fixed.source})` : '')).join(' · '),
+            + (s.fixed ? ` fix=${s.fixed.placeId}(${s.fixed.source})` : '')
+            // shut=2! 는 '창 내내 닫혀 2곳을 뺐고, 그러다 0곳이 돼 되돌렸다'는 뜻이다
+            + (s.closedDropped ? ` shut=${s.closedDropped}${s.closedRelaxed ? '!' : ''}` : '')).join(' · '),
           // 슬롯마다 따로 자른다 — 전체를 한 번에 자르면 슬롯이 둘만 돼도 뒤쪽 슬롯의
           // 이름이 통째로 사라진다. 이름을 읽으려고 넣은 로그가 이름을 지우면 안 된다
           picks: action.slots.map(s => `${s.query}: ${cut(s.candidates.map(c =>

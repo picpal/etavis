@@ -5,6 +5,7 @@
  */
 import { initialRadiusM, maxRadiusM, searchAlong, searchAtAnchors, ANCHOR_MAX_M, type SearchFn } from '../lib/corridorSearch';
 import { plan } from '../lib/routePlan/plan';
+import { closedThroughout } from '../lib/routePlan/score';
 import type { NearSide, PlaceCandidate, RouteProvider, RouteResult, Slot } from '../lib/routePlan/types';
 import { extractAnchors, type Anchor } from '../lib/routePlan/anchors';
 import type { PlanFlowAction, PlanRequest } from './planFlow';
@@ -119,6 +120,12 @@ function pinFixed(
   };
 }
 
+/**
+ * `arriveBy` 가 없을 때 영업 창의 끝 — 직행 시간에 이만큼을 더한다.
+ * 넓게 잡을수록 "내내 닫힘"이 성립하기 어려워 **덜 거른다**. 모르는 쪽에서는 안 거르는 게 안전하다
+ */
+const OPEN_WINDOW_SLACK_MIN = 120;
+
 class Timeout extends Error {}
 
 export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<void> {
@@ -148,6 +155,10 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
     // 0.5 회랑 검색 — 슬롯별 병렬
     const rho = direct.durationMin / Math.max(direct.distanceKm, 0.1);
     const slack = request.arriveByMin == null ? null : request.arriveByMin - request.departAtMin - direct.durationMin;
+    // 영업 창 — 출발부터 도착 기한까지. arriveBy 가 없으면 직행에 여유를 얹어 넉넉히 잡는다
+    const windowFromMin = request.departAtMin;
+    const windowToMin = request.arriveByMin
+      ?? request.departAtMin + direct.durationMin + OPEN_WINDOW_SLACK_MIN;
     const poly = direct.polyline.length >= 2 ? direct.polyline : [request.origin, request.destination];
     // 대중교통이면 실제 정류장이 앵커다. 공급자가 itinerary 를 안 줬으면(추정 폴백)
     // 앵커도 없다 — 그때는 지금까지처럼 회랑으로 찾는다
@@ -267,7 +278,13 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
 
         // 자동차면 주차 없음 제외·가능 우선 — 아는 정보만 거른다(실제 검색은 아직 주차를 모른다).
         // 그다음 near 로 한쪽 끝만 남긴다. 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이다
-        const parked = applyParkingPolicy(found.candidates, request.mode);
+        // 출발~도착 기한 내내 닫힌 곳을 먼저 뺀다 — 어떤 순서로 짜도 닫힌 문 앞에 선다.
+        // 도착 시각으로 거르지 못하는 건 닭과 달걀이기 때문이다(`closedThroughout`).
+        // 한 곳도 안 남으면 되돌린다 — 0건은 곧 경유지 증발이고, near 완화와 같은 규칙이다
+        const openable = found.candidates.filter(c => !closedThroughout(c, windowFromMin, windowToMin));
+        const closedRelaxed = openable.length === 0 && found.candidates.length > 0;
+        const opened = closedRelaxed ? found.candidates : openable;
+        const parked = applyParkingPolicy(opened, request.mode);
         // 같은 검색어를 쓰는 형제와 같은 near 를 쓰는 형제 중 큰 쪽을 요구한다
         const sameQuery = siblings.get(st.queries.join('|')) ?? 1;
         const sameNear = near === 'any' ? 1 : byNear.get(near) ?? 1;
@@ -286,6 +303,8 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
           // 사과하면, 목적지 얘기를 꺼낸 적 없는 사용자에게 "목적지 쪽엔 없어서"라고 말하게 된다
           nearRelaxed: sided.relaxed && (st.near === 'start' || st.near === 'end'),
           nearRelaxedRaw: sided.relaxed,
+          closedDropped: found.candidates.length - openable.length,
+          closedRelaxed,
           nearBefore: parked.length,
           nearAfter: sided.candidates.length,
           nearRadiusM: sided.radiusM,

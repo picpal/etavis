@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { buildPolyline, polylineLengthM } from '../geo';
 import { projectOnCorridor } from './corridor';
 import { DEST_ID, LegStore, ORIGIN_ID } from './legs';
-import { allClosedAtArrival, isOpenAt, scorePlan, type ScoreContext } from './score';
+import { allClosedAtArrival, closedThroughout, isOpenAt, scorePlan, type ScoreContext } from './score';
 import type { Mode, PlaceCandidate, Visit } from './types';
 
 const O = { latitude: 37.5, longitude: 127.0 };
@@ -145,4 +145,40 @@ test('자동차면 짐이 0 이다 — 트렁크에 실으면 그만이다', () 
 test('도보도 짐을 센다 — 걸어서 드는 게 제일 힘들다', () => {
   const c = { ...bothWays('walk'), tagsOf: (id: string) => (id === 'c1' ? HARD_AFTER : NONE) };
   assert.equal(scorePlan([v(c1), v(c2)], c).burdenMin, 14);
+});
+
+/** 창 내내 닫힘 — 도착 시각을 모르는 채로도 "어떤 순서로도 못 들른다"만 가린다 */
+const hours = (openMin: number, closeMin: number) => ({ hours: { openMin, closeMin } });
+
+test('창 내내 닫힌 곳은 닫힘이다 — 밤 11시에 떠나는데 9시에 닫는 가게', () => {
+  // 23:00 출발 ~ 23:40 도착 기한, 가게는 10:00~21:00
+  assert.equal(closedThroughout(hours(600, 1260), 23 * 60, 23 * 60 + 40), true);
+});
+
+test('창이 영업 시간에 1분이라도 걸치면 닫힘이 아니다 — 문 닫기 직전도 들를 수 있다', () => {
+  // 20:59 에 출발, 가게는 21:00 마감 — 20:59 한 분이 겹친다
+  assert.equal(closedThroughout(hours(600, 1260), 20 * 60 + 50, 21 * 60 + 30), false);
+  // 여는 순간에 창이 끝나도 겹친다 — 10:00 에 문이 열리고 창의 끝이 10:00
+  assert.equal(closedThroughout(hours(600, 1260), 9 * 60, 10 * 60), false);
+});
+
+test('영업시간을 모르는 곳은 안 거른다 — 모름은 닫힘이 아니다(F6 와 같은 규칙)', () => {
+  assert.equal(closedThroughout({}, 23 * 60, 23 * 60 + 40), false);
+  assert.equal(closedThroughout(hours(600, 600), 23 * 60, 23 * 60 + 40), false, 'openMin === closeMin 은 0분인지 24시간인지 모른다');
+});
+
+test('자정을 넘는 영업은 자정 넘는 창과 겹친다 — 새벽 1시의 편의점', () => {
+  // 22:00~06:00 영업, 창은 00:30~01:10(= 다음 날이라 1470~1510 분)
+  assert.equal(closedThroughout(hours(1320, 360), 1470, 1510), false);
+  // 같은 가게, 창은 오후 3시 — 이때는 닫혀 있다
+  assert.equal(closedThroughout(hours(1320, 360), 15 * 60, 15 * 60 + 40), true);
+});
+
+test('창이 자정을 넘으면 다음 날 영업까지 본다 — 23:50 출발 10:20 도착은 안 거른다', () => {
+  // 10:00~21:00 영업, 창 23:50~(다음 날) 10:20 → 다음 날 10:00~10:20 이 겹친다
+  assert.equal(closedThroughout(hours(600, 1260), 23 * 60 + 50, 24 * 60 + 10 * 60 + 20), false);
+});
+
+test('하루보다 긴 창은 무엇도 안 거른다 — 언젠가는 연다', () => {
+  assert.equal(closedThroughout(hours(600, 1260), 0, 1500), false);
 });

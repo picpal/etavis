@@ -250,6 +250,10 @@ export function TrackerProvider({ children }: { children: React.ReactNode }) {
           ignored: null,
           events: step.events.map(e => `${e.kind}:${e.id}`),
           atStop,
+          // 도착이 안 잡히면 반경 탓인지 속도 탓인지, visit 이 안 나면 시계가 안 돈 건지
+          // 90초를 못 채운 건지 — 이 둘이 없으면 실주행 로그로 가를 수가 없다
+          still: step.stationary,
+          dwellMs: step.dwellMs,
         });
       }
     }

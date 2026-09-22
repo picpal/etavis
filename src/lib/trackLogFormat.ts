@@ -27,6 +27,10 @@ export type TrackEvent =
       ignored: string | null;
       events: string[];
       atStop: boolean;
+      /** 이 샘플이 '멈춤'이었나. 버린 샘플이면 null */
+      still?: boolean | null;
+      /** 체류 시계 경과(ms). 안 돌고 있으면 null */
+      dwellMs?: number | null;
     }
   | { k: 'track'; from: string; to: string; crossTrack: number; progress: number }
   | { k: 'mode'; from: string; to: string; via: 'setMode' | 'keepPlan' | 'dismissOffRoute' | 'auto' | 'anchor' }

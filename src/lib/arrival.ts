@@ -145,6 +145,15 @@ export type ArrivalStep = {
   distToNextM: number | null;
   arriveR: number;
   departR: number;
+  /** 이 샘플을 '멈춤'으로 봤나. 버린 샘플(`ignored`)이면 null.
+   *  도착이 영영 안 잡힐 때, 반경 때문인지 속도 때문인지 가르는 유일한 근거다 */
+  stationary: boolean | null;
+  /** 체류 시계가 얼마나 돌았나(ms). 시계가 안 돌고 있으면 null.
+   *
+   *  왜 남기나: visit 이 안 나면 로그만 보고는 시계가 **안 돌았는지** 아니면
+   *  돌다가 90초를 못 채우고 떠났는지 가를 수가 없었다. 둘은 고칠 자리가 다르다 —
+   *  전자는 도착 판정, 후자는 `visitDwellMs` 값 자체다. 실주행 한 번으로 갈리게 한다 */
+  dwellMs: number | null;
 };
 
 /**
@@ -186,10 +195,18 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
   const departR = Math.max(departGap, arriveR);
   const distToTargetM = target ? haversineM(fix, target.coord) : null;
   const distToNextM = next ? haversineM(fix, next.coord) : null;
-  const base = { ignored: null as ArrivalStep['ignored'], distToTargetM, distToNextM, arriveR, departR };
+  const dwellMsOf = (s: Pick<ArrivalState, 'dwellSinceMs'>) =>
+    s.dwellSinceMs == null ? null : fix.atMs - s.dwellSinceMs;
+  const base = {
+    ignored: null as ArrivalStep['ignored'],
+    distToTargetM, distToNextM, arriveR, departR,
+    stationary: null as boolean | null,
+    dwellMs: dwellMsOf(state),
+  };
   const prev: PrevSample = { coord: { latitude: fix.latitude, longitude: fix.longitude }, atMs: fix.atMs, accuracyM: fix.accuracyM ?? null };
   const keep = (s: ArrivalState): ArrivalState => ({ ...s, prev });
-  const quiet = (s: ArrivalState, events: ArrivalEvent[] = []): ArrivalStep => ({ ...base, state: keep(s), events });
+  const quiet = (s: ArrivalState, events: ArrivalEvent[] = []): ArrivalStep =>
+    ({ ...base, dwellMs: dwellMsOf(s), state: keep(s), events });
 
   // 0. 갈 곳이 없다
   if (!target || distToTargetM == null) return quiet(state);
@@ -202,6 +219,7 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
 
   // 2. 멈춤
   const stationary = isStationary(state, fix, profile);
+  base.stationary = stationary;
 
   // 6. 방문 확정 — 잠정 도착한 그 지점 반경 안에서 체류 시간을 채웠나.
   //    한 샘플이 노이즈로 반경을 잠깐 벗어나도 시계는 그대로다(늦어질 뿐 초기화되지 않는다).
@@ -228,6 +246,7 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
     if (streak >= profile.arriveSamples) {
       return {
         ...base,
+        dwellMs: 0, // next 의 시계가 이 샘플에서 시작한다
         // target을 실제로 떠났다 — 체류 시계는 여기서 next로 옮겨 다시 돈다
         state: keep({
           streakId: null,
@@ -254,6 +273,7 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
     if (inside && streak >= profile.arriveSamples) {
       return {
         ...base,
+        dwellMs: 0, // 체류 시계가 이 샘플에서 시작한다
         state: keep({
           ...state,
           streakId: null,
@@ -278,6 +298,9 @@ export function stepArrival(state: ArrivalState, fix: Fix, ctx: ArrivalContext):
   if (outside && streak >= profile.departSamples) {
     return {
       ...base,
+      // 시계는 비우지만 **얼마나 머물렀는지는 이 줄에 남긴다** — 90초를 못 채우고 떠난
+      // 것인지 아예 안 돌았던 것인지가 `visitDwellMs` 를 다시 재는 유일한 근거다
+      dwellMs: base.dwellMs,
       // 실제로 떠났을 때만 체류 상태를 비운다
       state: keep({
         ...state,

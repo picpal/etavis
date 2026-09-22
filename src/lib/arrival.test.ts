@@ -316,3 +316,40 @@ test('회귀: 출발 반경은 도착 반경보다 좁아지지 않는다 — �
   assert.ok(r.departR >= r.arriveR, `departR(${r.departR}) 가 arriveR(${r.arriveR}) 보다 작다`);
   assert.deepEqual(kinds(r), []);
 });
+
+/* ── 판정 근거를 밖으로 — 실주행 로그 한 번으로 90초가 맞는지 갈리게 한다 ────────── */
+
+test('체류 시계 경과가 단계에 실린다 — 도착에서 0, 머무는 동안 늘어난다', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const rs = run([fixAt(O, 40_000), fixAt(O, 93_000)], ctx, s);
+  assert.equal(rs[0].dwellMs, 37_000, '도착(3_000)으로부터의 경과다');
+  assert.deepEqual(kinds(rs[1]), ['visit:olive']);
+});
+
+test('떠나는 줄에 얼마나 머물렀는지가 남는다 — 90초를 못 채운 건지 시계가 안 돈 건지 가른다', () => {
+  const s = arriveAt();
+  const ctx: ArrivalContext = { target: T, next: N, atStop: true, profile: car };
+  const away = north(O, -260);
+  const rs = run([fixAt(away, 40_000, 3), fixAt(away, 41_000, 3)], ctx, s);
+  assert.deepEqual(kinds(rs[1]), ['depart:olive']);
+  assert.equal(rs[1].dwellMs, 38_000, '38초 머물다 떠났다 — visitDwellMs 를 다시 잴 근거다');
+});
+
+test('시계가 안 돌고 있으면 null 이다 — 0 으로 적으면 "막 도착했다"와 구별이 안 된다', () => {
+  const ctx: ArrivalContext = { target: T, next: N, atStop: false, profile: car };
+  assert.equal(run([fixAt(O, 1_000)], ctx)[0].dwellMs, null);
+});
+
+test('멈춤 판정이 단계에 실린다 — 도착이 안 잡힐 때 반경 탓인지 속도 탓인지 가른다', () => {
+  const ctx: ArrivalContext = { target: T, next: N, atStop: false, profile: car };
+  assert.equal(run([fixAt(O, 1_000, 0)], ctx)[0].stationary, true);
+  assert.equal(run([fixAt(O, 1_000, 8)], ctx)[0].stationary, false, '시속 29km 로 지나간다');
+});
+
+test('버린 샘플은 멈춤 판정이 null 이다 — 안 본 것을 봤다고 적지 않는다', () => {
+  const ctx: ArrivalContext = { target: T, next: N, atStop: false, profile: car };
+  const [r] = run([fixAt(O, 1_000, 0, 300)], ctx);
+  assert.equal(r.ignored, 'accuracy');
+  assert.equal(r.stationary, null);
+});

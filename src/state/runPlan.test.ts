@@ -1262,3 +1262,59 @@ test('전부 닫혀 있으면 되돌린다 — 경유지를 통째로 잃는 것
   assert.deepEqual(s.candidates.map(c => c.id), ['h-closed']);
   assert.equal(s.closedRelaxed, true, '화면이 "그 시간엔 여는 곳이 없어서"라고 말할 근거다');
 });
+
+/* ── 보강이 준 영업시간은 후보에 실린다 ─────────────────────────────────────────── */
+
+/** `runTrend` 와 같은 모양인데 출발 시각을 골라 넣는다 — 영업 창을 만들려면 필요하다 */
+async function runHours(o: { departAtMin: number; arriveByMin: number | null; hours: Record<string, { openMin: number; closeMin: number } | null> }) {
+  const provider = {
+    route: async (points: { latitude: number; longitude: number }[]) => ({
+      durationMin: 10 * (points.length - 1), distanceKm: 5 * (points.length - 1),
+      polyline: points, sections: points.slice(1).map(() => ({ durationMin: 10, distanceKm: 5 })),
+    }),
+  };
+  const actions: PlanFlowAction[] = [];
+  await runPlan(
+    {
+      origin: { latitude: 37.5, longitude: 127.0 }, destination: { latitude: 37.6, longitude: 127.0 },
+      originName: '출발', destinationName: '도착', mode: 'car',
+      arriveByMin: o.arriveByMin, departAtMin: o.departAtMin,
+      stops: [{ id: 's1', queries: ['빵집'], count: 1, flexible: true, openNow: false, stopKind: 'category' }],
+      order: 'auto',
+    },
+    {
+      provider: provider as never,
+      search: async () => Object.keys(o.hours).map((id, i) => ({
+        id, name: `가게${i}`, coord: { latitude: 37.5 + i * 0.001, longitude: 127.0 },
+      })),
+      dispatch: a => actions.push(a),
+      enrich: (async () => Object.fromEntries(Object.entries(o.hours).map(([id, h]) => [
+        id, { fetchedAt: '2026-09-22T00:00:00Z', google: { rating: 4, ratingCount: 10, matchedName: id, hours: h } },
+      ]))) as never,
+    },
+  );
+  return openSlotsOf(actions)[0];
+}
+
+const allDay = { openMin: 0, closeMin: 1439 };
+const nine2nine = { openMin: 540, closeMin: 1260 };
+
+test('보강이 준 영업시간이 후보에 실린다 — signals 만 옮기면 hours 가 앱 전체에서 영영 빈다', async () => {
+  const s = await runHours({ departAtMin: 12 * 60, arriveByMin: 13 * 60, hours: { a: nine2nine, b: allDay, c: null, d: allDay } });
+  const withHours = s.candidates.filter(c => c.hours != null);
+  assert.equal(withHours.length, 3, '구글이 준 세 곳에 hours 가 붙는다');
+  assert.equal(s.candidates.find(c => c.id === 'c')?.hours, undefined, '안 준 곳은 그대로 비어 있다');
+});
+
+test('보강 뒤에 창 필터를 다시 건다 — 검색 때는 hours 가 없어 아무도 못 걸렀다', async () => {
+  // 23:00 출발 · 23:40 도착. 09:00~21:00 인 곳은 이 창에 한 번도 안 연다
+  const s = await runHours({ departAtMin: 23 * 60, arriveByMin: 23 * 60 + 40, hours: { a: nine2nine, b: allDay, c: null, d: allDay } });
+  assert.deepEqual(s.candidates.map(c => c.id).sort(), ['b', 'c', 'd']);
+  assert.equal(s.closedDropped, 1);
+});
+
+test('보강 뒤에도 전부 닫혔으면 되돌린다 — 경유지를 통째로 잃지 않는다', async () => {
+  const s = await runHours({ departAtMin: 23 * 60, arriveByMin: 23 * 60 + 40, hours: { a: nine2nine, b: nine2nine, c: nine2nine, d: nine2nine } });
+  assert.equal(s.candidates.length, 4);
+  assert.equal(s.closedRelaxed, true);
+});

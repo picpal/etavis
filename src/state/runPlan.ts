@@ -398,7 +398,25 @@ export async function runPlan(request: PlanRequest, deps: RunPlanDeps): Promise<
                   id: c.id, name: c.name, address: c.address ?? '',
                   lat: c.coord.latitude, lng: c.coord.longitude,
                 })), { timeoutMs: leftMs });
-                s.candidates = s.candidates.map(c => (m[c.id] ? { ...c, signals: m[c.id] } : c));
+                /* 구글이 오늘 영업시간을 줬으면 **후보에도 싣는다.** 예전엔 `signals` 만
+                   옮겨서, `PlaceCandidate.hours` 가 앱 전체에서 영영 비어 있었다 —
+                   화면은 늘 '영업 시간 모름'이고 창 필터는 한 곳도 못 걸렀다.
+                   2026-09-22 실기기에서 확인했다(23:26 출발인데 `shut=` 가 안 찍혔다). */
+                s.candidates = s.candidates.map(c => {
+                  const sig = m[c.id];
+                  if (!sig) return c;
+                  return { ...c, signals: sig, ...(sig.google?.hours ? { hours: sig.google.hours } : {}) };
+                });
+                /* 이제야 영업시간이 생겼으니 창 필터를 다시 건다 — 검색 시점에는 `hours` 가
+                   없어 아무도 못 걸렀다. 되돌리는 규칙은 검색 때와 같다: 전부 닫혔으면
+                   경유지를 잃느니 닫힌 곳이라도 남긴다 */
+                const shut = s.candidates.filter(c => closedThroughout(c, windowFromMin, windowToMin));
+                if (shut.length > 0) {
+                  s.closedDropped = (s.closedDropped ?? 0) + shut.length;
+                  const open = s.candidates.filter(c => !shut.includes(c));
+                  if (open.length > 0) s.candidates = open;
+                  else s.closedRelaxed = true;
+                }
               } catch {
                 // 이 슬롯만 신호 없이 남는다 — 나머지 슬롯은 계속 진행한다
               }

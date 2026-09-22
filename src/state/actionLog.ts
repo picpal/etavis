@@ -64,6 +64,10 @@ export function describePlanAction(action: PlanAction, before: PlanState): ActLo
           add: i.stops.filter(s => s.op === 'add').length,
           remove: i.stops.filter(s => s.op === 'remove').length,
           queries: i.stops.map(s => s.queries[0] ?? '?').join(' · '),
+          // 추출이 낸 방향. `plan.slots` 의 near=…(stated) 와 짝을 이룬다 — 둘을 나란히 놓아야
+          // "사용자 말이 죽었나, 칩이 안 받았나"가 갈린다(2026-09-22 전까지 로그엔 방향이
+          // 슬롯 쪽에만 있어서, 36줄을 다 읽어도 stated 가 한 번도 없다는 것밖에 몰랐다)
+          near: i.stops.map(s => s.near ?? 'any').join(' · '),
           reset: i.resetStops,
           order: i.order,
           arriveBy: i.arriveBy,

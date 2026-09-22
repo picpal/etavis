@@ -744,3 +744,57 @@ test('실측 표는 겹치고 덮지 않는다 — 안 바뀐 구간의 leg 가 
   assert.deepEqual(learned.dataset.legs?.['s2>dest'], { min: 8, km: 2.0 });
   assert.equal(learned.dataset.candidates.s2.length, 1, '안 낸 슬롯의 후보 목록도 남는다');
 });
+
+/* ── 이미 있는 경유지에 대고 한 말 — 말한 것만 덮는다 ─────────────────────────────── */
+
+/** `addStop` 과 같은 모양인데 속성을 골라 얹는다 */
+const sayStop = (queries: string[], over: Partial<{
+  near: 'start' | 'end' | 'any'; why: string; openNow: boolean;
+  loadBefore: 'none' | 'hard'; loadAfter: 'none' | 'hard';
+  needWhen: 'beforeArrival' | 'afterArrival' | 'unknown';
+}> = {}): PlanAction => ({
+  type: 'APPLY_INTENT',
+  intent: {
+    resetStops: false,
+    stops: [{
+      op: 'add', queries, kind: 'category', why: '', count: 1,
+      flexible: true, openNow: false, prefers: [], near: 'any',
+      loadBefore: 'none', loadAfter: 'none', needWhen: 'unknown',
+      ...over,
+    }],
+    endpoints: {}, order: 'auto', arriveBy: null, mode: null, reject: null, ambiguous: [],
+  },
+});
+const stopChip = (s: PlanState, label: string) =>
+  s.chips.find(c => c.kind === 'stop' && c.label === label) as
+    (Extract<PlanState['chips'][number], { kind: 'stop' }> | undefined);
+
+test('이미 있는 경유지의 방향을 나중에 말해도 반영된다 — "카페는 목적지 근처로 해줘"', () => {
+  // 추출은 near='end' 를 제대로 내는데 칩이 안 바뀌어 아무 일도 안 일어났다
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...sayStop(['카페']).intent, resetStops: true } },
+    sayStop(['카페'], { near: 'end' }),
+  ]);
+  assert.equal(stopChip(s, '카페')?.near, 'end');
+  assert.equal(stopQueries(s).length, 1, '덮는 것이지 새로 세우는 게 아니다');
+});
+
+test('기본값은 앞서 말한 것을 지우지 않는다 — "안 했다"와 "취소한다"는 다르다', () => {
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...sayStop(['카페'], { near: 'end' }).intent, resetStops: true } },
+    sayStop(['카페'], { why: '친구 만나기' }), // near 는 기본값 'any' 로 온다
+  ]);
+  assert.equal(stopChip(s, '카페')?.near, 'end', '방향은 살아 있어야 한다');
+  assert.equal(stopChip(s, '카페')?.why, '친구 만나기', '새로 말한 것은 들어간다');
+});
+
+test('물성·시점·영업 조건도 같은 규칙이다 — 말하면 덮고, 기본값이면 둔다', () => {
+  const s = run(fresh(), [
+    { type: 'APPLY_INTENT', intent: { ...sayStop(['마트']).intent, resetStops: true } },
+    sayStop(['마트'], { loadAfter: 'hard', needWhen: 'afterArrival', openNow: true }),
+  ]);
+  const c = stopChip(s, '마트');
+  assert.equal(c?.loadAfter, 'hard');
+  assert.equal(c?.needWhen, 'afterArrival');
+  assert.equal(c?.openNow, true);
+});

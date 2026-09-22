@@ -794,6 +794,25 @@ export function planReducer(state: PlanState, action: PlanAction): PlanState {
            '커피와 샌드위치' 로 같은 말을 고쳐 말하면 추출은 매번 add 2 를 내고,
            여기서 그대로 밀어 넣어 경유지가 카페·샌드위치·카페·샌드위치 네 곳이 됐다.
            같은 종류를 정말 여러 곳 원하면 그건 count 로 온다 — 그래서 총 개수까지만 채운다 */
+        /* 같은 질의의 칩이 이미 있으면 **말한 것만 덮는다.**
+           예전엔 아래 루프가 새 칩만 만들고 끝이라, 이미 있는 경유지에 대고 한 말은
+           통째로 버려졌다 — "카페는 목적지 근처로 해줘" 가 아무 일도 안 일으켰다
+           (추출은 near='end' 를 제대로 냈는데 칩은 'any' 로 남았다).
+           그렇다고 전부 덮으면 반대로 샌다: 뒤이어 "카페는 5분만" 이라고 하면 그 추출의
+           기본값(near='any', why='')이 앞서 말한 방향을 지운다. 기본값은 "그 얘긴 안 했다"는
+           뜻이지 "취소한다"가 아니다 — `openNow` 를 false 로 두는 규칙과 같다. */
+        chips = chips.map(c =>
+          c.kind === 'stop' && c.queries.some(q => st.queries.includes(q))
+            ? {
+                ...c,
+                ...(st.near !== 'any' ? { near: st.near } : {}),
+                ...(st.why ? { why: st.why } : {}),
+                ...(st.openNow ? { openNow: true } : {}),
+                ...(st.loadBefore !== 'none' ? { loadBefore: st.loadBefore } : {}),
+                ...(st.loadAfter !== 'none' ? { loadAfter: st.loadAfter } : {}),
+                ...(st.needWhen !== 'unknown' ? { needWhen: st.needWhen } : {}),
+              }
+            : c);
         const want = Math.max(1, st.count);
         for (let k = countSameStops(chips, st.queries); k < want; k++) {
           chips.push({

@@ -75,8 +75,15 @@ export default {
     return new Response(null, { status: 204, headers: cors });
   },
 
-  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(report(env, new Date()));
+  async scheduled(event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    // 하루 한 번(09:00 UTC = 18:00 KST)만 보낸다. cron 을 매시→매일로 바꿔 배포해도
+    // 엣지에 옛 트리거가 두 시간 넘게 남아 매시 발송이 이어졌다(2026-09-27). 시계로 한 번 더 거른다
+    const now = new Date(event.scheduledTime);
+    if (now.getUTCHours() !== 9) {
+      console.log(`[metrics] ${event.cron} 트리거 무시 — 리포트는 09:00 UTC 에만 보낸다`);
+      return;
+    }
+    ctx.waitUntil(report(env, now));
   },
 };
 

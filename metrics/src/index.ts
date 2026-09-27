@@ -103,13 +103,13 @@ async function query(env: Env, from: string, to: string): Promise<Row[] | null> 
 }
 
 export async function report(env: Env, now: Date): Promise<void> {
-  const w = hourWindow(now);
+  const w = hourWindow(now, 24); // 하루 한 번(18:00 KST) — wrangler.toml cron 과 짝
   const [rows, prevRows] = await Promise.all([query(env, w.from, w.to), query(env, w.prevFrom, w.from)]);
 
   const payload = buildReport({
     stats: aggregate(rows ?? []),
     failed: rows === null,
-    // 직전 시간에 데이터가 아예 없으면 비교를 지어내지 않는다
+    // 직전 구간에 데이터가 아예 없으면 비교를 지어내지 않는다
     prevVisitors: prevRows && prevRows.length ? aggregate(prevRows).visitors : null,
     windowLabel: w.label,
     demoUrl: env.DEMO_URL,

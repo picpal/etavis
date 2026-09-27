@@ -13,9 +13,10 @@ compatibility_date = "2026-09-01"
 enabled = true
 head_sampling_rate = 1
 
-# 매시 정각. 리포트는 "직전" 한 시간을 덮는다(window.ts)
+# 매일 18:00 KST(=09:00 UTC) 한 번. 리포트는 직전 24시간을 덮는다(index.ts → window.ts)
+# 매시 리포트는 2026-09-27 에 하루 한 번으로 바꿨다
 [triggers]
-crons = ["0 * * * *"]
+crons = ["0 9 * * *"]
 
 [vars]
 # 와일드카드로 열지 않는다. 데모 오리진과 로컬 확인용만

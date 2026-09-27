@@ -32,17 +32,21 @@ export type Window = {
   label: string;
 };
 
-export function hourWindow(now: Date): Window {
+/** 직전 `hours` 시간. 하루 리포트는 hours=24 — 비교 대상도 그만큼 앞으로 민다 */
+export function hourWindow(now: Date, hours = 1): Window {
+  const span = hours * HOUR_MS;
   const to = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS);
-  const from = new Date(to.getTime() - HOUR_MS);
-  const prevFrom = new Date(from.getTime() - HOUR_MS);
+  const from = new Date(to.getTime() - span);
+  const prevFrom = new Date(from.getTime() - span);
 
   // 라벨은 KST 로 — 날짜는 구간 시작 기준이라 자정을 넘어도 하루가 밀리지 않는다
   const kFrom = new Date(from.getTime() + KST_OFFSET_MS);
   const kTo = new Date(to.getTime() + KST_OFFSET_MS);
+  const day = (d: Date) => `${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}`;
+  // 한 시간을 넘으면 끝 날짜가 달라지므로 끝에도 날짜를 붙인다
   const label =
-    `${p2(kFrom.getUTCMonth() + 1)}-${p2(kFrom.getUTCDate())} ` +
-    `${p2(kFrom.getUTCHours())}:00~${p2(kTo.getUTCHours())}:00`;
+    `${day(kFrom)} ${p2(kFrom.getUTCHours())}:00~` +
+    `${hours > 1 ? `${day(kTo)} ` : ''}${p2(kTo.getUTCHours())}:00`;
 
   return { from: sqlTime(from), to: sqlTime(to), prevFrom: sqlTime(prevFrom), label };
 }

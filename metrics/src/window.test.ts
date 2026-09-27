@@ -34,3 +34,12 @@ test('정각에 돌아도 직전 시간을 본다', () => {
   assert.equal(w.from, '2026-09-21 04:00:00');
   assert.equal(w.to, '2026-09-21 05:00:00');
 });
+
+test('하루 구간은 직전 24시간이고 끝에도 날짜를 적는다', () => {
+  // 09:00 UTC = 18:00 KST 에 도는 일일 리포트
+  const w = hourWindow(new Date('2026-09-27T09:00:00Z'), 24);
+  assert.equal(w.from, '2026-09-26 09:00:00');
+  assert.equal(w.to, '2026-09-27 09:00:00');
+  assert.equal(w.prevFrom, '2026-09-25 09:00:00');
+  assert.equal(w.label, '09-26 18:00~09-27 18:00');
+});
